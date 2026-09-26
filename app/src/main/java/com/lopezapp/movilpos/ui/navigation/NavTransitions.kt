@@ -12,7 +12,17 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.scene.SceneStrategy
+import androidx.navigation3.scene.SinglePaneSceneStrategy
+import androidx.navigation3.ui.NavDisplay
 import com.lopezapp.movilpos.ui.model.AnimationType
+import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 
 fun buildNavTransition(
     animationType: AnimationType,
@@ -72,3 +82,65 @@ fun buildNavTransition(
         }
     }
 }
+
+/**
+ * Standardized reusable wrapper around Navigation 3's [NavDisplay] that automatically
+ * collects [SettingsViewModel] state and applies configured transitions globally across the app.
+ */
+@Composable
+fun <T : Any> AppNavDisplay(
+    backStack: List<T>,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    sceneStrategy: SceneStrategy<T> = SinglePaneSceneStrategy(),
+    settingsViewModel: SettingsViewModel = viewModel(),
+    entryProvider: (key: T) -> NavEntry<T>
+) {
+    val settingsState by settingsViewModel.uiState.collectAsState()
+
+    NavDisplay(
+        backStack = backStack,
+        onBack = onBack,
+        modifier = modifier,
+        sceneStrategy = sceneStrategy,
+        transitionSpec = {
+            buildNavTransition(
+                animationType = settingsState.animationType,
+                durationMs = settingsState.animationDurationMs,
+                isPop = false
+            )
+        },
+        popTransitionSpec = {
+            buildNavTransition(
+                animationType = settingsState.animationType,
+                durationMs = settingsState.animationDurationMs,
+                isPop = true
+            )
+        },
+        entryProvider = entryProvider
+    )
+}
+
+/**
+ * Alias for [AppNavDisplay] to support [GlobalAnimatedNavDisplay] naming.
+ */
+@Composable
+fun <T : Any> GlobalAnimatedNavDisplay(
+    backStack: List<T>,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    sceneStrategy: SceneStrategy<T> = SinglePaneSceneStrategy(),
+    settingsViewModel: SettingsViewModel = viewModel(),
+    entryProvider: (key: T) -> NavEntry<T>
+) {
+    AppNavDisplay(
+        backStack = backStack,
+        onBack = onBack,
+        modifier = modifier,
+        sceneStrategy = sceneStrategy,
+        settingsViewModel = settingsViewModel,
+        entryProvider = entryProvider
+    )
+}
+
+

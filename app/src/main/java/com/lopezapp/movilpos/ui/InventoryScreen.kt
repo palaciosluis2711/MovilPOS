@@ -114,10 +114,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
-import androidx.navigation3.ui.NavDisplay
 import coil.compose.AsyncImage
 import com.lopezapp.movilpos.data.model.Product
-import com.lopezapp.movilpos.ui.navigation.buildNavTransition
+import com.lopezapp.movilpos.ui.navigation.AppNavDisplay
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
@@ -141,7 +140,6 @@ fun InventoryScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val settingsState by settingsViewModel.uiState.collectAsState()
     val backStack = rememberNavBackStack(ProductListKey)
     
     val windowAdaptiveInfo = currentWindowAdaptiveInfoV2()
@@ -151,7 +149,7 @@ fun InventoryScreen(
     }
     val listDetailStrategy = rememberListDetailSceneStrategy<NavKey>(directive = directive)
 
-    NavDisplay(
+    AppNavDisplay(
         backStack = backStack,
         onBack = { 
             if (backStack.size > 1) {
@@ -162,20 +160,7 @@ fun InventoryScreen(
         },
         sceneStrategy = listDetailStrategy,
         modifier = modifier,
-        transitionSpec = {
-            buildNavTransition(
-                animationType = settingsState.animationType,
-                durationMs = settingsState.animationDurationMs,
-                isPop = false
-            )
-        },
-        popTransitionSpec = {
-            buildNavTransition(
-                animationType = settingsState.animationType,
-                durationMs = settingsState.animationDurationMs,
-                isPop = true
-            )
-        },
+        settingsViewModel = settingsViewModel,
         entryProvider = entryProvider {
             entry<ProductListKey>(
                 metadata = ListDetailSceneStrategy.listPane(

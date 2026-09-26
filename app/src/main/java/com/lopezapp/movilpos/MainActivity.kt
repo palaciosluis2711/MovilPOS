@@ -26,8 +26,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -36,16 +34,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.rememberNavBackStack
-import androidx.navigation3.ui.NavDisplay
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.InventoryScreen
 import com.lopezapp.movilpos.ui.POSScreen
 import com.lopezapp.movilpos.ui.SettingsScreen
+import com.lopezapp.movilpos.ui.navigation.AppNavDisplay
 import com.lopezapp.movilpos.ui.navigation.HomeRoute
 import com.lopezapp.movilpos.ui.navigation.InventoryRoute
 import com.lopezapp.movilpos.ui.navigation.POSRoute
 import com.lopezapp.movilpos.ui.navigation.SettingsRoute
-import com.lopezapp.movilpos.ui.navigation.buildNavTransition
 import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
@@ -60,28 +57,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             MovilPOSTheme {
                 val settingsViewModel: SettingsViewModel = viewModel()
-                val settingsState by settingsViewModel.uiState.collectAsState()
                 val backStack = rememberNavBackStack(HomeRoute)
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    NavDisplay(
+                    AppNavDisplay(
                         backStack = backStack,
                         onBack = { backStack.removeLastOrNull() },
                         modifier = Modifier.padding(innerPadding),
-                        transitionSpec = {
-                            buildNavTransition(
-                                animationType = settingsState.animationType,
-                                durationMs = settingsState.animationDurationMs,
-                                isPop = false
-                            )
-                        },
-                        popTransitionSpec = {
-                            buildNavTransition(
-                                animationType = settingsState.animationType,
-                                durationMs = settingsState.animationDurationMs,
-                                isPop = true
-                            )
-                        },
+                        settingsViewModel = settingsViewModel,
                         entryProvider = { key ->
                             when (key) {
                                 is HomeRoute -> NavEntry(key) {
