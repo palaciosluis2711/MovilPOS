@@ -13,5 +13,10 @@ data class Product(
     val price: Double,
     val alertQuantity: Int = 0,
     val stock: Int,
-    val imageUri: String? = null
+    val imageUri: String? = null,
+    val appliedTaxIds: List<String> = emptyList(),
+    val isTaxIncludedInPrice: Boolean = false,
+    val isBundle: Boolean = false,
+    val bundleItems: List<BundleItem> = emptyList(),
+    val isService: Boolean = false
 )

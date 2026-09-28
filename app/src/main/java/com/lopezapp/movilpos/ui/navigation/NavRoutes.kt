@@ -14,3 +14,21 @@ data object InventoryRoute : NavKey
 
 @Serializable
 data object SettingsRoute : NavKey
+
+@Serializable
+data object SuppliersRoute : NavKey
+
+@Serializable
+data class SupplierDetailRoute(val supplierId: String) : NavKey
+
+@Serializable
+data class SupplierEditRoute(val supplierId: String? = null) : NavKey
+
+@Serializable
+data object CustomersRoute : NavKey
+
+@Serializable
+data class CustomerDetailRoute(val customerId: String) : NavKey
+
+@Serializable
+data class CustomerEditRoute(val customerId: String? = null) : NavKey

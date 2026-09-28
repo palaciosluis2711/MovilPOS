@@ -1,6 +1,7 @@
 package com.lopezapp.movilpos.ui
 
 import android.content.Context
+import android.widget.Toast
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -8,7 +9,6 @@ import android.graphics.Paint
 import android.media.ExifInterface
 import android.net.Uri
 import androidx.core.net.toUri
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -20,14 +20,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -39,12 +42,15 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Percent
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Straighten
@@ -103,10 +109,17 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.withStyle
+import com.lopezapp.movilpos.util.formatCurrency
+import com.lopezapp.movilpos.util.roundToTwoDecimals
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -115,7 +128,10 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import coil.compose.AsyncImage
+import com.lopezapp.movilpos.data.model.BundleItem
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.Tax
+import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.ui.navigation.AppNavDisplay
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
@@ -130,7 +146,10 @@ import java.io.FileOutputStream
 private object ProductListKey : NavKey
 
 @Serializable
-private data class ProductDetailKey(val productId: String?) : NavKey // null for new
+private data class ProductDetailKey(val productId: String) : NavKey
+
+@Serializable
+private data class ProductEditKey(val productId: String?) : NavKey // null for new
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
@@ -140,6 +159,11 @@ fun InventoryScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val settingsUiState by settingsViewModel.uiState.collectAsState()
+    val currencySymbol = settingsUiState.currencySymbol
+    val defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces
+    val allowExtraDecimals = settingsUiState.allowExtraDecimals
+
     val backStack = rememberNavBackStack(ProductListKey)
     
     val windowAdaptiveInfo = currentWindowAdaptiveInfoV2()
@@ -175,13 +199,29 @@ fun InventoryScreen(
                     viewModel = viewModel,
                     onNavigateBack = onNavigateBack,
                     onProductClick = { backStack.add(ProductDetailKey(it.id)) },
-                    onAddProduct = { backStack.add(ProductDetailKey(null)) }
+                    onAddProduct = { backStack.add(ProductEditKey(null)) },
+                    currencySymbol = currencySymbol,
+                    defaultDecimalPlaces = defaultDecimalPlaces,
+                    allowExtraDecimals = allowExtraDecimals
                 )
             }
             entry<ProductDetailKey>(
                 metadata = ListDetailSceneStrategy.detailPane()
             ) { key ->
                 ProductDetailScreen(
+                    productId = key.productId,
+                    viewModel = viewModel,
+                    onEditClick = { backStack.add(ProductEditKey(key.productId)) },
+                    onNavigateUp = { backStack.removeLastOrNull() },
+                    currencySymbol = currencySymbol,
+                    defaultDecimalPlaces = defaultDecimalPlaces,
+                    allowExtraDecimals = allowExtraDecimals
+                )
+            }
+            entry<ProductEditKey>(
+                metadata = ListDetailSceneStrategy.detailPane()
+            ) { key ->
+                ProductEditScreen(
                     productId = key.productId,
                     viewModel = viewModel,
                     onNavigateUp = { backStack.removeLastOrNull() }
@@ -197,7 +237,10 @@ fun ProductListScreen(
     viewModel: InventoryViewModel,
     onNavigateBack: () -> Unit,
     onProductClick: (Product) -> Unit,
-    onAddProduct: () -> Unit
+    onAddProduct: () -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true
 ) {
     val products by viewModel.inventoryState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -223,6 +266,8 @@ fun ProductListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
                 .padding(horizontal = 16.dp)
         ) {
             OutlinedTextField(
@@ -263,9 +308,15 @@ fun ProductListScreen(
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(text = product.name, style = MaterialTheme.typography.titleMedium)
-                                Text(text = "Stock: ${product.stock}", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = if (product.isService) "Servicio" else "Stock: ${product.stock}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
                             }
-                            Text(text = "$${product.price}", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                style = MaterialTheme.typography.titleMedium
+                            )
                         }
                     }
                 }
@@ -277,48 +328,33 @@ fun ProductListScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductDetailScreen(
-    productId: String?,
+    productId: String,
     viewModel: InventoryViewModel,
-    onNavigateUp: () -> Unit
+    onEditClick: () -> Unit,
+    onNavigateUp: () -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true
 ) {
     val products by viewModel.inventoryState.collectAsState()
+    val allProducts by viewModel.allProducts.collectAsState()
+    val taxes by viewModel.taxes.collectAsState()
     val product = products.find { it.id == productId }
 
-    var isEditMode by remember(productId) { mutableStateOf(productId == null) }
-
-    BackHandler(enabled = (isEditMode && productId != null)) {
-        isEditMode = false
-    }
-
-    if (isEditMode) {
-        ProductEditForm(
-            product = product,
-            productId = productId,
-            viewModel = viewModel,
-            onNavigateUp = {
-                if (productId != null) {
-                    isEditMode = false
-                } else {
-                    onNavigateUp()
-                }
-            },
-            onSaveSuccess = {
-                if (productId != null) {
-                    isEditMode = false
-                } else {
-                    onNavigateUp()
-                }
-            }
-        )
-    } else if (product != null) {
+    if (product != null) {
         ProductReadOnlyView(
             product = product,
-            onEditClick = { isEditMode = true },
+            taxes = taxes,
+            allProducts = allProducts,
+            onEditClick = onEditClick,
             onDeleteClick = {
                 viewModel.removeProduct(product.id)
                 onNavigateUp()
             },
-            onNavigateUp = onNavigateUp
+            onNavigateUp = onNavigateUp,
+            currencySymbol = currencySymbol,
+            defaultDecimalPlaces = defaultDecimalPlaces,
+            allowExtraDecimals = allowExtraDecimals
         )
     } else {
         Scaffold(
@@ -345,14 +381,39 @@ fun ProductDetailScreen(
     }
 }
 
+@Composable
+fun ProductEditScreen(
+    productId: String?,
+    viewModel: InventoryViewModel,
+    onNavigateUp: () -> Unit
+) {
+    val products by viewModel.inventoryState.collectAsState()
+    val product = if (productId != null) products.find { it.id == productId } else null
+
+    ProductEditForm(
+        product = product,
+        productId = productId,
+        viewModel = viewModel,
+        onNavigateUp = onNavigateUp,
+        onSaveSuccess = onNavigateUp
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductReadOnlyView(
     product: Product,
+    taxes: List<Tax> = emptyList(),
+    allProducts: List<Product> = emptyList(),
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onNavigateUp: () -> Unit
+    onNavigateUp: () -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true
 ) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     if (showDeleteDialog) {
@@ -408,7 +469,7 @@ fun ProductReadOnlyView(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Main Overview Card with Circular Image to the left of Product Name and Category/Brand Capsule
+            // Main Overview Card
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -418,7 +479,6 @@ fun ProductReadOnlyView(
                         .padding(20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Circular Product Photo (or Circular Placeholder)
                     if (!product.imageUri.isNullOrBlank()) {
                         AsyncImage(
                             model = product.imageUri,
@@ -448,7 +508,6 @@ fun ProductReadOnlyView(
 
                     Spacer(modifier = Modifier.width(16.dp))
 
-                    // Product Title & Capsule Chip (Category and Brand)
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -460,15 +519,22 @@ fun ProductReadOnlyView(
                             color = MaterialTheme.colorScheme.onSurface
                         )
 
-                        val categoryText = product.category.ifBlank { "General" }
-                        val brandText = product.brand.ifBlank { "Sin marca" }
+                        val capsuleText = when {
+                            product.isService -> "Servicio"
+                            product.isBundle -> "Producto compuesto (Bundle)"
+                            else -> {
+                                val categoryText = product.category.ifBlank { "General" }
+                                val brandText = product.brand.ifBlank { "Sin marca" }
+                                "$categoryText • $brandText"
+                            }
+                        }
                         Surface(
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = if (product.isService) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = if (product.isService) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
                         ) {
                             Text(
-                                text = "$categoryText • $brandText",
+                                text = capsuleText,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -499,7 +565,7 @@ fun ProductReadOnlyView(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "$${product.price}",
+                            text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -523,11 +589,302 @@ fun ProductReadOnlyView(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "$${product.cost}",
+                            text = formatCurrency(product.cost, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
+                    }
+                }
+            }
+
+            // Bundle Items & Aggregated Categories/Brands Card (if product.isBundle)
+            if (product.isBundle) {
+                val bundleChildProducts = product.bundleItems.mapNotNull { item ->
+                    val p = allProducts.find { it.id == item.productId }
+                    if (p != null) item to p else null
+                }
+                val aggregatedCategories = bundleChildProducts
+                    .map { it.second.category.ifBlank { "General" } }
+                    .distinct()
+                val aggregatedBrands = bundleChildProducts
+                    .map { it.second.brand.ifBlank { "Sin marca" } }
+                    .distinct()
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Contenido del Bundle",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        if (product.bundleItems.isEmpty()) {
+                            Text(
+                                text = "Sin productos agregados al bundle",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            val originalTotal = bundleChildProducts.sumOf { (bundleItem, itemProduct) ->
+                                itemProduct.price * bundleItem.quantity
+                            }
+                            val isDiscounted = product.price < originalTotal && originalTotal > 0
+                            val ratio = if (isDiscounted) product.price / originalTotal else 1.0
+
+                            val discountColor = if (isSystemInDarkTheme()) Color(0xFFEC407A) else Color(0xFFE91E63)
+                            val normalPriceColor = MaterialTheme.colorScheme.primary
+                            val priceColor = if (isDiscounted) discountColor else normalPriceColor
+
+                            product.bundleItems.forEach { item ->
+                                val child = allProducts.find { it.id == item.productId }
+                                val childName = child?.name ?: "Producto desconocido"
+                                val childPrice = child?.price ?: 0.0
+
+                                val effectiveUnitPrice = if (isDiscounted) (childPrice * ratio).roundToTwoDecimals() else childPrice
+                                val subtotal = if (isDiscounted) (effectiveUnitPrice * item.quantity).roundToTwoDecimals() else (childPrice * item.quantity)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = childName,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        val subtitleText = buildAnnotatedString {
+                                            append("Cantidad: ${item.quantity} ud.  •  Precio unitario: ")
+                                            if (isDiscounted) {
+                                                withStyle(SpanStyle(color = discountColor, fontWeight = FontWeight.Bold)) {
+                                                    append(formatCurrency(effectiveUnitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals))
+                                                }
+                                            } else {
+                                                append(formatCurrency(effectiveUnitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals))
+                                            }
+                                        }
+                                        Text(
+                                            text = subtitleText,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = formatCurrency(subtotal, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = priceColor
+                                    )
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            }
+                        }
+
+                        val categoriesSummary = if (aggregatedCategories.isNotEmpty()) {
+                            "Categorías incluidas: " + aggregatedCategories.joinToString(", ")
+                        } else {
+                            "Categorías incluidas: Ninguna"
+                        }
+                        val brandsSummary = if (aggregatedBrands.isNotEmpty()) {
+                            "Marcas incluidas: " + aggregatedBrands.joinToString(", ")
+                        } else {
+                            "Marcas incluidas: Ninguna"
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = categoriesSummary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = brandsSummary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                // Applied Taxes Calculated on Overall Bundle Price Card
+                val appliedTaxes = taxes.filter { product.appliedTaxIds.contains(it.id) }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Impuestos aplicados al Bundle",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        if (appliedTaxes.isEmpty()) {
+                            Text(
+                                text = "Sin impuestos aplicados al bundle",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            var totalTax = 0.0
+                            appliedTaxes.forEach { tax ->
+                                val taxAmount = if (tax.valueType == TaxValueType.PERCENTAGE) {
+                                    if (product.isTaxIncludedInPrice) {
+                                        (product.price - (product.price / (1.0 + tax.value / 100.0))).roundToTwoDecimals()
+                                    } else {
+                                        (product.price * (tax.value / 100.0)).roundToTwoDecimals()
+                                    }
+                                } else {
+                                    tax.value
+                                }
+                                totalTax = (totalTax + taxAmount).roundToTwoDecimals()
+
+                                val valueStr = if (tax.valueType == TaxValueType.PERCENTAGE) {
+                                    "${if (tax.value % 1.0 == 0.0) tax.value.toInt().toString() else tax.value.toString()}%"
+                                } else {
+                                    formatCurrency(tax.value, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${tax.name} ($valueStr)",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        if (!tax.description.isNullOrBlank()) {
+                                            Text(
+                                                text = tax.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = formatCurrency(taxAmount, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Impuesto Total Calculado",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = formatCurrency(totalTax, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Text(
+                                text = if (product.isTaxIncludedInPrice) {
+                                    "Los impuestos están incluidos en el precio del bundle (${formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)})."
+                                } else {
+                                    "Los impuestos no están incluidos. Precio total estimado con impuestos: ${formatCurrency(product.price + totalTax, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Service Required Products Card (if product.isService and has bundleItems)
+            if (product.isService && product.bundleItems.isNotEmpty()) {
+                val serviceChildProducts = product.bundleItems.mapNotNull { item ->
+                    val p = allProducts.find { it.id == item.productId }
+                    if (p != null) item to p else null
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Productos utilizados en el servicio",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        serviceChildProducts.forEach { (item, child) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = child.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "Cantidad: ${item.quantity} ${child.unitOfMeasure.ifBlank { "unidad" }}  •  Precio unitario: ${formatCurrency(child.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = formatCurrency(child.price * item.quantity, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        }
                     }
                 }
             }
@@ -546,60 +903,111 @@ fun ProductReadOnlyView(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Detalles del Producto",
+                        text = if (product.isService) "Detalles del Servicio" else "Detalles del Producto",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+                    val barcode = product.barcode
+                    val isBarcodeAvailable = !barcode.isNullOrBlank()
+                    val barcodeText = if (isBarcodeAvailable && barcode != null) barcode else "No aplica"
+                    val onCopyBarcode = {
+                        if (barcode != null) {
+                            clipboardManager.setText(AnnotatedString(barcode))
+                            Toast.makeText(context, "Código de barras copiado al portapapeles", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
                     InfoRow(
                         icon = Icons.Default.QrCode,
                         label = "Código de barras",
-                        value = if (product.barcode.isNullOrBlank()) "No aplica" else product.barcode
+                        value = barcodeText,
+                        onClick = if (isBarcodeAvailable) onCopyBarcode else null,
+                        trailingContent = if (isBarcodeAvailable) {
+                            {
+                                IconButton(onClick = onCopyBarcode) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copiar código de barras"
+                                    )
+                                }
+                            }
+                        } else null
                     )
 
-                    InfoRow(
-                        icon = Icons.Default.Category,
-                        label = "Categoría",
-                        value = product.category.ifBlank { "General" }
-                    )
+                    if (!product.isBundle && !product.isService) {
+                        InfoRow(
+                            icon = Icons.Default.Category,
+                            label = "Categoría",
+                            value = product.category.ifBlank { "General" }
+                        )
 
-                    InfoRow(
-                        icon = Icons.AutoMirrored.Filled.BrandingWatermark,
-                        label = "Marca",
-                        value = product.brand.ifBlank { "Sin marca" }
-                    )
+                        InfoRow(
+                            icon = Icons.AutoMirrored.Filled.BrandingWatermark,
+                            label = "Marca",
+                            value = product.brand.ifBlank { "Sin marca" }
+                        )
+                    }
 
-                    InfoRow(
-                        icon = Icons.Default.Straighten,
-                        label = "Unidad de medida",
-                        value = product.unitOfMeasure.ifBlank { "unidad" }
-                    )
+                    if (!product.isService) {
+                        InfoRow(
+                            icon = Icons.Default.Straighten,
+                            label = "Unidad de medida",
+                            value = product.unitOfMeasure.ifBlank { "unidad" }
+                        )
+                    }
 
                     InfoRow(
                         icon = Icons.Default.AttachMoney,
                         label = "Costo",
-                        value = "$${product.cost}"
+                        value = formatCurrency(product.cost, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
                     )
 
                     InfoRow(
                         icon = Icons.Default.Sell,
                         label = "Precio de venta",
-                        value = "$${product.price}"
+                        value = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
                     )
 
-                    InfoRow(
-                        icon = Icons.Default.Warning,
-                        label = "Cantidad alerta",
-                        value = product.alertQuantity.toString()
-                    )
+                    if (!product.isService) {
+                        InfoRow(
+                            icon = Icons.Default.Warning,
+                            label = "Cantidad alerta",
+                            value = product.alertQuantity.toString()
+                        )
 
-                    InfoRow(
-                        icon = Icons.Default.Inventory2,
-                        label = "Stock actual",
-                        value = product.stock.toString()
-                    )
+                        InfoRow(
+                            icon = Icons.Default.Inventory2,
+                            label = "Cantidad en inventario",
+                            value = product.stock.toString()
+                        )
+                    }
+
+                    if (!product.isBundle) {
+                        val appliedTaxes = taxes.filter { product.appliedTaxIds.contains(it.id) }
+                        val taxesText = if (appliedTaxes.isNotEmpty()) {
+                            appliedTaxes.joinToString(", ") { tax ->
+                                val valueStr = if (tax.valueType == TaxValueType.PERCENTAGE) {
+                                    "${if (tax.value % 1.0 == 0.0) tax.value.toInt().toString() else tax.value.toString()}%"
+                                } else {
+                                    formatCurrency(tax.value, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
+                                }
+                                "${tax.name} ($valueStr)"
+                            } + if (product.isTaxIncludedInPrice) " (Incluido)" else " (No incluido)"
+                        } else if (product.appliedTaxIds.isNotEmpty()) {
+                            "${product.appliedTaxIds.size} impuesto(s)" + if (product.isTaxIncludedInPrice) " (Incluido)" else ""
+                        } else {
+                            "Sin impuestos"
+                        }
+
+                        InfoRow(
+                            icon = Icons.Default.Percent,
+                            label = "Impuestos aplicados",
+                            value = taxesText
+                        )
+                    }
                 }
             }
 
@@ -612,10 +1020,20 @@ fun ProductReadOnlyView(
 private fun InfoRow(
     icon: ImageVector,
     label: String,
-    value: String
+    value: String,
+    onClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .clickable { onClick() }
+                } else Modifier
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -638,6 +1056,9 @@ private fun InfoRow(
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
+        if (trailingContent != null) {
+            trailingContent()
+        }
     }
 }
 
@@ -650,15 +1071,25 @@ fun ProductEditForm(
     onNavigateUp: () -> Unit,
     onSaveSuccess: () -> Unit
 ) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    var isBundle by remember(product) { mutableStateOf(product?.isBundle ?: false) }
+    var isService by remember(product) { mutableStateOf(product?.isService ?: false) }
+    var bundleItems by remember(product) { mutableStateOf(product?.bundleItems ?: emptyList()) }
+
     var name by remember(product) { mutableStateOf(product?.name ?: "") }
     var barcode by remember(product) { mutableStateOf(product?.barcode ?: "") }
-    var category by remember(product) { mutableStateOf(product?.category ?: "General") }
-    var brand by remember(product) { mutableStateOf(product?.brand ?: "") }
+    var category by remember(product) { mutableStateOf(product?.category?.ifBlank { null } ?: if (product?.isService == true) "Servicio" else "General") }
+    var brand by remember(product) { mutableStateOf(product?.brand?.ifBlank { null } ?: if (product?.isService == true) "General" else "") }
     var unitOfMeasure by remember(product) { mutableStateOf(product?.unitOfMeasure ?: "unidad") }
     var costStr by remember(product) { mutableStateOf(product?.cost?.takeIf { it != 0.0 }?.toString() ?: "") }
     var priceStr by remember(product) { mutableStateOf(product?.price?.takeIf { it != 0.0 }?.toString() ?: "") }
     var alertQuantityStr by remember(product) { mutableStateOf(product?.alertQuantity?.takeIf { it != 0 }?.toString() ?: "") }
     var imageUri by remember(product) { mutableStateOf(product?.imageUri) }
+
+    val taxesList by viewModel.taxes.collectAsState()
+    var selectedTaxIds by remember(product) { mutableStateOf(product?.appliedTaxIds?.toSet() ?: emptySet()) }
+    var isTaxIncludedInPrice by remember(product) { mutableStateOf(product?.isTaxIncludedInPrice ?: false) }
 
     var pendingCropUri by remember { mutableStateOf<String?>(null) }
     var barcodeNotApplicable by remember(product) { mutableStateOf(product != null && product.barcode.isNullOrBlank()) }
@@ -683,13 +1114,128 @@ fun ProductEditForm(
         )
     }
 
-    val categories = listOf("General", "Bebidas", "Comida", "Snacks", "Electrónica")
-    val brands = listOf("Sin Marca", "Marca A", "Marca B", "Marca C")
-    val units = listOf("unidad", "libra", "kilo", "litro")
+    val categoriesList by viewModel.categories.collectAsState()
+    val availableCategoryNames = remember(categoriesList, product) {
+        val namesFromRepo = categoriesList.map { it.name }.filter { it.isNotBlank() }
+        val currentProductCategory = product?.category
+        val combined = if (!currentProductCategory.isNullOrBlank() && !namesFromRepo.contains(currentProductCategory)) {
+            namesFromRepo + currentProductCategory
+        } else if (namesFromRepo.isEmpty()) {
+            listOf("General")
+        } else {
+            namesFromRepo
+        }
+        combined.distinct()
+    }
+
+    val brandsList by viewModel.brands.collectAsState()
+    val availableBrandNames = remember(brandsList, product) {
+        val namesFromRepo = brandsList.map { it.name }.filter { it.isNotBlank() }
+        val currentProductBrand = product?.brand
+        val combined = if (!currentProductBrand.isNullOrBlank() && !namesFromRepo.contains(currentProductBrand)) {
+            namesFromRepo + currentProductBrand
+        } else if (namesFromRepo.isEmpty()) {
+            listOf("Sin marca")
+        } else {
+            namesFromRepo
+        }
+        combined.distinct()
+    }
+
+    val unitsOfMeasureList by viewModel.unitsOfMeasure.collectAsState()
+    val availableUnitNames = remember(unitsOfMeasureList, product, isBundle) {
+        val filteredUnits = if (isBundle) {
+            unitsOfMeasureList.filter { it.isPackageOrBox }
+        } else {
+            unitsOfMeasureList
+        }
+        val namesFromRepo = filteredUnits.map { it.name }.filter { it.isNotBlank() }
+        val currentProductUnit = product?.unitOfMeasure
+        val combined = if (isBundle) {
+            if (namesFromRepo.isEmpty()) {
+                listOf("Caja", "Paquete")
+            } else {
+                namesFromRepo
+            }
+        } else {
+            if (!currentProductUnit.isNullOrBlank() && namesFromRepo.none { it.equals(currentProductUnit, ignoreCase = true) }) {
+                namesFromRepo + currentProductUnit
+            } else if (namesFromRepo.isEmpty()) {
+                listOf("Unidad", "Kilogramo", "Libra", "Caja", "Paquete")
+            } else {
+                namesFromRepo
+            }
+        }
+        combined.distinct()
+    }
+
+    val allProducts by viewModel.allProducts.collectAsState()
 
     var categoryExpanded by remember { mutableStateOf(false) }
     var brandExpanded by remember { mutableStateOf(false) }
     var unitExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isBundle, isService, bundleItems, allProducts) {
+        if (isBundle || isService) {
+            val computedCost = bundleItems.sumOf { item ->
+                (allProducts.find { it.id == item.productId }?.cost ?: 0.0) * item.quantity
+            }
+            costStr = computedCost.toString()
+        }
+    }
+
+    val updateBundleItems: (List<BundleItem>) -> Unit = { newItems ->
+        bundleItems = newItems
+        val computedCost = newItems.sumOf { item ->
+            (allProducts.find { it.id == item.productId }?.cost ?: 0.0) * item.quantity
+        }
+        if (isBundle) {
+            val computedPrice = newItems.sumOf { item ->
+                (allProducts.find { it.id == item.productId }?.price ?: 0.0) * item.quantity
+            }
+            if (computedPrice > 0) priceStr = computedPrice.toString() else if (newItems.isEmpty()) priceStr = ""
+        }
+        costStr = computedCost.toString()
+    }
+
+    val onBundleToggle: (Boolean) -> Unit = { checked ->
+        isBundle = checked
+        if (checked) {
+            isService = false
+            val packageUnits = unitsOfMeasureList.filter { it.isPackageOrBox }
+            val validNames = packageUnits.map { it.name }
+            if (validNames.isNotEmpty() && !validNames.any { it.equals(unitOfMeasure, ignoreCase = true) }) {
+                unitOfMeasure = validNames.first()
+            } else if (validNames.isEmpty() && unitOfMeasure != "Caja" && unitOfMeasure != "Paquete") {
+                unitOfMeasure = "Caja"
+            }
+            val computedCost = bundleItems.sumOf { item ->
+                (allProducts.find { it.id == item.productId }?.cost ?: 0.0) * item.quantity
+            }
+            costStr = computedCost.toString()
+            if (bundleItems.isNotEmpty()) {
+                updateBundleItems(bundleItems)
+            }
+        }
+    }
+
+    val onServiceToggle: (Boolean) -> Unit = { checked ->
+        isService = checked
+        if (checked) {
+            isBundle = false
+            unitOfMeasure = "Servicio"
+            if (category == "General" || category == "Bundle" || category.isBlank()) {
+                category = "Servicio"
+            }
+            if (brand.isBlank()) {
+                brand = "General"
+            }
+            val computedCost = bundleItems.sumOf { item ->
+                (allProducts.find { it.id == item.productId }?.cost ?: 0.0) * item.quantity
+            }
+            costStr = computedCost.toString()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -707,6 +1253,8 @@ fun ProductEditForm(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
@@ -790,7 +1338,54 @@ fun ProductEditForm(
                 label = { Text("Nombre del producto") },
                 modifier = Modifier.fillMaxWidth()
             )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Checkboxes "Bundle" & "Servicio"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onBundleToggle(!isBundle) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = isBundle,
+                        onCheckedChange = { onBundleToggle(it) }
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Bundle",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onServiceToggle(!isService) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = isService,
+                        onCheckedChange = { onServiceToggle(it) }
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Servicio",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(12.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -801,11 +1396,26 @@ fun ProductEditForm(
                     label = { Text("Código de barras") },
                     enabled = !barcodeNotApplicable,
                     trailingIcon = {
-                        IconButton(
-                            onClick = { barcode = (10000000..99999999).random().toString() },
-                            enabled = !barcodeNotApplicable
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Generar")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (barcode.isNotBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(barcode))
+                                        Toast.makeText(context, "Código de barras copiado al portapapeles", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copiar código de barras"
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { barcode = (10000000..99999999).random().toString() },
+                                enabled = !barcodeNotApplicable
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Generar")
+                            }
                         }
                     },
                     modifier = Modifier.weight(1f)
@@ -823,107 +1433,334 @@ fun ProductEditForm(
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            
-            ExposedDropdownMenuBox(
-                expanded = categoryExpanded,
-                onExpandedChange = { categoryExpanded = it },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Categoría") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
-                    modifier = Modifier
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = categoryExpanded,
-                    onDismissRequest = { categoryExpanded = false }
-                ) {
-                    categories.forEach { item ->
-                        DropdownMenuItem(
-                            text = { Text(item) },
-                            onClick = {
-                                category = item
-                                categoryExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            ExposedDropdownMenuBox(
-                expanded = brandExpanded,
-                onExpandedChange = { brandExpanded = it },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = brand,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Marca") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = brandExpanded) },
-                    modifier = Modifier
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = brandExpanded,
-                    onDismissRequest = { brandExpanded = false }
-                ) {
-                    brands.forEach { item ->
-                        DropdownMenuItem(
-                            text = { Text(item) },
-                            onClick = {
-                                brand = item
-                                brandExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
 
-            ExposedDropdownMenuBox(
-                expanded = unitExpanded,
-                onExpandedChange = { unitExpanded = it },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = unitOfMeasure,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Unidad de medida") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
-                    modifier = Modifier
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = unitExpanded,
-                    onDismissRequest = { unitExpanded = false }
+            // Categoría & Marca (Hidden when isBundle or isService is true)
+            if (!isBundle && !isService) {
+                ExposedDropdownMenuBox(
+                    expanded = categoryExpanded,
+                    onExpandedChange = { categoryExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    units.forEach { item ->
-                        DropdownMenuItem(
-                            text = { Text(item) },
-                            onClick = {
-                                unitOfMeasure = item
-                                unitExpanded = false
-                            }
-                        )
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Categoría") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = categoryExpanded,
+                        onDismissRequest = { categoryExpanded = false }
+                    ) {
+                        availableCategoryNames.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item) },
+                                onClick = {
+                                    category = item
+                                    categoryExpanded = false
+                                }
+                            )
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                ExposedDropdownMenuBox(
+                    expanded = brandExpanded,
+                    onExpandedChange = { brandExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = brand,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Marca") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = brandExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = brandExpanded,
+                        onDismissRequest = { brandExpanded = false }
+                    ) {
+                        availableBrandNames.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item) },
+                                onClick = {
+                                    brand = item
+                                    brandExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            
+
+            // Unidad de Medida (Hidden when isService is true)
+            if (!isService) {
+                ExposedDropdownMenuBox(
+                    expanded = unitExpanded,
+                    onExpandedChange = { unitExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = unitOfMeasure,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Unidad de medida") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = unitExpanded,
+                        onDismissRequest = { unitExpanded = false }
+                    ) {
+                        availableUnitNames.forEach { item ->
+                            val matchingUnit = unitsOfMeasureList.find { it.name.equals(item, ignoreCase = true) }
+                            val labelText = if (matchingUnit != null && !matchingUnit.abbreviation.isNullOrBlank()) {
+                                "${matchingUnit.name} (${matchingUnit.abbreviation})"
+                            } else {
+                                item
+                            }
+                            DropdownMenuItem(
+                                text = { Text(labelText) },
+                                onClick = {
+                                    unitOfMeasure = item
+                                    unitExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            // Section: Productos incluidos / requeridos en el Bundle o Servicio
+            if (isBundle || isService) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = if (isService) "Productos incluidos / requeridos en el servicio" else "Productos incluidos en el Bundle",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        val availableProducts = remember(allProducts, product) {
+                            allProducts.filter { !it.isBundle && !it.isService && it.id != product?.id }
+                        }
+                        var itemsSearchQuery by remember { mutableStateOf("") }
+                        var addProductExpanded by remember { mutableStateOf(false) }
+
+                        val filteredProducts = remember(availableProducts, itemsSearchQuery) {
+                            if (itemsSearchQuery.isBlank()) {
+                                availableProducts
+                            } else {
+                                val query = itemsSearchQuery.trim().lowercase()
+                                availableProducts.filter { p ->
+                                    p.name.lowercase().contains(query) ||
+                                    (p.barcode != null && p.barcode.lowercase().contains(query))
+                                }
+                            }
+                        }
+
+                        if (bundleItems.isEmpty()) {
+                            Text(
+                                text = if (isService) "No hay productos requeridos para el servicio." else "No hay productos agregados al bundle.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            bundleItems.forEach { bundleItem ->
+                                val childProduct = allProducts.find { it.id == bundleItem.productId }
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = childProduct?.name ?: "Producto desconocido",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = "Precio unitario: ${formatCurrency(childProduct?.price ?: 0.0)}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    val newQty = bundleItem.quantity - 1
+                                                    if (newQty <= 0) {
+                                                        updateBundleItems(bundleItems.filter { it.productId != bundleItem.productId })
+                                                    } else {
+                                                        updateBundleItems(bundleItems.map {
+                                                            if (it.productId == bundleItem.productId) it.copy(quantity = newQty) else it
+                                                        })
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.Default.Remove, contentDescription = "Disminuir cantidad")
+                                            }
+                                            Text(
+                                                text = bundleItem.quantity.toString(),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp)
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    updateBundleItems(bundleItems.map {
+                                                        if (it.productId == bundleItem.productId) it.copy(quantity = it.quantity + 1) else it
+                                                    })
+                                                }
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = "Aumentar cantidad")
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    updateBundleItems(bundleItems.filter { it.productId != bundleItem.productId })
+                                                }
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Delete,
+                                                    contentDescription = if (isService) "Eliminar producto del servicio" else "Eliminar producto del bundle",
+                                                    tint = MaterialTheme.colorScheme.error
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        ExposedDropdownMenuBox(
+                            expanded = addProductExpanded,
+                            onExpandedChange = { addProductExpanded = it },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = itemsSearchQuery,
+                                onValueChange = { newValue ->
+                                    itemsSearchQuery = newValue
+                                    addProductExpanded = true
+                                },
+                                label = { Text(if (isService) "Buscar y agregar producto al servicio" else "Buscar y agregar producto al bundle") },
+                                placeholder = { Text("Nombre o código de barras...") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = addProductExpanded)
+                                },
+                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                                modifier = Modifier
+                                    .menuAnchor(MenuAnchorType.PrimaryEditable)
+                                    .fillMaxWidth()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = addProductExpanded,
+                                onDismissRequest = { addProductExpanded = false }
+                            ) {
+                                if (filteredProducts.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                if (availableProducts.isEmpty()) "No hay productos disponibles"
+                                                else "No se encontraron productos"
+                                            )
+                                        },
+                                        onClick = { addProductExpanded = false }
+                                    )
+                                } else {
+                                    filteredProducts.forEach { p ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = p.name,
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            fontWeight = FontWeight.Medium
+                                                        )
+                                                        if (!p.barcode.isNullOrBlank()) {
+                                                            Text(
+                                                                text = "Código: ${p.barcode}",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = formatCurrency(p.price),
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        fontWeight = FontWeight.Medium,
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                val existing = bundleItems.find { it.productId == p.id }
+                                                val newItems = if (existing != null) {
+                                                    bundleItems.map {
+                                                        if (it.productId == p.id) it.copy(quantity = it.quantity + 1) else it
+                                                    }
+                                                } else {
+                                                    bundleItems + BundleItem(productId = p.id, quantity = 1)
+                                                }
+                                                updateBundleItems(newItems)
+                                                itemsSearchQuery = ""
+                                                addProductExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             OutlinedTextField(
                 value = costStr,
-                onValueChange = { costStr = it },
+                onValueChange = { if (!isBundle && !isService) costStr = it },
                 label = { Text("Costo") },
+                enabled = !isBundle && !isService,
+                readOnly = isBundle || isService,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -938,48 +1775,169 @@ fun ProductEditForm(
             )
             Spacer(modifier = Modifier.height(12.dp))
             
-            OutlinedTextField(
-                value = alertQuantityStr,
-                onValueChange = { alertQuantityStr = it },
-                label = { Text("Cantidad Alerta") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (!isService) {
+                OutlinedTextField(
+                    value = alertQuantityStr,
+                    onValueChange = { alertQuantityStr = it },
+                    label = { Text("Cantidad Alerta") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Aplicar Impuestos Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Aplicar Impuestos",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    if (taxesList.isEmpty()) {
+                        Text(
+                            text = "No hay impuestos configurados.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "Selecciona los impuestos aplicables al producto:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        taxesList.forEach { tax ->
+                            val isSelected = selectedTaxIds.contains(tax.id)
+                            val formattedValue = if (tax.valueType == TaxValueType.PERCENTAGE) {
+                                "${if (tax.value % 1.0 == 0.0) tax.value.toInt().toString() else tax.value.toString()}%"
+                            } else {
+                                formatCurrency(tax.value)
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedTaxIds = if (isSelected) {
+                                            selectedTaxIds - tax.id
+                                        } else {
+                                            selectedTaxIds + tax.id
+                                        }
+                                    }
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = { checked ->
+                                        selectedTaxIds = if (checked) {
+                                            selectedTaxIds + tax.id
+                                        } else {
+                                            selectedTaxIds - tax.id
+                                        }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${tax.name} ($formattedValue)",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    if (!tax.description.isNullOrBlank()) {
+                                        Text(
+                                            text = tax.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isTaxIncludedInPrice = !isTaxIncludedInPrice }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isTaxIncludedInPrice,
+                            onCheckedChange = { isTaxIncludedInPrice = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Impuesto incluido en el precio del producto",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
                 onClick = {
                     val price = priceStr.toDoubleOrNull() ?: 0.0
                     val cost = costStr.toDoubleOrNull() ?: 0.0
-                    val alertQuantity = alertQuantityStr.toIntOrNull() ?: 0
+                    val finalAlertQuantity = if (isService) 0 else (alertQuantityStr.toIntOrNull() ?: 0)
+                    val finalUnitOfMeasure = if (isService) "Servicio" else unitOfMeasure
                     val finalBarcode = if (barcodeNotApplicable) null else barcode.takeIf { it.isNotBlank() }
-                    
+                    val finalCategory = if (isBundle) "Bundle" else if (isService) (category.takeIf { it.isNotBlank() && it != "Bundle" } ?: "Servicio") else category
+                    val finalBrand = if (isBundle) "" else if (isService) (brand.takeIf { it.isNotBlank() } ?: "General") else brand
+
                     if (name.isNotBlank()) {
                         if (product != null) {
                             viewModel.updateProduct(
                                 product.copy(
                                     name = name,
                                     barcode = finalBarcode,
-                                    category = category,
-                                    brand = brand,
-                                    unitOfMeasure = unitOfMeasure,
+                                    category = finalCategory,
+                                    brand = finalBrand,
+                                    unitOfMeasure = finalUnitOfMeasure,
                                     cost = cost,
                                     price = price,
-                                    alertQuantity = alertQuantity,
-                                    imageUri = imageUri
+                                    alertQuantity = finalAlertQuantity,
+                                    imageUri = imageUri,
+                                    appliedTaxIds = selectedTaxIds.toList(),
+                                    isTaxIncludedInPrice = isTaxIncludedInPrice,
+                                    isBundle = isBundle,
+                                    bundleItems = if (isBundle || isService) bundleItems else emptyList(),
+                                    isService = isService
                                 )
                             )
                         } else {
                             viewModel.addProduct(
                                 name = name,
                                 barcode = finalBarcode,
-                                category = category,
-                                brand = brand,
-                                unitOfMeasure = unitOfMeasure,
+                                category = finalCategory,
+                                brand = finalBrand,
+                                unitOfMeasure = finalUnitOfMeasure,
                                 cost = cost,
                                 price = price,
-                                alertQuantity = alertQuantity,
-                                imageUri = imageUri
+                                alertQuantity = finalAlertQuantity,
+                                imageUri = imageUri,
+                                appliedTaxIds = selectedTaxIds.toList(),
+                                isTaxIncludedInPrice = isTaxIncludedInPrice,
+                                isBundle = isBundle,
+                                bundleItems = if (isBundle || isService) bundleItems else emptyList(),
+                                isService = isService
                             )
                         }
                         onSaveSuccess()

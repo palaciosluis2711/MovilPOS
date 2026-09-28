@@ -1,5 +1,6 @@
 package com.lopezapp.movilpos.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -17,20 +18,30 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lopezapp.movilpos.data.model.CartItem
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
+import com.lopezapp.movilpos.ui.viewmodel.SettingsUiState
+import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
+import com.lopezapp.movilpos.util.formatCurrency
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun POSScreen(
     viewModel: POSViewModel,
+    settingsViewModel: SettingsViewModel? = null,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
+        ?: SettingsUiState()
+    val currencySymbol = settingsUiState.currencySymbol
+    val defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces
+    val allowExtraDecimals = settingsUiState.allowExtraDecimals
 
     Scaffold(
         topBar = {
@@ -44,13 +55,22 @@ fun POSScreen(
         },
         modifier = modifier
     ) { innerPadding ->
-        BoxWithConstraints(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
+                .fillMaxSize()
+        ) {
             if (maxWidth > 600.dp) {
                 // Wide layout (tablet/landscape)
                 Row(modifier = Modifier.fillMaxSize()) {
                     ProductGrid(
                         products = uiState.products,
                         onAddClick = { viewModel.addToCart(it) },
+                        currencySymbol = currencySymbol,
+                        defaultDecimalPlaces = defaultDecimalPlaces,
+                        allowExtraDecimals = allowExtraDecimals,
                         modifier = Modifier.weight(1.5f)
                     )
                     VerticalDivider(modifier = Modifier.fillMaxHeight().width(1.dp))
@@ -60,6 +80,9 @@ fun POSScreen(
                         onAddClick = { viewModel.addToCart(it) },
                         onRemoveClick = { viewModel.removeFromCart(it) },
                         onCheckout = { viewModel.checkout() },
+                        currencySymbol = currencySymbol,
+                        defaultDecimalPlaces = defaultDecimalPlaces,
+                        allowExtraDecimals = allowExtraDecimals,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -69,6 +92,9 @@ fun POSScreen(
                     ProductGrid(
                         products = uiState.products,
                         onAddClick = { viewModel.addToCart(it) },
+                        currencySymbol = currencySymbol,
+                        defaultDecimalPlaces = defaultDecimalPlaces,
+                        allowExtraDecimals = allowExtraDecimals,
                         modifier = Modifier.weight(1.2f)
                     )
                     Surface(
@@ -81,7 +107,10 @@ fun POSScreen(
                             total = uiState.total,
                             onAddClick = { viewModel.addToCart(it) },
                             onRemoveClick = { viewModel.removeFromCart(it) },
-                            onCheckout = { viewModel.checkout() }
+                            onCheckout = { viewModel.checkout() },
+                            currencySymbol = currencySymbol,
+                            defaultDecimalPlaces = defaultDecimalPlaces,
+                            allowExtraDecimals = allowExtraDecimals
                         )
                     }
                 }
@@ -94,6 +123,9 @@ fun POSScreen(
 fun ProductGrid(
     products: List<Product>,
     onAddClick: (Product) -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     LazyVerticalGrid(
@@ -124,7 +156,7 @@ fun ProductGrid(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "$${"%.2f".format(product.price)}",
+                        text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -154,9 +186,12 @@ fun ProductGrid(
 fun CartSection(
     cartItems: List<CartItem>,
     total: Double,
-    onAddClick: (Product) -> Unit,
-    onRemoveClick: (Product) -> Unit,
+    onAddClick: (CartItem) -> Unit,
+    onRemoveClick: (CartItem) -> Unit,
     onCheckout: () -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -198,8 +233,11 @@ fun CartSection(
                 items(cartItems) { item ->
                     CartItemRow(
                         item = item,
-                        onAddClick = { onAddClick(item.product) },
-                        onRemoveClick = { onRemoveClick(item.product) }
+                        onAddClick = { onAddClick(item) },
+                        onRemoveClick = { onRemoveClick(item) },
+                        currencySymbol = currencySymbol,
+                        defaultDecimalPlaces = defaultDecimalPlaces,
+                        allowExtraDecimals = allowExtraDecimals
                     )
                 }
             }
@@ -219,7 +257,7 @@ fun CartSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "$${"%.2f".format(total)}",
+                    text = formatCurrency(total, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -243,8 +281,17 @@ fun CartSection(
 fun CartItemRow(
     item: CartItem,
     onAddClick: () -> Unit,
-    onRemoveClick: () -> Unit
+    onRemoveClick: () -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true
 ) {
+    val discountColor = if (isSystemInDarkTheme()) Color(0xFFEC407A) else Color(0xFFE91E63)
+    val priceColor = if (item.isBundleDiscounted) discountColor else MaterialTheme.colorScheme.onSurfaceVariant
+
+    val formattedSubtotal = formatCurrency(item.subtotal, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
+    val formattedUnitPrice = formatCurrency(item.effectiveUnitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -259,9 +306,9 @@ fun CartItemRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "$${"%.2f".format(item.subtotal)}",
+                text = "$formattedSubtotal ($formattedUnitPrice c/u)",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = priceColor
             )
         }
         

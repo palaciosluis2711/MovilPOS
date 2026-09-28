@@ -3,7 +3,12 @@ package com.lopezapp.movilpos.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lopezapp.movilpos.data.model.Brand
+import com.lopezapp.movilpos.data.model.BundleItem
+import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.Tax
+import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import com.lopezapp.movilpos.data.repository.AppRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,6 +23,12 @@ class InventoryViewModel(
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
+
+    val categories: StateFlow<List<Category>> = repository.categories
+    val brands: StateFlow<List<Brand>> = repository.brands
+    val unitsOfMeasure: StateFlow<List<UnitOfMeasure>> = repository.unitsOfMeasure
+    val taxes: StateFlow<List<Tax>> = repository.taxes
+    val allProducts: StateFlow<List<Product>> = repository.products
 
     val inventoryState: StateFlow<List<Product>> = combine(
         repository.products,
@@ -48,7 +59,12 @@ class InventoryViewModel(
         price: Double, 
         alertQuantity: Int = 0,
         stock: Int = 0,
-        imageUri: String? = null
+        imageUri: String? = null,
+        appliedTaxIds: List<String> = emptyList(),
+        isTaxIncludedInPrice: Boolean = false,
+        isBundle: Boolean = false,
+        bundleItems: List<BundleItem> = emptyList(),
+        isService: Boolean = false
     ) {
         viewModelScope.launch {
             val newProduct = Product(
@@ -61,7 +77,12 @@ class InventoryViewModel(
                 price = price,
                 alertQuantity = alertQuantity,
                 stock = stock,
-                imageUri = imageUri
+                imageUri = imageUri,
+                appliedTaxIds = appliedTaxIds,
+                isTaxIncludedInPrice = isTaxIncludedInPrice,
+                isBundle = isBundle,
+                bundleItems = bundleItems,
+                isService = isService
             )
             repository.addProduct(newProduct)
         }
