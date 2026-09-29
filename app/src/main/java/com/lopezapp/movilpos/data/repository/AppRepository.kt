@@ -1,10 +1,14 @@
 package com.lopezapp.movilpos.data.repository
 
+import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.DocumentType
+import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.Purchase
+import com.lopezapp.movilpos.data.model.PurchaseItem
 import com.lopezapp.movilpos.data.model.Supplier
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
@@ -35,6 +39,12 @@ class AppRepository {
 
     private val _customers = MutableStateFlow<List<Customer>>(emptyList())
     val customers: StateFlow<List<Customer>> = _customers.asStateFlow()
+
+    private val _purchases = MutableStateFlow<List<Purchase>>(emptyList())
+    val purchases: StateFlow<List<Purchase>> = _purchases.asStateFlow()
+
+    private val _priceRules = MutableStateFlow<List<PriceRule>>(emptyList())
+    val priceRules: StateFlow<List<PriceRule>> = _priceRules.asStateFlow()
 
     init {
         // Load initial dummy data
@@ -89,6 +99,22 @@ class AppRepository {
                 municipality = "San Salvador Centro",
                 district = "San Salvador",
                 isDefault = true
+            )
+        )
+        _purchases.value = listOf(
+            Purchase(
+                supplierId = _suppliers.value.firstOrNull()?.id ?: "",
+                supplierName = _suppliers.value.firstOrNull()?.name ?: "Distribuidora Central S.A.",
+                dateMillis = System.currentTimeMillis(),
+                items = listOf(
+                    PurchaseItem(
+                        productId = _products.value.firstOrNull()?.id ?: "",
+                        productName = _products.value.firstOrNull()?.name ?: "Coffee",
+                        quantity = 10,
+                        unitCost = 1.5
+                    )
+                ),
+                totalCost = 15.0
             )
         )
     }
@@ -232,6 +258,49 @@ class AppRepository {
     fun setDefaultCustomer(customerId: String) {
         _customers.update { currentList ->
             currentList.map { it.copy(isDefault = (it.id == customerId)) }
+        }
+    }
+
+    fun addPurchase(purchase: Purchase) {
+        _purchases.update { currentList ->
+            currentList + purchase
+        }
+        _products.update { currentProducts ->
+            currentProducts.map { product ->
+                val matchingItem = purchase.items.find { it.productId == product.id }
+                if (matchingItem != null) {
+                    product.copy(
+                        stock = product.stock + matchingItem.quantity,
+                        cost = matchingItem.unitCost
+                    )
+                } else {
+                    product
+                }
+            }
+        }
+    }
+
+    fun deletePurchase(purchaseId: String) {
+        _purchases.update { currentList ->
+            currentList.filter { it.id != purchaseId }
+        }
+    }
+
+    fun addPriceRule(priceRule: PriceRule) {
+        _priceRules.update { currentList ->
+            currentList + priceRule
+        }
+    }
+
+    fun updatePriceRule(priceRule: PriceRule) {
+        _priceRules.update { currentList ->
+            currentList.map { if (it.id == priceRule.id) priceRule else it }
+        }
+    }
+
+    fun deletePriceRule(ruleId: String) {
+        _priceRules.update { currentList ->
+            currentList.filter { it.id != ruleId }
         }
     }
 }

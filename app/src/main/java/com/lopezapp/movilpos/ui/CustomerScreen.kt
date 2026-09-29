@@ -1,5 +1,10 @@
 package com.lopezapp.movilpos.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -847,54 +852,66 @@ fun CustomerEditForm(
             )
 
             // NIT Specific Fields
-            if (documentType == DocumentType.NIT) {
-                // NRC
-                OutlinedTextField(
-                    value = nrc,
-                    onValueChange = { nrc = it },
-                    label = { Text("NRC (Número de Registro de Contribuyente)") },
-                    placeholder = { Text("Ej. 123456-7") },
-                    leadingIcon = {
-                        Icon(imageVector = Icons.Default.Business, contentDescription = null)
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+            AnimatedVisibility(
+                visible = documentType == DocumentType.NIT,
+                enter = expandVertically(
+                    expandFrom = Alignment.Top,
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                ),
+                exit = shrinkVertically(
+                    shrinkTowards = Alignment.Top,
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
                 )
-
-                // Gran Contribuyente Checkbox
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.small)
-                        .toggleable(
-                            value = isLargeContributor,
-                            onValueChange = { isLargeContributor = it },
-                            role = Role.Checkbox
-                        )
-                        .padding(vertical = 8.dp)
-                ) {
-                    Checkbox(
-                        checked = isLargeContributor,
-                        onCheckedChange = null
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // NRC
+                    OutlinedTextField(
+                        value = nrc,
+                        onValueChange = { nrc = it },
+                        label = { Text("NRC (Número de Registro de Contribuyente)") },
+                        placeholder = { Text("Ej. 123456-7") },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Default.Business, contentDescription = null)
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Gran Contribuyente",
-                        style = MaterialTheme.typography.bodyLarge
+
+                    // Gran Contribuyente Checkbox
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.small)
+                            .toggleable(
+                                value = isLargeContributor,
+                                onValueChange = { isLargeContributor = it },
+                                role = Role.Checkbox
+                            )
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Checkbox(
+                            checked = isLargeContributor,
+                            onCheckedChange = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Gran Contribuyente",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+
+                    // Actividad Económica
+                    EditableSearchableDropdownField(
+                        value = commercialActivity,
+                        onValueChange = { commercialActivity = it },
+                        label = "Actividad Económica",
+                        options = ElSalvadorCommercialActivities.activities,
+                        placeholder = "Buscar o escribir actividad...",
+                        leadingIcon = Icons.Default.Work,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
-
-                // Actividad Económica
-                EditableSearchableDropdownField(
-                    value = commercialActivity,
-                    onValueChange = { commercialActivity = it },
-                    label = "Actividad Económica",
-                    options = ElSalvadorCommercialActivities.activities,
-                    placeholder = "Buscar o escribir actividad...",
-                    leadingIcon = Icons.Default.Work,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
 
             // Teléfono

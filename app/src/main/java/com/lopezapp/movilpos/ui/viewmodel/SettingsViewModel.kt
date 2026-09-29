@@ -3,8 +3,11 @@ package com.lopezapp.movilpos.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.Category
+import com.lopezapp.movilpos.data.model.Customer
+import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
@@ -26,7 +29,9 @@ data class SettingsUiState(
     val categories: List<Category> = emptyList(),
     val brands: List<Brand> = emptyList(),
     val unitsOfMeasure: List<UnitOfMeasure> = emptyList(),
-    val taxes: List<Tax> = emptyList()
+    val taxes: List<Tax> = emptyList(),
+    val customers: List<Customer> = emptyList(),
+    val priceRules: List<PriceRule> = emptyList()
 )
 
 class SettingsViewModel(
@@ -38,6 +43,13 @@ class SettingsViewModel(
     private val _defaultDecimalPlaces = MutableStateFlow(2)
     private val _allowExtraDecimals = MutableStateFlow(true)
 
+private data class CatalogData(
+    val categories: List<Category>,
+    val brands: List<Brand>,
+    val unitsOfMeasure: List<UnitOfMeasure>,
+    val taxes: List<Tax>
+)
+
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(_animationDurationMs, _animationType, _currencySymbol, _defaultDecimalPlaces, _allowExtraDecimals) { duration, type, symbol, decimals, extra ->
             SettingsUiState(
@@ -48,16 +60,20 @@ class SettingsViewModel(
                 allowExtraDecimals = extra
             )
         },
-        repository.categories,
-        repository.brands,
-        repository.unitsOfMeasure,
-        repository.taxes
-    ) { baseState, categories, brands, unitsOfMeasure, taxes ->
+        combine(repository.categories, repository.brands, repository.unitsOfMeasure, repository.taxes) { categories, brands, unitsOfMeasure, taxes ->
+            CatalogData(categories, brands, unitsOfMeasure, taxes)
+        },
+        combine(repository.customers, repository.priceRules) { customers, priceRules ->
+            Pair(customers, priceRules)
+        }
+    ) { baseState, catalog, extraData ->
         baseState.copy(
-            categories = categories,
-            brands = brands,
-            unitsOfMeasure = unitsOfMeasure,
-            taxes = taxes
+            categories = catalog.categories,
+            brands = catalog.brands,
+            unitsOfMeasure = catalog.unitsOfMeasure,
+            taxes = catalog.taxes,
+            customers = extraData.first,
+            priceRules = extraData.second
         )
     }.stateIn(
         scope = viewModelScope,
@@ -66,7 +82,9 @@ class SettingsViewModel(
             categories = repository.categories.value,
             brands = repository.brands.value,
             unitsOfMeasure = repository.unitsOfMeasure.value,
-            taxes = repository.taxes.value
+            taxes = repository.taxes.value,
+            customers = repository.customers.value,
+            priceRules = repository.priceRules.value
         )
     )
 
@@ -236,6 +254,24 @@ class SettingsViewModel(
     fun deleteTax(taxId: String) {
         viewModelScope.launch {
             repository.deleteTax(taxId)
+        }
+    }
+
+    fun addPriceRule(priceRule: PriceRule) {
+        viewModelScope.launch {
+            repository.addPriceRule(priceRule)
+        }
+    }
+
+    fun updatePriceRule(priceRule: PriceRule) {
+        viewModelScope.launch {
+            repository.updatePriceRule(priceRule)
+        }
+    }
+
+    fun deletePriceRule(ruleId: String) {
+        viewModelScope.launch {
+            repository.deletePriceRule(ruleId)
         }
     }
 

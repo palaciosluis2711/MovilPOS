@@ -1,5 +1,8 @@
 package com.lopezapp.movilpos
 
+import com.lopezapp.movilpos.data.model.ArithmeticOperator
+import com.lopezapp.movilpos.data.model.BaseVariable
+import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.model.AnimationType
@@ -265,6 +268,130 @@ class SettingsViewModelTest {
 
         val deletedTax = repository.taxes.value.find { it.id == initialTax.id }
         assertNull(deletedTax)
+    }
+
+    @Test
+    fun priceRule_calculatePrice_calculatesCorrectly() {
+        val costRule = PriceRule(
+            name = "Mayoreo",
+            baseVariable = BaseVariable.COST,
+            operator = ArithmeticOperator.DIVIDE,
+            value = 0.80
+        )
+        // cost = 10.0, price = 20.0 -> base = cost = 10.0 -> 10.0 / 0.80 = 12.5
+        assertEquals(12.5, costRule.calculatePrice(basePrice = 20.0, cost = 10.0), 0.001)
+
+        val priceRule = PriceRule(
+            name = "Descuento 20%",
+            baseVariable = BaseVariable.PRICE,
+            operator = ArithmeticOperator.MULTIPLY,
+            value = 0.80
+        )
+        // cost = 10.0, price = 20.0 -> base = price = 20.0 -> 20.0 * 0.80 = 16.0
+        assertEquals(16.0, priceRule.calculatePrice(basePrice = 20.0, cost = 10.0), 0.001)
+
+        val addRule = PriceRule(
+            name = "Cargo Fijo",
+            baseVariable = BaseVariable.PRICE,
+            operator = ArithmeticOperator.ADD,
+            value = 5.0
+        )
+        assertEquals(25.0, addRule.calculatePrice(basePrice = 20.0, cost = 10.0), 0.001)
+
+        val subRule = PriceRule(
+            name = "Descuento Fijo",
+            baseVariable = BaseVariable.PRICE,
+            operator = ArithmeticOperator.SUBTRACT,
+            value = 3.0
+        )
+        assertEquals(17.0, subRule.calculatePrice(basePrice = 20.0, cost = 10.0), 0.001)
+    }
+
+    @Test
+    fun priceRule_formulaRepresentation_formatsCorrectly() {
+        val rule1 = PriceRule(
+            name = "Regla 1",
+            baseVariable = BaseVariable.COST,
+            operator = ArithmeticOperator.DIVIDE,
+            value = 0.8
+        )
+        assertEquals("[Costo] ÷ 0.8", rule1.formulaRepresentation())
+
+        val rule2 = PriceRule(
+            name = "Regla 2",
+            baseVariable = BaseVariable.PRICE,
+            operator = ArithmeticOperator.ADD,
+            value = 5.0
+        )
+        assertEquals("[Precio] + 5", rule2.formulaRepresentation())
+    }
+
+    @Test
+    fun addPriceRule_addsNewRuleToViewModelAndRepository() = runTest {
+        val newRule = PriceRule(
+            name = "Precio VIP",
+            baseVariable = BaseVariable.PRICE,
+            operator = ArithmeticOperator.MULTIPLY,
+            value = 0.90,
+            applyToAllCategories = false,
+            categoryNames = listOf("Bebidas"),
+            applyToAllCustomers = true
+        )
+        viewModel.addPriceRule(newRule)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val rules = viewModel.uiState.value.priceRules
+        val addedRule = rules.find { it.name == "Precio VIP" }
+
+        assertNotNull(addedRule)
+        assertEquals(BaseVariable.PRICE, addedRule?.baseVariable)
+        assertEquals(ArithmeticOperator.MULTIPLY, addedRule?.operator)
+        assertEquals(0.90, addedRule?.value ?: 0.0, 0.001)
+        assertFalse(addedRule?.applyToAllCategories ?: true)
+        assertEquals(listOf("Bebidas"), addedRule?.categoryNames)
+    }
+
+    @Test
+    fun updatePriceRule_updatesRuleInViewModelAndRepository() = runTest {
+        val newRule = PriceRule(
+            name = "Regla Inicial",
+            baseVariable = BaseVariable.COST,
+            operator = ArithmeticOperator.ADD,
+            value = 2.0
+        )
+        viewModel.addPriceRule(newRule)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val createdRule = viewModel.uiState.value.priceRules.find { it.name == "Regla Inicial" }!!
+        val updatedRule = createdRule.copy(name = "Regla Modificada", value = 3.5, isActive = false)
+
+        viewModel.updatePriceRule(updatedRule)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val finalRule = viewModel.uiState.value.priceRules.find { it.id == createdRule.id }
+        assertNotNull(finalRule)
+        assertEquals("Regla Modificada", finalRule?.name)
+        assertEquals(3.5, finalRule?.value ?: 0.0, 0.001)
+        assertFalse(finalRule?.isActive ?: true)
+    }
+
+    @Test
+    fun deletePriceRule_removesRuleFromViewModelAndRepository() = runTest {
+        val newRule = PriceRule(
+            name = "Regla a Borrar",
+            baseVariable = BaseVariable.COST,
+            operator = ArithmeticOperator.ADD,
+            value = 1.0
+        )
+        viewModel.addPriceRule(newRule)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val createdRule = viewModel.uiState.value.priceRules.find { it.name == "Regla a Borrar" }!!
+        viewModel.deletePriceRule(createdRule.id)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val deletedRule = viewModel.uiState.value.priceRules.find { it.id == createdRule.id }
+        assertNull(deletedRule)
     }
 
     @Test

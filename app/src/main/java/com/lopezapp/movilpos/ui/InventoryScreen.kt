@@ -1,6 +1,11 @@
 package com.lopezapp.movilpos.ui
 
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import android.widget.Toast
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -45,6 +50,7 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Percent
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -114,12 +120,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
 import com.lopezapp.movilpos.util.formatCurrency
 import com.lopezapp.movilpos.util.roundToTwoDecimals
+import com.lopezapp.movilpos.util.sanitizeDecimalTextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -1082,9 +1091,16 @@ fun ProductEditForm(
     var category by remember(product) { mutableStateOf(product?.category?.ifBlank { null } ?: if (product?.isService == true) "Servicio" else "General") }
     var brand by remember(product) { mutableStateOf(product?.brand?.ifBlank { null } ?: if (product?.isService == true) "General" else "") }
     var unitOfMeasure by remember(product) { mutableStateOf(product?.unitOfMeasure ?: "unidad") }
-    var costStr by remember(product) { mutableStateOf(product?.cost?.takeIf { it != 0.0 }?.toString() ?: "") }
-    var priceStr by remember(product) { mutableStateOf(product?.price?.takeIf { it != 0.0 }?.toString() ?: "") }
+    var costState by remember(product) {
+        val initialCost = product?.cost?.takeIf { it != 0.0 }?.toString() ?: ""
+        mutableStateOf(TextFieldValue(initialCost, selection = TextRange(initialCost.length)))
+    }
+    var priceState by remember(product) {
+        val initialPrice = product?.price?.takeIf { it != 0.0 }?.toString() ?: ""
+        mutableStateOf(TextFieldValue(initialPrice, selection = TextRange(initialPrice.length)))
+    }
     var alertQuantityStr by remember(product) { mutableStateOf(product?.alertQuantity?.takeIf { it != 0 }?.toString() ?: "") }
+    var stockStr by remember(product) { mutableStateOf(product?.stock?.toString() ?: "0") }
     var imageUri by remember(product) { mutableStateOf(product?.imageUri) }
 
     val taxesList by viewModel.taxes.collectAsState()
@@ -1180,7 +1196,8 @@ fun ProductEditForm(
             val computedCost = bundleItems.sumOf { item ->
                 (allProducts.find { it.id == item.productId }?.cost ?: 0.0) * item.quantity
             }
-            costStr = computedCost.toString()
+            val text = computedCost.toString()
+            costState = TextFieldValue(text, selection = TextRange(text.length))
         }
     }
 
@@ -1193,9 +1210,15 @@ fun ProductEditForm(
             val computedPrice = newItems.sumOf { item ->
                 (allProducts.find { it.id == item.productId }?.price ?: 0.0) * item.quantity
             }
-            if (computedPrice > 0) priceStr = computedPrice.toString() else if (newItems.isEmpty()) priceStr = ""
+            if (computedPrice > 0) {
+                val pText = computedPrice.toString()
+                priceState = TextFieldValue(pText, selection = TextRange(pText.length))
+            } else if (newItems.isEmpty()) {
+                priceState = TextFieldValue("")
+            }
         }
-        costStr = computedCost.toString()
+        val cText = computedCost.toString()
+        costState = TextFieldValue(cText, selection = TextRange(cText.length))
     }
 
     val onBundleToggle: (Boolean) -> Unit = { checked ->
@@ -1212,7 +1235,8 @@ fun ProductEditForm(
             val computedCost = bundleItems.sumOf { item ->
                 (allProducts.find { it.id == item.productId }?.cost ?: 0.0) * item.quantity
             }
-            costStr = computedCost.toString()
+            val cText = computedCost.toString()
+            costState = TextFieldValue(cText, selection = TextRange(cText.length))
             if (bundleItems.isNotEmpty()) {
                 updateBundleItems(bundleItems)
             }
@@ -1233,7 +1257,8 @@ fun ProductEditForm(
             val computedCost = bundleItems.sumOf { item ->
                 (allProducts.find { it.id == item.productId }?.cost ?: 0.0) * item.quantity
             }
-            costStr = computedCost.toString()
+            val cText = computedCost.toString()
+            costState = TextFieldValue(cText, selection = TextRange(cText.length))
         }
     }
 
@@ -1435,115 +1460,149 @@ fun ProductEditForm(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Categoría & Marca (Hidden when isBundle or isService is true)
-            if (!isBundle && !isService) {
-                ExposedDropdownMenuBox(
-                    expanded = categoryExpanded,
-                    onExpandedChange = { categoryExpanded = it },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = category,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Categoría") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
+            AnimatedVisibility(
+                visible = !isBundle && !isService,
+                enter = expandVertically(
+                    expandFrom = Alignment.Top,
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                ),
+                exit = shrinkVertically(
+                    shrinkTowards = Alignment.Top,
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                )
+            ) {
+                Column {
+                    ExposedDropdownMenuBox(
                         expanded = categoryExpanded,
-                        onDismissRequest = { categoryExpanded = false }
+                        onExpandedChange = { categoryExpanded = it },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        availableCategoryNames.forEach { item ->
-                            DropdownMenuItem(
-                                text = { Text(item) },
-                                onClick = {
-                                    category = item
-                                    categoryExpanded = false
-                                }
-                            )
+                        OutlinedTextField(
+                            value = category,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Categoría") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = categoryExpanded,
+                            onDismissRequest = { categoryExpanded = false }
+                        ) {
+                            availableCategoryNames.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item) },
+                                    onClick = {
+                                        category = item
+                                        categoryExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                ExposedDropdownMenuBox(
-                    expanded = brandExpanded,
-                    onExpandedChange = { brandExpanded = it },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = brand,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Marca") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = brandExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    ExposedDropdownMenuBox(
                         expanded = brandExpanded,
-                        onDismissRequest = { brandExpanded = false }
+                        onExpandedChange = { brandExpanded = it },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        availableBrandNames.forEach { item ->
-                            DropdownMenuItem(
-                                text = { Text(item) },
-                                onClick = {
-                                    brand = item
-                                    brandExpanded = false
-                                }
-                            )
+                        OutlinedTextField(
+                            value = brand,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Marca") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = brandExpanded) },
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = brandExpanded,
+                            onDismissRequest = { brandExpanded = false }
+                        ) {
+                            availableBrandNames.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item) },
+                                    onClick = {
+                                        brand = item
+                                        brandExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
 
             // Unidad de Medida (Hidden when isService is true)
-            if (!isService) {
-                ExposedDropdownMenuBox(
-                    expanded = unitExpanded,
-                    onExpandedChange = { unitExpanded = it },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = unitOfMeasure,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Unidad de medida") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
+            AnimatedVisibility(
+                visible = !isService,
+                enter = expandVertically(
+                    expandFrom = Alignment.Top,
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                ),
+                exit = shrinkVertically(
+                    shrinkTowards = Alignment.Top,
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                )
+            ) {
+                Column {
+                    ExposedDropdownMenuBox(
                         expanded = unitExpanded,
-                        onDismissRequest = { unitExpanded = false }
+                        onExpandedChange = { unitExpanded = it },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        availableUnitNames.forEach { item ->
-                            val matchingUnit = unitsOfMeasureList.find { it.name.equals(item, ignoreCase = true) }
-                            val labelText = if (matchingUnit != null && !matchingUnit.abbreviation.isNullOrBlank()) {
-                                "${matchingUnit.name} (${matchingUnit.abbreviation})"
-                            } else {
-                                item
-                            }
-                            DropdownMenuItem(
-                                text = { Text(labelText) },
-                                onClick = {
-                                    unitOfMeasure = item
-                                    unitExpanded = false
+                        OutlinedTextField(
+                            value = unitOfMeasure,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Unidad de medida") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = unitExpanded,
+                            onDismissRequest = { unitExpanded = false }
+                        ) {
+                            availableUnitNames.forEach { item ->
+                                val matchingUnit = unitsOfMeasureList.find { it.name.equals(item, ignoreCase = true) }
+                                val labelText = if (matchingUnit != null && !matchingUnit.abbreviation.isNullOrBlank()) {
+                                    "${matchingUnit.name} (${matchingUnit.abbreviation})"
+                                } else {
+                                    item
                                 }
-                            )
+                                DropdownMenuItem(
+                                    text = { Text(labelText) },
+                                    onClick = {
+                                        unitOfMeasure = item
+                                        unitExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
 
             // Section: Productos incluidos / requeridos en el Bundle o Servicio
-            if (isBundle || isService) {
+            AnimatedVisibility(
+                visible = isBundle || isService,
+                enter = expandVertically(
+                    expandFrom = Alignment.Top,
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                ),
+                exit = shrinkVertically(
+                    shrinkTowards = Alignment.Top,
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                )
+            ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -1756,21 +1815,21 @@ fun ProductEditForm(
             }
 
             OutlinedTextField(
-                value = costStr,
-                onValueChange = { if (!isBundle && !isService) costStr = it },
+                value = costState,
+                onValueChange = { if (!isBundle && !isService) costState = sanitizeDecimalTextFieldValue(it, costState) },
                 label = { Text("Costo") },
                 enabled = !isBundle && !isService,
                 readOnly = isBundle || isService,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(12.dp))
             
             OutlinedTextField(
-                value = priceStr,
-                onValueChange = { priceStr = it },
+                value = priceState,
+                onValueChange = { priceState = sanitizeDecimalTextFieldValue(it, priceState) },
                 label = { Text("Precio de Venta") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(12.dp))
@@ -1783,6 +1842,37 @@ fun ProductEditForm(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (productId != null && !isService) {
+                OutlinedTextField(
+                    value = stockStr,
+                    onValueChange = { stockStr = it },
+                    label = { Text("Cantidad en Inventario") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Nota: Modificar el stock manualmente directamente aquí no es lo ideal. Se recomienda registrar una Compra en el menú de Compras para reabastecer el inventario.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
@@ -1894,8 +1984,8 @@ fun ProductEditForm(
 
             Button(
                 onClick = {
-                    val price = priceStr.toDoubleOrNull() ?: 0.0
-                    val cost = costStr.toDoubleOrNull() ?: 0.0
+                    val price = priceState.text.toDoubleOrNull() ?: 0.0
+                    val cost = costState.text.toDoubleOrNull() ?: 0.0
                     val finalAlertQuantity = if (isService) 0 else (alertQuantityStr.toIntOrNull() ?: 0)
                     val finalUnitOfMeasure = if (isService) "Servicio" else unitOfMeasure
                     val finalBarcode = if (barcodeNotApplicable) null else barcode.takeIf { it.isNotBlank() }
@@ -1914,6 +2004,7 @@ fun ProductEditForm(
                                     cost = cost,
                                     price = price,
                                     alertQuantity = finalAlertQuantity,
+                                    stock = if (isService) 0 else (stockStr.toIntOrNull() ?: product.stock),
                                     imageUri = imageUri,
                                     appliedTaxIds = selectedTaxIds.toList(),
                                     isTaxIncludedInPrice = isTaxIncludedInPrice,

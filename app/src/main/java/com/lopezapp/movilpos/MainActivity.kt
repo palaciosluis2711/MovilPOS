@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PointOfSale
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -44,7 +45,18 @@ import com.lopezapp.movilpos.ui.CustomerReadOnlyView
 import com.lopezapp.movilpos.ui.CustomerScreen
 import com.lopezapp.movilpos.ui.InventoryScreen
 import com.lopezapp.movilpos.ui.POSScreen
+import com.lopezapp.movilpos.ui.PriceRuleEditScreen
+import com.lopezapp.movilpos.ui.PurchaseEditForm
+import com.lopezapp.movilpos.ui.PurchaseReadOnlyView
+import com.lopezapp.movilpos.ui.PurchaseScreen
+import com.lopezapp.movilpos.ui.SettingsAnimationScreen
+import com.lopezapp.movilpos.ui.SettingsBrandsScreen
+import com.lopezapp.movilpos.ui.SettingsCategoriesScreen
+import com.lopezapp.movilpos.ui.SettingsCurrencyScreen
+import com.lopezapp.movilpos.ui.SettingsPriceRulesScreen
 import com.lopezapp.movilpos.ui.SettingsScreen
+import com.lopezapp.movilpos.ui.SettingsTaxesScreen
+import com.lopezapp.movilpos.ui.SettingsUnitsScreen
 import com.lopezapp.movilpos.ui.SupplierEditForm
 import com.lopezapp.movilpos.ui.SupplierReadOnlyView
 import com.lopezapp.movilpos.ui.SupplierScreen
@@ -55,7 +67,18 @@ import com.lopezapp.movilpos.ui.navigation.CustomersRoute
 import com.lopezapp.movilpos.ui.navigation.HomeRoute
 import com.lopezapp.movilpos.ui.navigation.InventoryRoute
 import com.lopezapp.movilpos.ui.navigation.POSRoute
+import com.lopezapp.movilpos.ui.navigation.PriceRuleEditKey
+import com.lopezapp.movilpos.ui.navigation.PurchaseDetailRoute
+import com.lopezapp.movilpos.ui.navigation.PurchaseEditRoute
+import com.lopezapp.movilpos.ui.navigation.PurchasesRoute
+import com.lopezapp.movilpos.ui.navigation.SettingsAnimationKey
+import com.lopezapp.movilpos.ui.navigation.SettingsBrandsKey
+import com.lopezapp.movilpos.ui.navigation.SettingsCategoriesKey
+import com.lopezapp.movilpos.ui.navigation.SettingsCurrencyKey
+import com.lopezapp.movilpos.ui.navigation.SettingsPriceRulesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsRoute
+import com.lopezapp.movilpos.ui.navigation.SettingsTaxesKey
+import com.lopezapp.movilpos.ui.navigation.SettingsUnitsKey
 import com.lopezapp.movilpos.ui.navigation.SupplierDetailRoute
 import com.lopezapp.movilpos.ui.navigation.SupplierEditRoute
 import com.lopezapp.movilpos.ui.navigation.SuppliersRoute
@@ -63,6 +86,7 @@ import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
 import com.lopezapp.movilpos.ui.viewmodel.CustomerViewModel
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
+import com.lopezapp.movilpos.ui.viewmodel.PurchaseViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SupplierViewModel
 
@@ -94,6 +118,7 @@ class MainActivity : ComponentActivity() {
                                     HomeScreen(
                                         onNavigateToInventory = { backStack.add(InventoryRoute) },
                                         onNavigateToPOS = { backStack.add(POSRoute) },
+                                        onNavigateToPurchases = { backStack.add(PurchasesRoute) },
                                         onNavigateToSuppliers = { backStack.add(SuppliersRoute) },
                                         onNavigateToCustomers = { backStack.add(CustomersRoute) },
                                         onNavigateToSettings = { backStack.add(SettingsRoute) }
@@ -116,6 +141,35 @@ class MainActivity : ComponentActivity() {
                                     POSScreen(
                                         viewModel = posViewModel,
                                         settingsViewModel = settingsViewModel
+                                    )
+                                }
+                                is PurchasesRoute -> NavEntry(key) {
+                                    val purchaseViewModel: PurchaseViewModel = viewModel(
+                                        factory = PurchaseViewModel.Factory(appRepository)
+                                    )
+                                    PurchaseScreen(
+                                        viewModel = purchaseViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is PurchaseDetailRoute -> NavEntry(key) {
+                                    val purchaseViewModel: PurchaseViewModel = viewModel(
+                                        factory = PurchaseViewModel.Factory(appRepository)
+                                    )
+                                    PurchaseReadOnlyView(
+                                        purchaseId = key.purchaseId,
+                                        viewModel = purchaseViewModel,
+                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is PurchaseEditRoute -> NavEntry(key) {
+                                    val purchaseViewModel: PurchaseViewModel = viewModel(
+                                        factory = PurchaseViewModel.Factory(appRepository)
+                                    )
+                                    PurchaseEditForm(
+                                        viewModel = purchaseViewModel,
+                                        onNavigateUp = { backStack.removeLastOrNull() }
                                     )
                                 }
                                 is SuppliersRoute -> NavEntry(key) {
@@ -183,6 +237,65 @@ class MainActivity : ComponentActivity() {
                                 is SettingsRoute -> NavEntry(key) {
                                     SettingsScreen(
                                         viewModel = settingsViewModel,
+                                        onNavigateToAnimation = { backStack.add(SettingsAnimationKey) },
+                                        onNavigateToCurrency = { backStack.add(SettingsCurrencyKey) },
+                                        onNavigateToCategories = { backStack.add(SettingsCategoriesKey) },
+                                        onNavigateToBrands = { backStack.add(SettingsBrandsKey) },
+                                        onNavigateToUnits = { backStack.add(SettingsUnitsKey) },
+                                        onNavigateToTaxes = { backStack.add(SettingsTaxesKey) },
+                                        onNavigateToPriceRules = { backStack.add(SettingsPriceRulesKey) },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsAnimationKey -> NavEntry(key) {
+                                    SettingsAnimationScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsCurrencyKey -> NavEntry(key) {
+                                    SettingsCurrencyScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsCategoriesKey -> NavEntry(key) {
+                                    SettingsCategoriesScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsBrandsKey -> NavEntry(key) {
+                                    SettingsBrandsScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsUnitsKey -> NavEntry(key) {
+                                    SettingsUnitsScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsTaxesKey -> NavEntry(key) {
+                                    SettingsTaxesScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsPriceRulesKey -> NavEntry(key) {
+                                    SettingsPriceRulesScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateToEditRule = { ruleId ->
+                                            backStack.add(PriceRuleEditKey(ruleId))
+                                        },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is PriceRuleEditKey -> NavEntry(key) {
+                                    PriceRuleEditScreen(
+                                        ruleId = key.ruleId,
+                                        viewModel = settingsViewModel,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
@@ -200,6 +313,7 @@ class MainActivity : ComponentActivity() {
 fun HomeScreen(
     onNavigateToInventory: () -> Unit,
     onNavigateToPOS: () -> Unit,
+    onNavigateToPurchases: () -> Unit,
     onNavigateToSuppliers: () -> Unit,
     onNavigateToCustomers: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -224,6 +338,13 @@ fun HomeScreen(
                 title = "POS",
                 icon = Icons.Rounded.PointOfSale,
                 onClick = onNavigateToPOS
+            )
+        }
+        item {
+            MenuCard(
+                title = "Compras",
+                icon = Icons.Rounded.ShoppingBag,
+                onClick = onNavigateToPurchases
             )
         }
         item {

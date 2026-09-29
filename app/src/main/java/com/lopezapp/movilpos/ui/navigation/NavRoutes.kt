@@ -16,6 +16,30 @@ data object InventoryRoute : NavKey
 data object SettingsRoute : NavKey
 
 @Serializable
+data object SettingsAnimationKey : NavKey
+
+@Serializable
+data object SettingsCurrencyKey : NavKey
+
+@Serializable
+data object SettingsCategoriesKey : NavKey
+
+@Serializable
+data object SettingsBrandsKey : NavKey
+
+@Serializable
+data object SettingsUnitsKey : NavKey
+
+@Serializable
+data object SettingsTaxesKey : NavKey
+
+@Serializable
+data object SettingsPriceRulesKey : NavKey
+
+@Serializable
+data class PriceRuleEditKey(val ruleId: String? = null) : NavKey
+
+@Serializable
 data object SuppliersRoute : NavKey
 
 @Serializable
@@ -32,3 +56,12 @@ data class CustomerDetailRoute(val customerId: String) : NavKey
 
 @Serializable
 data class CustomerEditRoute(val customerId: String? = null) : NavKey
+
+@Serializable
+data object PurchasesRoute : NavKey
+
+@Serializable
+data class PurchaseDetailRoute(val purchaseId: String) : NavKey
+
+@Serializable
+data class PurchaseEditRoute(val purchaseId: String? = null) : NavKey

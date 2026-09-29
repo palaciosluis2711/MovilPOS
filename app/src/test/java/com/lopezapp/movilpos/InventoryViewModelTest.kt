@@ -113,6 +113,17 @@ class InventoryViewModelTest {
     }
 
     @Test
+    fun updateProduct_withNewStock_updatesProductStockSuccessfully() = runTest {
+        val initialProduct = repository.products.value.first()
+        val updatedProduct = initialProduct.copy(stock = 25)
+        viewModel.updateProduct(updatedProduct)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val productInRepo = repository.products.value.find { it.id == initialProduct.id }
+        assertEquals(25, productInRepo?.stock)
+    }
+
+    @Test
     fun removeProduct_removesProductSuccessfully() = runTest {
         val initialProduct = repository.products.value.first()
         viewModel.removeProduct(initialProduct.id)
