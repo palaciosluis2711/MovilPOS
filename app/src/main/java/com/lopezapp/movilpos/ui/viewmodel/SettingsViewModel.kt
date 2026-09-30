@@ -7,6 +7,7 @@ import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
+import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
@@ -31,7 +32,8 @@ data class SettingsUiState(
     val unitsOfMeasure: List<UnitOfMeasure> = emptyList(),
     val taxes: List<Tax> = emptyList(),
     val customers: List<Customer> = emptyList(),
-    val priceRules: List<PriceRule> = emptyList()
+    val priceRules: List<PriceRule> = emptyList(),
+    val paymentMethods: List<PaymentMethod> = emptyList()
 )
 
 class SettingsViewModel(
@@ -63,8 +65,8 @@ private data class CatalogData(
         combine(repository.categories, repository.brands, repository.unitsOfMeasure, repository.taxes) { categories, brands, unitsOfMeasure, taxes ->
             CatalogData(categories, brands, unitsOfMeasure, taxes)
         },
-        combine(repository.customers, repository.priceRules) { customers, priceRules ->
-            Pair(customers, priceRules)
+        combine(repository.customers, repository.priceRules, repository.paymentMethods) { customers, priceRules, paymentMethods ->
+            Triple(customers, priceRules, paymentMethods)
         }
     ) { baseState, catalog, extraData ->
         baseState.copy(
@@ -73,7 +75,8 @@ private data class CatalogData(
             unitsOfMeasure = catalog.unitsOfMeasure,
             taxes = catalog.taxes,
             customers = extraData.first,
-            priceRules = extraData.second
+            priceRules = extraData.second,
+            paymentMethods = extraData.third
         )
     }.stateIn(
         scope = viewModelScope,
@@ -84,7 +87,8 @@ private data class CatalogData(
             unitsOfMeasure = repository.unitsOfMeasure.value,
             taxes = repository.taxes.value,
             customers = repository.customers.value,
-            priceRules = repository.priceRules.value
+            priceRules = repository.priceRules.value,
+            paymentMethods = repository.paymentMethods.value
         )
     )
 
@@ -272,6 +276,36 @@ private data class CatalogData(
     fun deletePriceRule(ruleId: String) {
         viewModelScope.launch {
             repository.deletePriceRule(ruleId)
+        }
+    }
+
+    fun addPaymentMethod(paymentMethod: PaymentMethod) {
+        viewModelScope.launch {
+            repository.addPaymentMethod(paymentMethod)
+        }
+    }
+
+    fun addPaymentMethod(name: String, isDefault: Boolean = false) {
+        if (name.isBlank()) return
+        val paymentMethod = PaymentMethod(name = name.trim(), isDefault = isDefault)
+        addPaymentMethod(paymentMethod)
+    }
+
+    fun updatePaymentMethod(paymentMethod: PaymentMethod) {
+        viewModelScope.launch {
+            repository.updatePaymentMethod(paymentMethod)
+        }
+    }
+
+    fun updatePaymentMethod(id: String, name: String, isDefault: Boolean = false) {
+        if (name.isBlank()) return
+        val paymentMethod = PaymentMethod(id = id, name = name.trim(), isDefault = isDefault)
+        updatePaymentMethod(paymentMethod)
+    }
+
+    fun deletePaymentMethod(paymentMethodId: String) {
+        viewModelScope.launch {
+            repository.deletePaymentMethod(paymentMethodId)
         }
     }
 

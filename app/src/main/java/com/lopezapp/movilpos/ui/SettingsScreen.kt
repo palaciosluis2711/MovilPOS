@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.AttachMoney
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Store
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Timer
@@ -97,6 +98,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.Category
+import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
@@ -117,6 +119,7 @@ fun SettingsScreen(
     onNavigateToUnits: () -> Unit = {},
     onNavigateToTaxes: () -> Unit = {},
     onNavigateToPriceRules: () -> Unit = {},
+    onNavigateToPaymentMethods: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
     SettingsHomeScreen(
@@ -127,6 +130,7 @@ fun SettingsScreen(
         onNavigateToUnits = onNavigateToUnits,
         onNavigateToTaxes = onNavigateToTaxes,
         onNavigateToPriceRules = onNavigateToPriceRules,
+        onNavigateToPaymentMethods = onNavigateToPaymentMethods,
         onNavigateBack = onNavigateBack,
         modifier = modifier,
     )
@@ -142,6 +146,7 @@ fun SettingsHomeScreen(
     onNavigateToUnits: () -> Unit,
     onNavigateToTaxes: () -> Unit,
     onNavigateToPriceRules: () -> Unit,
+    onNavigateToPaymentMethods: () -> Unit,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -222,6 +227,13 @@ fun SettingsHomeScreen(
                 subtitle = "Construir fórmulas dinámicas de precio por categorías, clientes o tipo de producto",
                 icon = Icons.Rounded.Calculate,
                 onClick = onNavigateToPriceRules,
+            )
+
+            SettingEntryCard(
+                title = "Métodos de Pago",
+                subtitle = "Configurar los métodos de pago aceptados",
+                icon = Icons.Rounded.Payments,
+                onClick = onNavigateToPaymentMethods,
             )
         }
     }
@@ -1855,6 +1867,225 @@ fun SettingsTaxesScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsPaymentMethodsScreen(
+    viewModel: SettingsViewModel,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    var showMethodDialog by rememberSaveable { mutableStateOf(false) }
+    var methodToEditId by rememberSaveable { mutableStateOf<String?>(null) }
+    var methodName by rememberSaveable { mutableStateOf("") }
+    var methodNameError by rememberSaveable { mutableStateOf(false) }
+    var methodToDelete by remember { mutableStateOf<PaymentMethod?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Métodos de Pago") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Volver",
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            )
+        },
+        modifier = modifier,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Gestión de Métodos de Pago",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Button(
+                    onClick = {
+                        methodToEditId = null
+                        methodName = ""
+                        methodNameError = false
+                        showMethodDialog = true
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Nuevo")
+                }
+            }
+
+            if (uiState.paymentMethods.isEmpty()) {
+                Text(
+                    text = "No hay métodos de pago disponibles.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+            } else {
+                uiState.paymentMethods.forEachIndexed { index, method ->
+                    if (index > 0) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                text = method.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                methodToEditId = method.id
+                                methodName = method.name
+                                methodNameError = false
+                                showMethodDialog = true
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Editar método de pago ${method.name}",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                methodToDelete = method
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Eliminar método de pago ${method.name}",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showMethodDialog) {
+            AlertDialog(
+                onDismissRequest = { showMethodDialog = false },
+                title = {
+                    Text(if (methodToEditId == null) "Añadir Método de Pago" else "Editar Método de Pago")
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = methodName,
+                            onValueChange = {
+                                methodName = it
+                                if (it.isNotBlank()) methodNameError = false
+                            },
+                            label = { Text("Nombre del Método de Pago") },
+                            isError = methodNameError,
+                            supportingText = if (methodNameError) {
+                                { Text("El nombre es obligatorio") }
+                            } else null,
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (methodName.isBlank()) {
+                                methodNameError = true
+                            } else {
+                                val editId = methodToEditId
+                                if (editId == null) {
+                                    viewModel.addPaymentMethod(methodName)
+                                } else {
+                                    viewModel.updatePaymentMethod(editId, methodName)
+                                }
+                                showMethodDialog = false
+                            }
+                        },
+                    ) {
+                        Text(if (methodToEditId == null) "Guardar" else "Actualizar")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showMethodDialog = false },
+                    ) {
+                        Text("Cancelar")
+                    }
+                },
+            )
+        }
+
+        if (methodToDelete != null) {
+            val method = methodToDelete!!
+            AlertDialog(
+                onDismissRequest = { methodToDelete = null },
+                title = { Text("Eliminar método de pago") },
+                text = { Text("¿Deseas eliminar el método de pago \"${method.name}\"?") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deletePaymentMethod(method.id)
+                            methodToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                    ) {
+                        Text("Eliminar")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { methodToDelete = null },
+                    ) {
+                        Text("Cancelar")
+                    }
+                },
+            )
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun SettingsHomeScreenPreview() {
@@ -1867,6 +2098,7 @@ fun SettingsHomeScreenPreview() {
             onNavigateToUnits = {},
             onNavigateToTaxes = {},
             onNavigateToPriceRules = {},
+            onNavigateToPaymentMethods = {},
             onNavigateBack = {},
         )
     }

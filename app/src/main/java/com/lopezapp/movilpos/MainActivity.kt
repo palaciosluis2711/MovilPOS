@@ -53,6 +53,7 @@ import com.lopezapp.movilpos.ui.SettingsAnimationScreen
 import com.lopezapp.movilpos.ui.SettingsBrandsScreen
 import com.lopezapp.movilpos.ui.SettingsCategoriesScreen
 import com.lopezapp.movilpos.ui.SettingsCurrencyScreen
+import com.lopezapp.movilpos.ui.SettingsPaymentMethodsScreen
 import com.lopezapp.movilpos.ui.SettingsPriceRulesScreen
 import com.lopezapp.movilpos.ui.SettingsScreen
 import com.lopezapp.movilpos.ui.SettingsTaxesScreen
@@ -75,6 +76,7 @@ import com.lopezapp.movilpos.ui.navigation.SettingsAnimationKey
 import com.lopezapp.movilpos.ui.navigation.SettingsBrandsKey
 import com.lopezapp.movilpos.ui.navigation.SettingsCategoriesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsCurrencyKey
+import com.lopezapp.movilpos.ui.navigation.SettingsPaymentMethodsKey
 import com.lopezapp.movilpos.ui.navigation.SettingsPriceRulesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsRoute
 import com.lopezapp.movilpos.ui.navigation.SettingsTaxesKey
@@ -244,6 +246,7 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToUnits = { backStack.add(SettingsUnitsKey) },
                                         onNavigateToTaxes = { backStack.add(SettingsTaxesKey) },
                                         onNavigateToPriceRules = { backStack.add(SettingsPriceRulesKey) },
+                                        onNavigateToPaymentMethods = { backStack.add(SettingsPaymentMethodsKey) },
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
@@ -289,6 +292,12 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToEditRule = { ruleId ->
                                             backStack.add(PriceRuleEditKey(ruleId))
                                         },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsPaymentMethodsKey -> NavEntry(key) {
+                                    SettingsPaymentMethodsScreen(
+                                        viewModel = settingsViewModel,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }

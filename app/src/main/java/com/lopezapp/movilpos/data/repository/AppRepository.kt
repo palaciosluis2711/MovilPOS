@@ -5,6 +5,7 @@ import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.DocumentType
+import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.model.Purchase
@@ -45,6 +46,9 @@ class AppRepository {
 
     private val _priceRules = MutableStateFlow<List<PriceRule>>(emptyList())
     val priceRules: StateFlow<List<PriceRule>> = _priceRules.asStateFlow()
+
+    private val _paymentMethods = MutableStateFlow<List<PaymentMethod>>(emptyList())
+    val paymentMethods: StateFlow<List<PaymentMethod>> = _paymentMethods.asStateFlow()
 
     init {
         // Load initial dummy data
@@ -116,6 +120,12 @@ class AppRepository {
                 ),
                 totalCost = 15.0
             )
+        )
+        _paymentMethods.value = listOf(
+            PaymentMethod(name = "Efectivo", isDefault = true),
+            PaymentMethod(name = "Tarjeta de Crédito / Débito"),
+            PaymentMethod(name = "Transferencia Bancaria"),
+            PaymentMethod(name = "Cheque")
         )
     }
 
@@ -301,6 +311,34 @@ class AppRepository {
     fun deletePriceRule(ruleId: String) {
         _priceRules.update { currentList ->
             currentList.filter { it.id != ruleId }
+        }
+    }
+
+    fun addPaymentMethod(paymentMethod: PaymentMethod) {
+        _paymentMethods.update { currentList ->
+            val updatedList = if (paymentMethod.isDefault) {
+                currentList.map { it.copy(isDefault = false) }
+            } else {
+                currentList
+            }
+            updatedList + paymentMethod
+        }
+    }
+
+    fun updatePaymentMethod(paymentMethod: PaymentMethod) {
+        _paymentMethods.update { currentList ->
+            val updatedList = if (paymentMethod.isDefault) {
+                currentList.map { if (it.id == paymentMethod.id) paymentMethod else it.copy(isDefault = false) }
+            } else {
+                currentList.map { if (it.id == paymentMethod.id) paymentMethod else it }
+            }
+            updatedList
+        }
+    }
+
+    fun deletePaymentMethod(paymentMethodId: String) {
+        _paymentMethods.update { currentList ->
+            currentList.filter { it.id != paymentMethodId }
         }
     }
 }

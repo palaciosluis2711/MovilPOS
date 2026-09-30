@@ -37,6 +37,9 @@ data object SettingsTaxesKey : NavKey
 data object SettingsPriceRulesKey : NavKey
 
 @Serializable
+data object SettingsPaymentMethodsKey : NavKey
+
+@Serializable
 data class PriceRuleEditKey(val ruleId: String? = null) : NavKey
 
 @Serializable

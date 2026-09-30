@@ -1,4 +1,4 @@
 <resources>
 
-    <style name="Theme.MovilPOS" parent="Theme.MaterialComponents.Light" />
+    <style name="Theme.MovilPOS" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>
