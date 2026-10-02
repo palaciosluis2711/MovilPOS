@@ -10,6 +10,12 @@ data object HomeRoute : NavKey
 data object POSRoute : NavKey
 
 @Serializable
+data object POSCheckoutKey : NavKey
+
+@Serializable
+data class POSTicketReceiptKey(val saleId: String) : NavKey
+
+@Serializable
 data object InventoryRoute : NavKey
 
 @Serializable
@@ -38,6 +44,12 @@ data object SettingsPriceRulesKey : NavKey
 
 @Serializable
 data object SettingsPaymentMethodsKey : NavKey
+
+@Serializable
+data object SettingsBusinessInfoKey : NavKey
+
+@Serializable
+data object SettingsTicketKey : NavKey
 
 @Serializable
 data class PriceRuleEditKey(val ruleId: String? = null) : NavKey

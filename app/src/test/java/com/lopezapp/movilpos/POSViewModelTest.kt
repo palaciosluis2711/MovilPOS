@@ -4,6 +4,7 @@ import com.lopezapp.movilpos.data.model.ArithmeticOperator
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.BundleItem
 import com.lopezapp.movilpos.data.model.CartItem
+import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.repository.AppRepository
@@ -24,6 +25,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.Locale
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class POSViewModelTest {
@@ -939,5 +941,93 @@ class POSViewModelTest {
 
         assertTrue(viewModel.selectedCartItemIds.value.isEmpty())
         assertTrue(viewModel.uiState.value.cartItems.isEmpty())
+    }
+
+    @Test
+    fun defaultCustomerAndPaymentMethod_selectedAutomatically() = runTest {
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        val defaultCustomer = repository.customers.value.find { it.isDefault }
+        val defaultPaymentMethod = repository.paymentMethods.value.find { it.isDefault }
+
+        assertEquals(defaultCustomer?.id, state.selectedCustomerId)
+        assertEquals(defaultPaymentMethod?.id, state.selectedPaymentMethodId)
+        assertEquals(InvoiceType.CONSUMIDOR_FINAL, state.selectedInvoiceType)
+    }
+
+    @Test
+    fun processSale_createsSale_decrementsStock_clearsCart_andCalculatesChange() = runTest {
+        val product = repository.products.value.first { !it.isService } // Coffee stock=100, price=2.5
+        val initialStock = product.stock
+
+        viewModel.addToCart(product)
+        viewModel.addToCart(product) // quantity = 2, subtotal = 5.0
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.setCashReceivedStr("10.00")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val stateBefore = viewModel.uiState.value
+        assertEquals(5.0, stateBefore.total, 0.001)
+        assertEquals(5.0, stateBefore.changeAmount, 0.001)
+
+        val sale = viewModel.processSale()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(sale != null)
+        assertEquals(5.0, sale!!.totalAmount, 0.001)
+        assertEquals(10.0, sale.cashReceived, 0.001)
+        assertEquals(5.0, sale.changeAmount, 0.001)
+        assertEquals(1, repository.sales.value.size)
+
+        // Stock should be decremented by 2
+        val updatedProduct = repository.products.value.first { it.id == product.id }
+        assertEquals(initialStock - 2, updatedProduct.stock)
+
+        // Cart should be empty and cashReceivedStr reset
+        assertTrue(viewModel.uiState.value.cartItems.isEmpty())
+        assertEquals("", viewModel.cashReceivedStr.value)
+    }
+
+    @Test
+    fun processSale_doesNotDecrementStockForServices() = runTest {
+        val serviceProduct = Product(name = "Consulta General", price = 15.0, stock = 0, isService = true)
+        repository.addProduct(serviceProduct)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.addToCart(serviceProduct)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.processSale()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updatedService = repository.products.value.first { it.id == serviceProduct.id }
+        assertEquals(0, updatedService.stock)
+    }
+
+    @Test
+    fun setCashReceivedStr_prefilledWithPurchaseTotal_calculatesZeroChange() = runTest {
+        val product = repository.products.value.first { !it.isService }
+        viewModel.addToCart(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val total = viewModel.uiState.value.total
+        val formattedTotal = String.format(Locale.US, "%.2f", total)
+
+        viewModel.setCashReceivedStr(formattedTotal)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(formattedTotal, state.cashReceivedStr)
+        assertEquals(0.0, state.changeAmount, 0.001)
+
+        val sale = viewModel.processSale()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(sale != null)
+        assertEquals(total, sale!!.totalAmount, 0.001)
+        assertEquals(total, sale.cashReceived, 0.001)
+        assertEquals(0.0, sale.changeAmount, 0.001)
     }
 }

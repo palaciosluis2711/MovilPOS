@@ -90,4 +90,49 @@ class DecimalInputSanitizerTest {
         assertEquals("", result.text)
         assertEquals(TextRange(0), result.selection)
     }
+
+    @Test
+    fun sanitizeDecimalTextFieldValue_deletingZeroFromZeroDotClearsField() {
+        val oldVal = TextFieldValue("0.", selection = TextRange(1))
+        val newVal = TextFieldValue(".", selection = TextRange(0))
+        val result = sanitizeDecimalTextFieldValue(newVal, oldVal)
+        assertEquals("", result.text)
+        assertEquals(TextRange(0), result.selection)
+    }
+
+    @Test
+    fun sanitizeDecimalTextFieldValue_deletingDotFromZeroDotLeavesZero() {
+        val oldVal = TextFieldValue("0.", selection = TextRange(2))
+        val newVal = TextFieldValue("0", selection = TextRange(1))
+        val result = sanitizeDecimalTextFieldValue(newVal, oldVal)
+        assertEquals("0", result.text)
+        assertEquals(TextRange(1), result.selection)
+    }
+
+    @Test
+    fun sanitizeDecimalTextFieldValue_deletingZeroFromZeroDotFiveLeavesFive() {
+        val oldVal = TextFieldValue("0.5", selection = TextRange(1))
+        val newVal = TextFieldValue(".5", selection = TextRange(0))
+        val result = sanitizeDecimalTextFieldValue(newVal, oldVal)
+        assertEquals("5", result.text)
+        assertEquals(TextRange(0), result.selection)
+    }
+
+    @Test
+    fun sanitizeDecimalTextFieldValue_deletingDigitsPreservesSelection() {
+        val oldVal = TextFieldValue("10.50", selection = TextRange(5))
+        val newVal = TextFieldValue("10.5", selection = TextRange(4))
+        val result = sanitizeDecimalTextFieldValue(newVal, oldVal)
+        assertEquals("10.5", result.text)
+        assertEquals(TextRange(4), result.selection)
+    }
+
+    @Test
+    fun sanitizeDecimalTextFieldValue_typingInvalidCharPreservesOldSelection() {
+        val oldVal = TextFieldValue("12.50", selection = TextRange(2))
+        val newVal = TextFieldValue("12,.50", selection = TextRange(3))
+        val result = sanitizeDecimalTextFieldValue(newVal, oldVal)
+        assertEquals("12.50", result.text)
+        assertEquals(TextRange(2), result.selection)
+    }
 }

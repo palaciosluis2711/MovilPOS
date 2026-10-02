@@ -5,12 +5,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
+import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
+import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.model.AnimationType
@@ -33,7 +35,9 @@ data class SettingsUiState(
     val taxes: List<Tax> = emptyList(),
     val customers: List<Customer> = emptyList(),
     val priceRules: List<PriceRule> = emptyList(),
-    val paymentMethods: List<PaymentMethod> = emptyList()
+    val paymentMethods: List<PaymentMethod> = emptyList(),
+    val businessInfo: BusinessInfo = BusinessInfo(),
+    val ticketConfig: TicketConfig = TicketConfig()
 )
 
 class SettingsViewModel(
@@ -45,12 +49,20 @@ class SettingsViewModel(
     private val _defaultDecimalPlaces = MutableStateFlow(2)
     private val _allowExtraDecimals = MutableStateFlow(true)
 
-private data class CatalogData(
-    val categories: List<Category>,
-    val brands: List<Brand>,
-    val unitsOfMeasure: List<UnitOfMeasure>,
-    val taxes: List<Tax>
-)
+    private data class CatalogData(
+        val categories: List<Category>,
+        val brands: List<Brand>,
+        val unitsOfMeasure: List<UnitOfMeasure>,
+        val taxes: List<Tax>
+    )
+
+    private data class ExtraData(
+        val customers: List<Customer>,
+        val priceRules: List<PriceRule>,
+        val paymentMethods: List<PaymentMethod>,
+        val businessInfo: BusinessInfo,
+        val ticketConfig: TicketConfig
+    )
 
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(_animationDurationMs, _animationType, _currencySymbol, _defaultDecimalPlaces, _allowExtraDecimals) { duration, type, symbol, decimals, extra ->
@@ -65,8 +77,8 @@ private data class CatalogData(
         combine(repository.categories, repository.brands, repository.unitsOfMeasure, repository.taxes) { categories, brands, unitsOfMeasure, taxes ->
             CatalogData(categories, brands, unitsOfMeasure, taxes)
         },
-        combine(repository.customers, repository.priceRules, repository.paymentMethods) { customers, priceRules, paymentMethods ->
-            Triple(customers, priceRules, paymentMethods)
+        combine(repository.customers, repository.priceRules, repository.paymentMethods, repository.businessInfo, repository.ticketConfig) { customers, priceRules, paymentMethods, businessInfo, ticketConfig ->
+            ExtraData(customers, priceRules, paymentMethods, businessInfo, ticketConfig)
         }
     ) { baseState, catalog, extraData ->
         baseState.copy(
@@ -74,9 +86,11 @@ private data class CatalogData(
             brands = catalog.brands,
             unitsOfMeasure = catalog.unitsOfMeasure,
             taxes = catalog.taxes,
-            customers = extraData.first,
-            priceRules = extraData.second,
-            paymentMethods = extraData.third
+            customers = extraData.customers,
+            priceRules = extraData.priceRules,
+            paymentMethods = extraData.paymentMethods,
+            businessInfo = extraData.businessInfo,
+            ticketConfig = extraData.ticketConfig
         )
     }.stateIn(
         scope = viewModelScope,
@@ -88,7 +102,9 @@ private data class CatalogData(
             taxes = repository.taxes.value,
             customers = repository.customers.value,
             priceRules = repository.priceRules.value,
-            paymentMethods = repository.paymentMethods.value
+            paymentMethods = repository.paymentMethods.value,
+            businessInfo = repository.businessInfo.value,
+            ticketConfig = repository.ticketConfig.value
         )
     )
 
@@ -306,6 +322,18 @@ private data class CatalogData(
     fun deletePaymentMethod(paymentMethodId: String) {
         viewModelScope.launch {
             repository.deletePaymentMethod(paymentMethodId)
+        }
+    }
+
+    fun updateBusinessInfo(businessInfo: BusinessInfo) {
+        viewModelScope.launch {
+            repository.updateBusinessInfo(businessInfo)
+        }
+    }
+
+    fun updateTicketConfig(config: TicketConfig) {
+        viewModelScope.launch {
+            repository.updateTicketConfig(config)
         }
     }
 

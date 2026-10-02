@@ -98,6 +98,7 @@ import com.lopezapp.movilpos.util.formatCurrency
 fun POSScreen(
     viewModel: POSViewModel,
     settingsViewModel: SettingsViewModel? = null,
+    onNavigateToCheckout: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -107,6 +108,14 @@ fun POSScreen(
     val currencySymbol = settingsUiState.currencySymbol
     val defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces
     val allowExtraDecimals = settingsUiState.allowExtraDecimals
+
+    val handleCheckout = {
+        if (onNavigateToCheckout != null) {
+            onNavigateToCheckout()
+        } else {
+            viewModel.checkout()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -158,7 +167,7 @@ fun POSScreen(
                         onToggleSelection = { viewModel.toggleItemSelection(it) },
                         onSelectAll = { viewModel.selectAll() },
                         onClearSelection = { viewModel.clearSelection() },
-                        onCheckout = { viewModel.checkout() },
+                        onCheckout = handleCheckout,
                         currencySymbol = currencySymbol,
                         defaultDecimalPlaces = defaultDecimalPlaces,
                         allowExtraDecimals = allowExtraDecimals,
@@ -197,7 +206,7 @@ fun POSScreen(
                         onToggleSelection = { viewModel.toggleItemSelection(it) },
                         onSelectAll = { viewModel.selectAll() },
                         onClearSelection = { viewModel.clearSelection() },
-                        onCheckout = { viewModel.checkout() },
+                        onCheckout = handleCheckout,
                         currencySymbol = currencySymbol,
                         defaultDecimalPlaces = defaultDecimalPlaces,
                         allowExtraDecimals = allowExtraDecimals,

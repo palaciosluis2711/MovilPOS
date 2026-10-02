@@ -41,37 +41,62 @@ fun sanitizeDecimalInput(input: String): String {
  */
 fun sanitizeDecimalTextFieldValue(
     newValue: TextFieldValue,
-    oldValue: TextFieldValue? = null
+    oldValue: TextFieldValue? = null,
 ): TextFieldValue {
     val newText = newValue.text
-    val sanitized = sanitizeDecimalInput(newText)
+    val isDeletion = (oldValue != null) && (oldValue.text.length > newValue.text.length)
 
     if (newText == ".") {
-        return TextFieldValue(
-            text = "0.",
-            selection = TextRange(2)
-        )
+        return if (isDeletion) {
+            TextFieldValue(text = "", selection = TextRange(0))
+        } else {
+            TextFieldValue(text = "0.", selection = TextRange(2))
+        }
     }
 
-    val zeroPrepended = !newText.startsWith("0") && newText.startsWith(".") && sanitized.startsWith("0.")
+    if (newText.startsWith(".")) {
+        return if (isDeletion) {
+            val withoutDot = sanitizeDecimalInput(newText.drop(1))
+            val maxPos = withoutDot.length
+            val newStart = newValue.selection.start.coerceIn(0, maxPos)
+            val newEnd = newValue.selection.end.coerceIn(0, maxPos)
+            TextFieldValue(
+                text = withoutDot,
+                selection = TextRange(newStart, newEnd)
+            )
+        } else {
+            val sanitized = sanitizeDecimalInput(newText)
+            val cursorOffset = 1
+            val newStart = (newValue.selection.start + cursorOffset).coerceIn(0, sanitized.length)
+            val newEnd = (newValue.selection.end + cursorOffset).coerceIn(0, sanitized.length)
+            TextFieldValue(
+                text = sanitized,
+                selection = TextRange(newStart, newEnd)
+            )
+        }
+    }
 
-    return if (zeroPrepended) {
-        val cursorOffset = 1
-        val newStart = (newValue.selection.start + cursorOffset).coerceIn(0, sanitized.length)
-        val newEnd = (newValue.selection.end + cursorOffset).coerceIn(0, sanitized.length)
-        TextFieldValue(
-            text = sanitized,
-            selection = TextRange(newStart, newEnd)
-        )
-    } else if (sanitized == newText) {
-        newValue.copy(text = sanitized)
-    } else {
+    val sanitized = sanitizeDecimalInput(newText)
+
+    if (sanitized == newText) {
+        return newValue.copy(text = sanitized)
+    }
+
+    if (oldValue != null && sanitized == oldValue.text) {
         val maxPos = sanitized.length
-        val newStart = newValue.selection.start.coerceIn(0, maxPos)
-        val newEnd = newValue.selection.end.coerceIn(0, maxPos)
-        TextFieldValue(
+        val oldStart = oldValue.selection.start.coerceIn(0, maxPos)
+        val oldEnd = oldValue.selection.end.coerceIn(0, maxPos)
+        return TextFieldValue(
             text = sanitized,
-            selection = TextRange(newStart, newEnd)
+            selection = TextRange(oldStart, oldEnd)
         )
     }
+
+    val maxPos = sanitized.length
+    val newStart = newValue.selection.start.coerceIn(0, maxPos)
+    val newEnd = newValue.selection.end.coerceIn(0, maxPos)
+    return TextFieldValue(
+        text = sanitized,
+        selection = TextRange(newStart, newEnd)
+    )
 }

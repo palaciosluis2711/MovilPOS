@@ -1,6 +1,7 @@
 package com.lopezapp.movilpos.ui
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -34,18 +35,25 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.AttachMoney
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Store
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Tune
@@ -88,6 +96,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +106,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.lopezapp.movilpos.data.model.Brand
+import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.Tax
@@ -105,8 +115,20 @@ import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import com.lopezapp.movilpos.ui.model.AnimationType
 import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
+import com.lopezapp.movilpos.util.NitVisualTransformation
+import com.lopezapp.movilpos.util.PhoneVisualTransformation
 import com.lopezapp.movilpos.util.formatCurrency
+import com.lopezapp.movilpos.util.formatNit
+import com.lopezapp.movilpos.util.formatPhone
 import com.lopezapp.movilpos.util.sanitizeDecimalTextFieldValue
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Receipt
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import com.lopezapp.movilpos.data.model.TicketConfig
+import com.lopezapp.movilpos.data.model.TicketPaperSize
 
 @Composable
 fun SettingsScreen(
@@ -120,6 +142,8 @@ fun SettingsScreen(
     onNavigateToTaxes: () -> Unit = {},
     onNavigateToPriceRules: () -> Unit = {},
     onNavigateToPaymentMethods: () -> Unit = {},
+    onNavigateToBusinessInfo: () -> Unit = {},
+    onNavigateToTicket: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
     SettingsHomeScreen(
@@ -131,6 +155,8 @@ fun SettingsScreen(
         onNavigateToTaxes = onNavigateToTaxes,
         onNavigateToPriceRules = onNavigateToPriceRules,
         onNavigateToPaymentMethods = onNavigateToPaymentMethods,
+        onNavigateToBusinessInfo = onNavigateToBusinessInfo,
+        onNavigateToTicket = onNavigateToTicket,
         onNavigateBack = onNavigateBack,
         modifier = modifier,
     )
@@ -147,6 +173,8 @@ fun SettingsHomeScreen(
     onNavigateToTaxes: () -> Unit,
     onNavigateToPriceRules: () -> Unit,
     onNavigateToPaymentMethods: () -> Unit,
+    onNavigateToBusinessInfo: () -> Unit,
+    onNavigateToTicket: () -> Unit = {},
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -180,6 +208,20 @@ fun SettingsHomeScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            SettingEntryCard(
+                title = "Información del Negocio",
+                subtitle = "Nombre del negocio, NIT, NRC, dirección, teléfono, logo y redes sociales",
+                icon = Icons.Rounded.Storefront,
+                onClick = onNavigateToBusinessInfo,
+            )
+
+            SettingEntryCard(
+                title = "Configuración de Ticket",
+                subtitle = "Encabezado, mensaje de pie de página, tamaño 57mm/80mm y previsualización",
+                icon = Icons.Rounded.Receipt,
+                onClick = onNavigateToTicket,
+            )
+
             SettingEntryCard(
                 title = "Animaciones y Transiciones",
                 subtitle = "Personaliza la velocidad y tipo de transición entre pantallas",
@@ -2086,6 +2128,724 @@ fun SettingsPaymentMethodsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsBusinessInfoScreen(
+    viewModel: SettingsViewModel,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    var name by rememberSaveable { mutableStateOf(uiState.businessInfo.name) }
+    var nit by rememberSaveable { mutableStateOf(uiState.businessInfo.nit) }
+    var nrc by rememberSaveable { mutableStateOf(uiState.businessInfo.nrc) }
+    var address by rememberSaveable { mutableStateOf(uiState.businessInfo.address) }
+    var phone by rememberSaveable { mutableStateOf(uiState.businessInfo.phone) }
+    var socialMedia by rememberSaveable { mutableStateOf(uiState.businessInfo.socialMedia) }
+    var logoUri by rememberSaveable { mutableStateOf(uiState.businessInfo.logoUri) }
+    var nameError by rememberSaveable { mutableStateOf(false) }
+
+    val logoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        uri?.let { logoUri = it.toString() }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Información del Negocio") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Volver",
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            )
+        },
+        modifier = modifier,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "Logo del Negocio",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+
+                    if (!logoUri.isNullOrBlank()) {
+                        AsyncImage(
+                            model = logoUri,
+                            contentDescription = "Logo del Negocio",
+                            modifier = Modifier
+                                .size(100.dp)
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = { logoPickerLauncher.launch("image/*") },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoLibrary,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Cambiar logo")
+                            }
+                            TextButton(
+                                onClick = { logoUri = null },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                ),
+                            ) {
+                                Text("Quitar logo")
+                            }
+                        }
+                    } else {
+                        Surface(
+                            modifier = Modifier
+                                .size(100.dp)
+                                .clip(CircleShape),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Storefront,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { logoPickerLauncher.launch("image/*") },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddAPhoto,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Seleccionar logo")
+                        }
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    name = it
+                    if (it.isNotBlank()) nameError = false
+                },
+                label = { Text("Nombre del Negocio *") },
+                isError = nameError,
+                supportingText = if (nameError) {
+                    { Text("El nombre del negocio es obligatorio") }
+                } else null,
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Storefront, contentDescription = null)
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = nit,
+                onValueChange = { input ->
+                    nit = input.filter { it.isDigit() }.take(14)
+                },
+                visualTransformation = NitVisualTransformation(),
+                label = { Text("NIT") },
+                placeholder = { Text("0000-000000-000-0") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Badge, contentDescription = null)
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = nrc,
+                onValueChange = { nrc = it },
+                label = { Text("NRC") },
+                placeholder = { Text("Ej. 123456-7") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Business, contentDescription = null)
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = address,
+                onValueChange = { address = it },
+                label = { Text("Dirección de la Tienda") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.LocationOn, contentDescription = null)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { input ->
+                    phone = input.filter { it.isDigit() }.take(8)
+                },
+                visualTransformation = PhoneVisualTransformation(),
+                label = { Text("Teléfono") },
+                placeholder = { Text("0000-0000") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Phone, contentDescription = null)
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = socialMedia,
+                onValueChange = { socialMedia = it },
+                label = { Text("Redes Sociales") },
+                placeholder = { Text("@minegocio, fb.com/minegocio") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Share, contentDescription = null)
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = {
+                    if (name.isBlank()) {
+                        nameError = true
+                    } else {
+                        val updatedInfo = BusinessInfo(
+                            name = name.trim(),
+                            nit = nit,
+                            nrc = nrc.trim(),
+                            address = address.trim(),
+                            phone = phone,
+                            socialMedia = socialMedia.trim(),
+                            logoUri = logoUri,
+                        )
+                        viewModel.updateBusinessInfo(updatedInfo)
+                        Toast.makeText(
+                            context,
+                            "Información del negocio actualizada exitosamente",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+            ) {
+                Text(
+                    text = "Guardar Cambios",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsTicketScreen(
+    viewModel: SettingsViewModel,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    var showBusinessName by rememberSaveable { mutableStateOf(uiState.ticketConfig.showBusinessName) }
+    var showNit by rememberSaveable { mutableStateOf(uiState.ticketConfig.showNit) }
+    var showNrc by rememberSaveable { mutableStateOf(uiState.ticketConfig.showNrc) }
+    var showAddress by rememberSaveable { mutableStateOf(uiState.ticketConfig.showAddress) }
+    var showPhone by rememberSaveable { mutableStateOf(uiState.ticketConfig.showPhone) }
+    var showSocialMedia by rememberSaveable { mutableStateOf(uiState.ticketConfig.showSocialMedia) }
+    var showLogo by rememberSaveable { mutableStateOf(uiState.ticketConfig.showLogo) }
+    var footerMessage by rememberSaveable { mutableStateOf(uiState.ticketConfig.footerMessage) }
+    var paperSize by rememberSaveable { mutableStateOf(uiState.ticketConfig.paperSize) }
+
+    LaunchedEffect(uiState.ticketConfig) {
+        showBusinessName = uiState.ticketConfig.showBusinessName
+        showNit = uiState.ticketConfig.showNit
+        showNrc = uiState.ticketConfig.showNrc
+        showAddress = uiState.ticketConfig.showAddress
+        showPhone = uiState.ticketConfig.showPhone
+        showSocialMedia = uiState.ticketConfig.showSocialMedia
+        showLogo = uiState.ticketConfig.showLogo
+        footerMessage = uiState.ticketConfig.footerMessage
+        paperSize = uiState.ticketConfig.paperSize
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Configuración de Ticket") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Volver",
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            )
+        },
+        modifier = modifier,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "Encabezado del Ticket",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "Selecciona la información del negocio que se mostrará en el ticket",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    TicketSwitchRow(
+                        title = "Nombre del Negocio",
+                        checked = showBusinessName,
+                        onCheckedChange = { showBusinessName = it },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    TicketSwitchRow(
+                        title = "NIT",
+                        checked = showNit,
+                        onCheckedChange = { showNit = it },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    TicketSwitchRow(
+                        title = "NRC",
+                        checked = showNrc,
+                        onCheckedChange = { showNrc = it },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    TicketSwitchRow(
+                        title = "Dirección",
+                        checked = showAddress,
+                        onCheckedChange = { showAddress = it },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    TicketSwitchRow(
+                        title = "Teléfono",
+                        checked = showPhone,
+                        onCheckedChange = { showPhone = it },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    TicketSwitchRow(
+                        title = "Redes Sociales",
+                        checked = showSocialMedia,
+                        onCheckedChange = { showSocialMedia = it },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    TicketSwitchRow(
+                        title = "Logo",
+                        checked = showLogo,
+                        onCheckedChange = { showLogo = it },
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "Mensaje de Pie de Página",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    OutlinedTextField(
+                        value = footerMessage,
+                        onValueChange = { footerMessage = it },
+                        label = { Text("Mensaje final del ticket") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "Tamaño de Papel",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        TicketPaperSize.entries.forEach { size ->
+                            FilterChip(
+                                selected = paperSize == size,
+                                onClick = { paperSize = size },
+                                label = { Text(size.label) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = "Previsualización del Ticket",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.align(Alignment.Start),
+                    )
+
+                    val previewWidth = if (paperSize == TicketPaperSize.SIZE_57MM) 240.dp else 300.dp
+                    Surface(
+                        modifier = Modifier
+                            .width(previewWidth)
+                            .padding(vertical = 8.dp),
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFFAFAFA),
+                        shadowElevation = 3.dp,
+                        border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            val businessInfo = uiState.businessInfo
+
+                            if (showLogo) {
+                                if (!businessInfo.logoUri.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = businessInfo.logoUri,
+                                        contentDescription = "Logo Ticket",
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Storefront,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(36.dp),
+                                        tint = Color.DarkGray,
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                }
+                            }
+
+                            if (showBusinessName && businessInfo.name.isNotBlank()) {
+                                Text(
+                                    text = businessInfo.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+
+                            if (showNit && businessInfo.nit.isNotBlank()) {
+                                Text(
+                                    text = "NIT: ${formatNit(businessInfo.nit)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.DarkGray,
+                                )
+                            }
+
+                            if (showNrc && businessInfo.nrc.isNotBlank()) {
+                                Text(
+                                    text = "NRC: ${businessInfo.nrc}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.DarkGray,
+                                )
+                            }
+
+                            if (showAddress && businessInfo.address.isNotBlank()) {
+                                Text(
+                                    text = businessInfo.address,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.DarkGray,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+
+                            if (showPhone && businessInfo.phone.isNotBlank()) {
+                                Text(
+                                    text = "Tel: ${formatPhone(businessInfo.phone)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.DarkGray,
+                                )
+                            }
+
+                            if (showSocialMedia && businessInfo.socialMedia.isNotBlank()) {
+                                Text(
+                                    text = businessInfo.socialMedia,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.DarkGray,
+                                )
+                            }
+
+                            Text(
+                                text = "- - - - - - - - - - - - - - - - - - - - - - -",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray,
+                                maxLines = 1,
+                            )
+
+                            Text(
+                                text = "TICKET #0001",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black,
+                            )
+                            Text(
+                                text = "Fecha: 24/10/2023 10:30 AM",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.DarkGray,
+                            )
+
+                            Text(
+                                text = "- - - - - - - - - - - - - - - - - - - - - - -",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray,
+                                maxLines = 1,
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("2x Café Express", style = MaterialTheme.typography.bodySmall, color = Color.Black)
+                                Text("$5.00", style = MaterialTheme.typography.bodySmall, color = Color.Black)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("1x Sándwich", style = MaterialTheme.typography.bodySmall, color = Color.Black)
+                                Text("$4.00", style = MaterialTheme.typography.bodySmall, color = Color.Black)
+                            }
+
+                            Text(
+                                text = "- - - - - - - - - - - - - - - - - - - - - - -",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray,
+                                maxLines = 1,
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("SUBTOTAL:", style = MaterialTheme.typography.bodySmall, color = Color.DarkGray)
+                                Text("$9.00", style = MaterialTheme.typography.bodySmall, color = Color.DarkGray)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("TOTAL:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                                Text("$9.00", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                            }
+
+                            Text(
+                                text = "- - - - - - - - - - - - - - - - - - - - - - -",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray,
+                                maxLines = 1,
+                            )
+
+                            if (footerMessage.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = footerMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.DarkGray,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button(
+                onClick = {
+                    val updatedConfig = TicketConfig(
+                        showBusinessName = showBusinessName,
+                        showNit = showNit,
+                        showNrc = showNrc,
+                        showAddress = showAddress,
+                        showPhone = showPhone,
+                        showSocialMedia = showSocialMedia,
+                        showLogo = showLogo,
+                        footerMessage = footerMessage.trim(),
+                        paperSize = paperSize,
+                    )
+                    viewModel.updateTicketConfig(updatedConfig)
+                    Toast.makeText(
+                        context,
+                        "Configuración de ticket guardada exitosamente",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+            ) {
+                Text(
+                    text = "Guardar Cambios",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TicketSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun SettingsHomeScreenPreview() {
@@ -2099,6 +2859,8 @@ fun SettingsHomeScreenPreview() {
             onNavigateToTaxes = {},
             onNavigateToPriceRules = {},
             onNavigateToPaymentMethods = {},
+            onNavigateToBusinessInfo = {},
+            onNavigateToTicket = {},
             onNavigateBack = {},
         )
     }

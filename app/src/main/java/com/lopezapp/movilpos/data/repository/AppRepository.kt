@@ -2,6 +2,7 @@ package com.lopezapp.movilpos.data.repository
 
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
+import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.DocumentType
@@ -10,9 +11,11 @@ import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.model.Purchase
 import com.lopezapp.movilpos.data.model.PurchaseItem
+import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.Supplier
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
+import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,11 +47,20 @@ class AppRepository {
     private val _purchases = MutableStateFlow<List<Purchase>>(emptyList())
     val purchases: StateFlow<List<Purchase>> = _purchases.asStateFlow()
 
+    private val _sales = MutableStateFlow<List<Sale>>(emptyList())
+    val sales: StateFlow<List<Sale>> = _sales.asStateFlow()
+
     private val _priceRules = MutableStateFlow<List<PriceRule>>(emptyList())
     val priceRules: StateFlow<List<PriceRule>> = _priceRules.asStateFlow()
 
     private val _paymentMethods = MutableStateFlow<List<PaymentMethod>>(emptyList())
     val paymentMethods: StateFlow<List<PaymentMethod>> = _paymentMethods.asStateFlow()
+
+    private val _businessInfo = MutableStateFlow(BusinessInfo())
+    val businessInfo: StateFlow<BusinessInfo> = _businessInfo.asStateFlow()
+
+    private val _ticketConfig = MutableStateFlow(TicketConfig())
+    val ticketConfig: StateFlow<TicketConfig> = _ticketConfig.asStateFlow()
 
     init {
         // Load initial dummy data
@@ -339,6 +351,43 @@ class AppRepository {
     fun deletePaymentMethod(paymentMethodId: String) {
         _paymentMethods.update { currentList ->
             currentList.filter { it.id != paymentMethodId }
+        }
+    }
+
+    fun updateBusinessInfo(businessInfo: BusinessInfo) {
+        _businessInfo.value = businessInfo
+    }
+
+    fun updateTicketConfig(config: TicketConfig) {
+        _ticketConfig.value = config
+    }
+
+    fun addSale(sale: Sale) {
+        _sales.update { currentList ->
+            currentList + sale
+        }
+        val quantitySoldMap = sale.items.groupBy { it.productId }
+            .mapValues { entry -> entry.value.sumOf { it.quantity } }
+
+        _products.update { currentProducts ->
+            currentProducts.map { product ->
+                if (!product.isService) {
+                    val totalQtySold = quantitySoldMap[product.id] ?: 0
+                    if (totalQtySold > 0) {
+                        product.copy(stock = (product.stock - totalQtySold).coerceAtLeast(0))
+                    } else {
+                        product
+                    }
+                } else {
+                    product
+                }
+            }
+        }
+    }
+
+    fun deleteSale(saleId: String) {
+        _sales.update { currentList ->
+            currentList.filter { it.id != saleId }
         }
     }
 }

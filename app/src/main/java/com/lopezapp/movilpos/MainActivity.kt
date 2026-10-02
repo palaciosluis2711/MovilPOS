@@ -44,19 +44,23 @@ import com.lopezapp.movilpos.ui.CustomerEditForm
 import com.lopezapp.movilpos.ui.CustomerReadOnlyView
 import com.lopezapp.movilpos.ui.CustomerScreen
 import com.lopezapp.movilpos.ui.InventoryScreen
+import com.lopezapp.movilpos.ui.POSCheckoutScreen
 import com.lopezapp.movilpos.ui.POSScreen
+import com.lopezapp.movilpos.ui.POSTicketReceiptScreen
 import com.lopezapp.movilpos.ui.PriceRuleEditScreen
 import com.lopezapp.movilpos.ui.PurchaseEditForm
 import com.lopezapp.movilpos.ui.PurchaseReadOnlyView
 import com.lopezapp.movilpos.ui.PurchaseScreen
 import com.lopezapp.movilpos.ui.SettingsAnimationScreen
 import com.lopezapp.movilpos.ui.SettingsBrandsScreen
+import com.lopezapp.movilpos.ui.SettingsBusinessInfoScreen
 import com.lopezapp.movilpos.ui.SettingsCategoriesScreen
 import com.lopezapp.movilpos.ui.SettingsCurrencyScreen
 import com.lopezapp.movilpos.ui.SettingsPaymentMethodsScreen
 import com.lopezapp.movilpos.ui.SettingsPriceRulesScreen
 import com.lopezapp.movilpos.ui.SettingsScreen
 import com.lopezapp.movilpos.ui.SettingsTaxesScreen
+import com.lopezapp.movilpos.ui.SettingsTicketScreen
 import com.lopezapp.movilpos.ui.SettingsUnitsScreen
 import com.lopezapp.movilpos.ui.SupplierEditForm
 import com.lopezapp.movilpos.ui.SupplierReadOnlyView
@@ -67,19 +71,23 @@ import com.lopezapp.movilpos.ui.navigation.CustomerEditRoute
 import com.lopezapp.movilpos.ui.navigation.CustomersRoute
 import com.lopezapp.movilpos.ui.navigation.HomeRoute
 import com.lopezapp.movilpos.ui.navigation.InventoryRoute
+import com.lopezapp.movilpos.ui.navigation.POSCheckoutKey
 import com.lopezapp.movilpos.ui.navigation.POSRoute
+import com.lopezapp.movilpos.ui.navigation.POSTicketReceiptKey
 import com.lopezapp.movilpos.ui.navigation.PriceRuleEditKey
 import com.lopezapp.movilpos.ui.navigation.PurchaseDetailRoute
 import com.lopezapp.movilpos.ui.navigation.PurchaseEditRoute
 import com.lopezapp.movilpos.ui.navigation.PurchasesRoute
 import com.lopezapp.movilpos.ui.navigation.SettingsAnimationKey
 import com.lopezapp.movilpos.ui.navigation.SettingsBrandsKey
+import com.lopezapp.movilpos.ui.navigation.SettingsBusinessInfoKey
 import com.lopezapp.movilpos.ui.navigation.SettingsCategoriesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsCurrencyKey
 import com.lopezapp.movilpos.ui.navigation.SettingsPaymentMethodsKey
 import com.lopezapp.movilpos.ui.navigation.SettingsPriceRulesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsRoute
 import com.lopezapp.movilpos.ui.navigation.SettingsTaxesKey
+import com.lopezapp.movilpos.ui.navigation.SettingsTicketKey
 import com.lopezapp.movilpos.ui.navigation.SettingsUnitsKey
 import com.lopezapp.movilpos.ui.navigation.SupplierDetailRoute
 import com.lopezapp.movilpos.ui.navigation.SupplierEditRoute
@@ -102,6 +110,9 @@ class MainActivity : ComponentActivity() {
             MovilPOSTheme {
                 val settingsViewModel: SettingsViewModel = viewModel(
                     factory = SettingsViewModel.Factory(appRepository)
+                )
+                val posViewModel: POSViewModel = viewModel(
+                    factory = POSViewModel.Factory(appRepository)
                 )
                 val backStack = rememberNavBackStack(HomeRoute)
 
@@ -137,12 +148,39 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 is POSRoute -> NavEntry(key) {
-                                    val posViewModel: POSViewModel = viewModel(
-                                        factory = POSViewModel.Factory(appRepository)
-                                    )
                                     POSScreen(
                                         viewModel = posViewModel,
-                                        settingsViewModel = settingsViewModel
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateToCheckout = { backStack.add(POSCheckoutKey) }
+                                    )
+                                }
+                                is POSCheckoutKey -> NavEntry(key) {
+                                    POSCheckoutScreen(
+                                        viewModel = posViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() },
+                                        onNavigateToReceipt = { saleId ->
+                                            backStack.removeLastOrNull()
+                                            backStack.add(POSTicketReceiptKey(saleId))
+                                        }
+                                    )
+                                }
+                                is POSTicketReceiptKey -> NavEntry(key) {
+                                    POSTicketReceiptScreen(
+                                        saleId = key.saleId,
+                                        posViewModel = posViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onStartNewSale = {
+                                            posViewModel.clearCart()
+                                            while (backStack.size > 1 && backStack.last() != POSRoute) {
+                                                backStack.removeLastOrNull()
+                                            }
+                                            if (backStack.isEmpty() || backStack.last() != POSRoute) {
+                                                backStack.clear()
+                                                backStack.add(HomeRoute)
+                                                backStack.add(POSRoute)
+                                            }
+                                        }
                                     )
                                 }
                                 is PurchasesRoute -> NavEntry(key) {
@@ -247,6 +285,20 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToTaxes = { backStack.add(SettingsTaxesKey) },
                                         onNavigateToPriceRules = { backStack.add(SettingsPriceRulesKey) },
                                         onNavigateToPaymentMethods = { backStack.add(SettingsPaymentMethodsKey) },
+                                        onNavigateToBusinessInfo = { backStack.add(SettingsBusinessInfoKey) },
+                                        onNavigateToTicket = { backStack.add(SettingsTicketKey) },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsBusinessInfoKey -> NavEntry(key) {
+                                    SettingsBusinessInfoScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsTicketKey -> NavEntry(key) {
+                                    SettingsTicketScreen(
+                                        viewModel = settingsViewModel,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }

@@ -2,8 +2,11 @@ package com.lopezapp.movilpos
 
 import com.lopezapp.movilpos.data.model.ArithmeticOperator
 import com.lopezapp.movilpos.data.model.BaseVariable
+import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.TaxValueType
+import com.lopezapp.movilpos.data.model.TicketConfig
+import com.lopezapp.movilpos.data.model.TicketPaperSize
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.model.AnimationType
 import com.lopezapp.movilpos.ui.navigation.buildNavTransition
@@ -65,6 +68,22 @@ class SettingsViewModelTest {
         assertEquals("Tarjeta de Crédito / Débito", state.paymentMethods[1].name)
         assertEquals("Transferencia Bancaria", state.paymentMethods[2].name)
         assertEquals("Cheque", state.paymentMethods[3].name)
+        assertEquals("Mi Negocio", state.businessInfo.name)
+        assertEquals("", state.businessInfo.nit)
+        assertEquals("", state.businessInfo.nrc)
+        assertEquals("", state.businessInfo.address)
+        assertEquals("", state.businessInfo.phone)
+        assertEquals("", state.businessInfo.socialMedia)
+        assertNull(state.businessInfo.logoUri)
+        assertTrue(state.ticketConfig.showBusinessName)
+        assertTrue(state.ticketConfig.showNit)
+        assertTrue(state.ticketConfig.showNrc)
+        assertTrue(state.ticketConfig.showAddress)
+        assertTrue(state.ticketConfig.showPhone)
+        assertTrue(state.ticketConfig.showSocialMedia)
+        assertTrue(state.ticketConfig.showLogo)
+        assertEquals("¡Gracias por su compra! Vuelva pronto.", state.ticketConfig.footerMessage)
+        assertEquals(TicketPaperSize.SIZE_80MM, state.ticketConfig.paperSize)
     }
 
     @Test
@@ -432,6 +451,66 @@ class SettingsViewModelTest {
 
         val deletedMethod = viewModel.uiState.value.paymentMethods.find { it.id == initialMethod.id }
         assertNull(deletedMethod)
+    }
+
+    @Test
+    fun updateBusinessInfo_updatesBusinessInfoInViewModelAndRepository() = runTest {
+        val newBusinessInfo = BusinessInfo(
+            name = "Tienda El Sol",
+            nit = "06141508901011",
+            nrc = "1234567",
+            address = "Calle Principal #123, San Salvador",
+            phone = "22223333",
+            socialMedia = "@tiendaelsol",
+            logoUri = "content://media/external/images/media/1"
+        )
+        viewModel.updateBusinessInfo(newBusinessInfo)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updatedStateInfo = viewModel.uiState.value.businessInfo
+        assertEquals("Tienda El Sol", updatedStateInfo.name)
+        assertEquals("06141508901011", updatedStateInfo.nit)
+        assertEquals("1234567", updatedStateInfo.nrc)
+        assertEquals("Calle Principal #123, San Salvador", updatedStateInfo.address)
+        assertEquals("22223333", updatedStateInfo.phone)
+        assertEquals("@tiendaelsol", updatedStateInfo.socialMedia)
+        assertEquals("content://media/external/images/media/1", updatedStateInfo.logoUri)
+
+        val updatedRepoInfo = repository.businessInfo.value
+        assertEquals("Tienda El Sol", updatedRepoInfo.name)
+        assertEquals("06141508901011", updatedRepoInfo.nit)
+    }
+
+    @Test
+    fun updateTicketConfig_updatesTicketConfigInViewModelAndRepository() = runTest {
+        val newTicketConfig = TicketConfig(
+            showBusinessName = true,
+            showNit = false,
+            showNrc = false,
+            showAddress = true,
+            showPhone = true,
+            showSocialMedia = false,
+            showLogo = true,
+            footerMessage = "Gracias por preferirnos",
+            paperSize = TicketPaperSize.SIZE_57MM
+        )
+        viewModel.updateTicketConfig(newTicketConfig)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updatedStateConfig = viewModel.uiState.value.ticketConfig
+        assertTrue(updatedStateConfig.showBusinessName)
+        assertFalse(updatedStateConfig.showNit)
+        assertFalse(updatedStateConfig.showNrc)
+        assertTrue(updatedStateConfig.showAddress)
+        assertTrue(updatedStateConfig.showPhone)
+        assertFalse(updatedStateConfig.showSocialMedia)
+        assertTrue(updatedStateConfig.showLogo)
+        assertEquals("Gracias por preferirnos", updatedStateConfig.footerMessage)
+        assertEquals(TicketPaperSize.SIZE_57MM, updatedStateConfig.paperSize)
+
+        val updatedRepoConfig = repository.ticketConfig.value
+        assertEquals(TicketPaperSize.SIZE_57MM, updatedRepoConfig.paperSize)
+        assertEquals("Gracias por preferirnos", updatedRepoConfig.footerMessage)
     }
 
     @Test

@@ -1,13 +1,21 @@
 package com.lopezapp.movilpos.util
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.net.Uri
+import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.Purchase
+import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.Supplier
+import com.lopezapp.movilpos.data.model.TicketConfig
+import com.lopezapp.movilpos.data.model.TicketPaperSize
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -224,6 +232,251 @@ object PdfReportGenerator {
         pdfDocument.finishPage(page)
 
         val outputFile = File(context.cacheDir, "compra_${purchase.id}.pdf")
+        FileOutputStream(outputFile).use { out ->
+            pdfDocument.writeTo(out)
+        }
+        pdfDocument.close()
+
+        return outputFile
+    }
+
+    fun generateSaleTicketPdf(
+        context: Context,
+        sale: Sale,
+        businessInfo: BusinessInfo,
+        ticketConfig: TicketConfig
+    ): File {
+        val pdfDocument = PdfDocument()
+
+        val is57mm = ticketConfig.paperSize == TicketPaperSize.SIZE_57MM
+        val pageWidth = if (is57mm) 162 else 227
+        val margin = if (is57mm) 8f else 12f
+
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+        val formattedDate = dateFormat.format(Date(sale.dateMillis))
+
+        val paintTitleCenter = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 10f else 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintHeaderCenter = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 8.5f else 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintTextCenter = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 7.5f else 8.5f
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintTextLeft = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 7.5f else 8.5f
+            textAlign = Paint.Align.LEFT
+        }
+
+        val paintTextRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 7.5f else 8.5f
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintBoldLeft = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 8f else 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.LEFT
+        }
+
+        val paintBoldRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 8f else 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintLine = Paint().apply {
+            color = Color.DKGRAY
+            strokeWidth = 0.8f
+            style = Paint.Style.STROKE
+        }
+
+        var logoBitmap: Bitmap? = null
+        if (ticketConfig.showLogo && !businessInfo.logoUri.isNullOrBlank()) {
+            try {
+                val uri = Uri.parse(businessInfo.logoUri)
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val decoded = BitmapFactory.decodeStream(stream)
+                    if (decoded != null) {
+                        val maxLogoDim = if (is57mm) 36 else 48
+                        val scale = minOf(maxLogoDim.toFloat() / decoded.width, maxLogoDim.toFloat() / decoded.height)
+                        val w = (decoded.width * scale).toInt().coerceAtLeast(1)
+                        val h = (decoded.height * scale).toInt().coerceAtLeast(1)
+                        logoBitmap = Bitmap.createScaledBitmap(decoded, w, h, true)
+                    }
+                }
+            } catch (_: Exception) {
+                logoBitmap = null
+            }
+        }
+
+        // Measure page height
+        var estimatedHeight = margin * 2 + 10f
+        if (logoBitmap != null) estimatedHeight += logoBitmap.height + 6f
+        if (ticketConfig.showBusinessName && businessInfo.name.isNotBlank()) estimatedHeight += 14f
+        if (ticketConfig.showNit && businessInfo.nit.isNotBlank()) estimatedHeight += 12f
+        if (ticketConfig.showNrc && businessInfo.nrc.isNotBlank()) estimatedHeight += 12f
+        if (ticketConfig.showAddress && businessInfo.address.isNotBlank()) estimatedHeight += 12f
+        if (ticketConfig.showPhone && businessInfo.phone.isNotBlank()) estimatedHeight += 12f
+        if (ticketConfig.showSocialMedia && businessInfo.socialMedia.isNotBlank()) estimatedHeight += 12f
+
+        // Separator + Metadata
+        estimatedHeight += 6f + 10f + 14f + 12f + 12f + 12f + 12f
+        // Separator + Table header + items
+        estimatedHeight += 6f + 10f + 14f + (sale.items.size * 12f)
+        // Separator + Totals
+        estimatedHeight += 6f + 10f + 14f
+        if (sale.cashReceived > 0 || sale.paymentMethodName.contains("Efectivo", ignoreCase = true)) {
+            estimatedHeight += 12f + 12f
+        }
+        // Footer
+        if (ticketConfig.footerMessage.isNotBlank()) {
+            estimatedHeight += 6f + 12f + 14f
+        }
+        estimatedHeight += 20f
+
+        val pageHeight = estimatedHeight.toInt().coerceAtLeast(200)
+        val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas = page.canvas
+
+        val centerX = pageWidth / 2f
+        var yPos = margin + 10f
+
+        logoBitmap?.let { bmp ->
+            canvas.drawBitmap(bmp, centerX - (bmp.width / 2f), yPos, null)
+            yPos += bmp.height + 6f
+        }
+
+        if (ticketConfig.showBusinessName && businessInfo.name.isNotBlank()) {
+            canvas.drawText(businessInfo.name, centerX, yPos + 10f, paintTitleCenter)
+            yPos += 14f
+        }
+        if (ticketConfig.showNit && businessInfo.nit.isNotBlank()) {
+            canvas.drawText("NIT: ${businessInfo.nit}", centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+        if (ticketConfig.showNrc && businessInfo.nrc.isNotBlank()) {
+            canvas.drawText("NRC: ${businessInfo.nrc}", centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+        if (ticketConfig.showAddress && businessInfo.address.isNotBlank()) {
+            canvas.drawText(businessInfo.address, centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+        if (ticketConfig.showPhone && businessInfo.phone.isNotBlank()) {
+            canvas.drawText("Tel: ${businessInfo.phone}", centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+        if (ticketConfig.showSocialMedia && businessInfo.socialMedia.isNotBlank()) {
+            canvas.drawText("Redes: ${businessInfo.socialMedia}", centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+
+        yPos += 6f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintLine)
+        yPos += 10f
+
+        val invoiceLabel = when (sale.invoiceType) {
+            InvoiceType.CONSUMIDOR_FINAL -> "FACTURA CONSUMIDOR FINAL"
+            InvoiceType.CREDITO_FISCAL -> "COMPROBANTE CRÉDITO FISCAL"
+            InvoiceType.TICKET -> "TICKET DE VENTA"
+        }
+        canvas.drawText(invoiceLabel, centerX, yPos + 9f, paintHeaderCenter)
+        yPos += 14f
+
+        canvas.drawText("Ticket N°: ${sale.id}", margin, yPos + 9f, paintTextLeft)
+        yPos += 12f
+        canvas.drawText("Fecha: $formattedDate", margin, yPos + 9f, paintTextLeft)
+        yPos += 12f
+        canvas.drawText("Cliente: ${sale.customerName}", margin, yPos + 9f, paintTextLeft)
+        yPos += 12f
+        canvas.drawText("Pago: ${sale.paymentMethodName}", margin, yPos + 9f, paintTextLeft)
+        yPos += 12f
+
+        yPos += 6f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintLine)
+        yPos += 10f
+
+        val colQtyX = margin
+        val colSubX = pageWidth - margin
+        val colPriceX = colSubX - if (is57mm) 35f else 45f
+        val colProdX = colQtyX + if (is57mm) 18f else 22f
+
+        canvas.drawText("Cant", colQtyX, yPos + 9f, paintBoldLeft)
+        canvas.drawText("Producto", colProdX, yPos + 9f, paintBoldLeft)
+        canvas.drawText("P.U.", colPriceX, yPos + 9f, paintBoldRight)
+        canvas.drawText("Subtotal", colSubX, yPos + 9f, paintBoldRight)
+        yPos += 14f
+
+        sale.items.forEach { item ->
+            var prodName = item.productName
+            val maxProdWidth = colPriceX - colProdX - 2f
+            if (paintTextLeft.measureText(prodName) > maxProdWidth) {
+                while (prodName.isNotEmpty() && paintTextLeft.measureText("$prodName..") > maxProdWidth) {
+                    prodName = prodName.dropLast(1)
+                }
+                prodName = "$prodName.."
+            }
+
+            canvas.drawText(item.quantity.toString(), colQtyX, yPos + 9f, paintTextLeft)
+            canvas.drawText(prodName, colProdX, yPos + 9f, paintTextLeft)
+            canvas.drawText(formatCurrency(item.unitPrice), colPriceX, yPos + 9f, paintTextRight)
+            canvas.drawText(formatCurrency(item.subtotal), colSubX, yPos + 9f, paintTextRight)
+            yPos += 12f
+        }
+
+        yPos += 6f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintLine)
+        yPos += 10f
+
+        canvas.drawText("TOTAL:", margin, yPos + 10f, paintBoldLeft)
+        canvas.drawText(formatCurrency(sale.totalAmount), pageWidth - margin, yPos + 10f, paintBoldRight)
+        yPos += 14f
+
+        if (sale.cashReceived > 0 || sale.paymentMethodName.contains("Efectivo", ignoreCase = true)) {
+            canvas.drawText("Recibido:", margin, yPos + 9f, paintTextLeft)
+            canvas.drawText(formatCurrency(sale.cashReceived), pageWidth - margin, yPos + 9f, paintTextRight)
+            yPos += 12f
+
+            canvas.drawText("Cambio:", margin, yPos + 9f, paintTextLeft)
+            canvas.drawText(formatCurrency(sale.changeAmount), pageWidth - margin, yPos + 9f, paintTextRight)
+            yPos += 12f
+        }
+
+        if (ticketConfig.footerMessage.isNotBlank()) {
+            yPos += 6f
+            canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintLine)
+            yPos += 12f
+            canvas.drawText(ticketConfig.footerMessage, centerX, yPos + 9f, paintTextCenter)
+        }
+
+        pdfDocument.finishPage(page)
+
+        val outputFile = File(context.cacheDir, "ticket_${sale.id}.pdf")
         FileOutputStream(outputFile).use { out ->
             pdfDocument.writeTo(out)
         }

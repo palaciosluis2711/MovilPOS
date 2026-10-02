@@ -4,8 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lopezapp.movilpos.data.model.CartItem
+import com.lopezapp.movilpos.data.model.Customer
+import com.lopezapp.movilpos.data.model.InvoiceType
+import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.Sale
+import com.lopezapp.movilpos.data.model.SaleItem
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.util.roundToTwoDecimals
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,20 +31,54 @@ data class POSState(
     val searchQuery: String = "",
     val total: Double = 0.0,
     val selectedCartItemIds: Set<String> = emptySet(),
+    val customers: List<Customer> = emptyList(),
+    val paymentMethods: List<PaymentMethod> = emptyList(),
+    val selectedCustomerId: String? = null,
+    val selectedInvoiceType: InvoiceType = InvoiceType.CONSUMIDOR_FINAL,
+    val selectedPaymentMethodId: String? = null,
+    val cashReceivedStr: String = "",
+    val changeAmount: Double = 0.0
 )
 
 class POSViewModel(
     private val repository: AppRepository
 ) : ViewModel() {
 
+    val sales: StateFlow<List<Sale>> = repository.sales
+
     private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
     private val _searchQuery = MutableStateFlow("")
     private val _selectedPriceRuleId = MutableStateFlow<String?>(null)
     private val _selectedCartItemIds = MutableStateFlow<Set<String>>(emptySet())
+    private val _selectedCustomerId = MutableStateFlow<String?>(null)
+    private val _selectedInvoiceType = MutableStateFlow(InvoiceType.CONSUMIDOR_FINAL)
+    private val _selectedPaymentMethodId = MutableStateFlow<String?>(null)
+    private val _cashReceivedStr = MutableStateFlow("")
 
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
     val selectedPriceRuleId: StateFlow<String?> = _selectedPriceRuleId.asStateFlow()
     val selectedCartItemIds: StateFlow<Set<String>> = _selectedCartItemIds.asStateFlow()
+    val selectedCustomerId: StateFlow<String?> = _selectedCustomerId.asStateFlow()
+    val selectedInvoiceType: StateFlow<InvoiceType> = _selectedInvoiceType.asStateFlow()
+    val selectedPaymentMethodId: StateFlow<String?> = _selectedPaymentMethodId.asStateFlow()
+    val cashReceivedStr: StateFlow<String> = _cashReceivedStr.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            repository.customers.collect { customers ->
+                if (_selectedCustomerId.value == null || customers.none { it.id == _selectedCustomerId.value }) {
+                    _selectedCustomerId.value = customers.find { it.isDefault }?.id ?: customers.firstOrNull()?.id
+                }
+            }
+        }
+        viewModelScope.launch {
+            repository.paymentMethods.collect { pms ->
+                if (_selectedPaymentMethodId.value == null || pms.none { it.id == _selectedPaymentMethodId.value }) {
+                    _selectedPaymentMethodId.value = pms.find { it.isDefault }?.id ?: pms.firstOrNull()?.id
+                }
+            }
+        }
+    }
 
     val uiState: StateFlow<POSState> = combine(
         repository.products,
@@ -47,7 +86,13 @@ class POSViewModel(
         _searchQuery,
         _selectedPriceRuleId,
         _selectedCartItemIds,
-        repository.priceRules
+        repository.priceRules,
+        repository.customers,
+        repository.paymentMethods,
+        _selectedCustomerId,
+        _selectedInvoiceType,
+        _selectedPaymentMethodId,
+        _cashReceivedStr
     ) { flows: Array<Any?> ->
         @Suppress("UNCHECKED_CAST")
         val products = flows[0] as List<Product>
@@ -59,6 +104,14 @@ class POSViewModel(
         val selectedIds = flows[4] as Set<String>
         @Suppress("UNCHECKED_CAST")
         val allRules = flows[5] as List<PriceRule>
+        @Suppress("UNCHECKED_CAST")
+        val customers = flows[6] as List<Customer>
+        @Suppress("UNCHECKED_CAST")
+        val paymentMethods = flows[7] as List<PaymentMethod>
+        val custId = flows[8] as String?
+        val invoiceType = flows[9] as InvoiceType
+        val pmId = flows[10] as String?
+        val cashStr = flows[11] as String
 
         val activeRules = allRules.filter { it.isActive }
 
@@ -76,6 +129,12 @@ class POSViewModel(
         val validItemIds = rawCartItems.map { it.id }.toSet()
         val sanitizedSelectedIds = selectedIds.filter { it in validItemIds }.toSet()
 
+        val effectiveCustId = custId ?: customers.find { it.isDefault }?.id ?: customers.firstOrNull()?.id
+        val effectivePmId = pmId ?: paymentMethods.find { it.isDefault }?.id ?: paymentMethods.firstOrNull()?.id
+
+        val cashReceived = cashStr.toDoubleOrNull() ?: 0.0
+        val changeAmount = maxOf(0.0, (cashReceived - total).roundToTwoDecimals())
+
         POSState(
             products = filteredProducts,
             cartItems = rawCartItems,
@@ -83,7 +142,14 @@ class POSViewModel(
             selectedPriceRuleId = ruleId,
             searchQuery = query,
             total = total,
-            selectedCartItemIds = sanitizedSelectedIds
+            selectedCartItemIds = sanitizedSelectedIds,
+            customers = customers,
+            paymentMethods = paymentMethods,
+            selectedCustomerId = effectiveCustId,
+            selectedInvoiceType = invoiceType,
+            selectedPaymentMethodId = effectivePmId,
+            cashReceivedStr = cashStr,
+            changeAmount = changeAmount
         )
     }.stateIn(
         scope = viewModelScope,
@@ -553,21 +619,68 @@ class POSViewModel(
         _selectedPriceRuleId.value = null
     }
 
+    fun selectCustomer(customerId: String?) {
+        _selectedCustomerId.value = customerId
+    }
+
+    fun selectInvoiceType(invoiceType: InvoiceType) {
+        _selectedInvoiceType.value = invoiceType
+    }
+
+    fun selectPaymentMethod(paymentMethodId: String?) {
+        _selectedPaymentMethodId.value = paymentMethodId
+    }
+
+    fun setCashReceivedStr(value: String) {
+        _cashReceivedStr.value = value
+    }
+
+    fun processSale(): Sale? {
+        val currentCart = _cartItems.value
+        if (currentCart.isEmpty()) return null
+
+        val customers = repository.customers.value
+        val paymentMethods = repository.paymentMethods.value
+        val total = currentCart.sumOf { it.subtotal }.roundToTwoDecimals()
+
+        val custId = _selectedCustomerId.value ?: customers.find { it.isDefault }?.id ?: customers.firstOrNull()?.id ?: ""
+        val custName = customers.find { it.id == custId }?.name ?: "Cliente General"
+
+        val pmId = _selectedPaymentMethodId.value ?: paymentMethods.find { it.isDefault }?.id ?: paymentMethods.firstOrNull()?.id ?: ""
+        val pmName = paymentMethods.find { it.id == pmId }?.name ?: "Efectivo"
+
+        val cashReceived = _cashReceivedStr.value.toDoubleOrNull() ?: total
+        val changeAmount = maxOf(0.0, (cashReceived - total).roundToTwoDecimals())
+
+        val sale = Sale(
+            customerId = custId,
+            customerName = custName,
+            invoiceType = _selectedInvoiceType.value,
+            paymentMethodId = pmId,
+            paymentMethodName = pmName,
+            items = currentCart.map { item ->
+                SaleItem(
+                    productId = item.product.id,
+                    productName = item.product.name,
+                    quantity = item.quantity,
+                    unitPrice = item.effectiveUnitPrice,
+                    subtotal = item.subtotal
+                )
+            },
+            totalAmount = total,
+            cashReceived = cashReceived,
+            changeAmount = changeAmount,
+            dateMillis = System.currentTimeMillis()
+        )
+
+        repository.addSale(sale)
+        clearCart()
+        _cashReceivedStr.value = ""
+        return sale
+    }
+
     fun checkout() {
-        viewModelScope.launch {
-            val currentCart = _cartItems.value
-            val currentProducts = repository.products.value
-            
-            for (item in currentCart) {
-                val productInRepo = currentProducts.find { it.id == item.product.id }
-                if (productInRepo != null) {
-                    val updatedStock = (productInRepo.stock - item.quantity).coerceAtLeast(0)
-                    repository.updateProduct(productInRepo.copy(stock = updatedStock))
-                }
-            }
-            clearCart()
-            pruneCartSelection()
-        }
+        processSale()
     }
 
     class Factory(private val repository: AppRepository) : ViewModelProvider.Factory {
