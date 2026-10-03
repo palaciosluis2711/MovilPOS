@@ -4,6 +4,7 @@ import com.lopezapp.movilpos.data.model.ArithmeticOperator
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.BundleItem
 import com.lopezapp.movilpos.data.model.CartItem
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
@@ -107,6 +108,23 @@ class POSViewModelTest {
         viewModel.setSearchQuery("")
         testDispatcher.scheduler.advanceUntilIdle()
         assertTrue(viewModel.uiState.value.products.size >= 5)
+    }
+
+    @Test
+    fun onSearchQueryChanged_updatesSearchQuery() = runTest {
+        viewModel.onSearchQueryChanged("Latte")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals("Latte", viewModel.searchQuery.value)
+    }
+
+    @Test
+    fun allProducts_exposesAllRepositoryProducts() = runTest {
+        val p1 = Product(name = "AutoAdd Product", barcode = "11223344", price = 5.0, stock = 10)
+        repository.addProduct(p1)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val products = viewModel.allProducts.value
+        assertTrue(products.any { it.barcode == "11223344" })
     }
 
     @Test
@@ -958,6 +976,8 @@ class POSViewModelTest {
 
     @Test
     fun processSale_createsSale_decrementsStock_clearsCart_andCalculatesChange() = runTest {
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
+        viewModel.selectInvoiceType(InvoiceType.TICKET)
         val product = repository.products.value.first { !it.isService } // Coffee stock=100, price=2.5
         val initialStock = product.stock
 
@@ -972,6 +992,7 @@ class POSViewModelTest {
         assertEquals(5.0, stateBefore.total, 0.001)
         assertEquals(5.0, stateBefore.changeAmount, 0.001)
 
+        val initialSalesCount = repository.sales.value.size
         val sale = viewModel.processSale()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -979,7 +1000,7 @@ class POSViewModelTest {
         assertEquals(5.0, sale!!.totalAmount, 0.001)
         assertEquals(10.0, sale.cashReceived, 0.001)
         assertEquals(5.0, sale.changeAmount, 0.001)
-        assertEquals(1, repository.sales.value.size)
+        assertEquals(initialSalesCount + 1, repository.sales.value.size)
 
         // Stock should be decremented by 2
         val updatedProduct = repository.products.value.first { it.id == product.id }
@@ -1008,6 +1029,8 @@ class POSViewModelTest {
 
     @Test
     fun setCashReceivedStr_prefilledWithPurchaseTotal_calculatesZeroChange() = runTest {
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
+        viewModel.selectInvoiceType(InvoiceType.TICKET)
         val product = repository.products.value.first { !it.isService }
         viewModel.addToCart(product)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -1029,5 +1052,113 @@ class POSViewModelTest {
         assertEquals(total, sale!!.totalAmount, 0.001)
         assertEquals(total, sale.cashReceived, 0.001)
         assertEquals(0.0, sale.changeAmount, 0.001)
+    }
+
+    @Test
+    fun processSale_withElectronicBillingEnabled_issuesDteForConsumidorFinal() = runTest {
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                isEnabled = true,
+                establishmentCode = "0001",
+                posCode = "0001"
+            )
+        )
+        viewModel.selectInvoiceType(InvoiceType.CONSUMIDOR_FINAL)
+
+        val product = repository.products.value.first { !it.isService }
+        viewModel.addToCart(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        var navigatedSaleId: String? = null
+        viewModel.processSale { saleId ->
+            navigatedSaleId = saleId
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(navigatedSaleId != null)
+        val savedSale = repository.sales.value.find { it.id == navigatedSaleId }
+        assertTrue(savedSale != null)
+        assertTrue(savedSale!!.isDteIssued)
+        assertEquals("01", savedSale.dteType)
+        assertTrue(savedSale.dteGenerationCode?.isNotBlank() == true)
+        assertTrue(savedSale.dteReceptionSeal?.startsWith("MH-DTE-") == true)
+        assertTrue(savedSale.dteControlNumber?.startsWith("DTE-01-") == true)
+    }
+
+    @Test
+    fun processSale_withElectronicBillingEnabled_issuesDteForCreditoFiscal() = runTest {
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                isEnabled = true,
+                establishmentCode = "0002",
+                posCode = "0002"
+            )
+        )
+        viewModel.selectInvoiceType(InvoiceType.CREDITO_FISCAL)
+
+        val product = repository.products.value.first { !it.isService }
+        viewModel.addToCart(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        var navigatedSaleId: String? = null
+        viewModel.processSale { saleId ->
+            navigatedSaleId = saleId
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(navigatedSaleId != null)
+        val savedSale = repository.sales.value.find { it.id == navigatedSaleId }
+        assertTrue(savedSale != null)
+        assertTrue(savedSale!!.isDteIssued)
+        assertEquals("03", savedSale.dteType)
+        assertTrue(savedSale.dteGenerationCode?.isNotBlank() == true)
+        assertTrue(savedSale.dteReceptionSeal?.startsWith("MH-DTE-") == true)
+        assertTrue(savedSale.dteControlNumber?.startsWith("DTE-03-") == true)
+    }
+
+    @Test
+    fun selectInvoiceType_whenElectronicBillingDisabled_fallsBackToTicketForConsumidorFinalAndCreditoFiscal() = runTest {
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.selectInvoiceType(InvoiceType.CONSUMIDOR_FINAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(InvoiceType.TICKET, viewModel.uiState.value.selectedInvoiceType)
+
+        viewModel.selectInvoiceType(InvoiceType.CREDITO_FISCAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(InvoiceType.TICKET, viewModel.uiState.value.selectedInvoiceType)
+
+        viewModel.selectInvoiceType(InvoiceType.TICKET)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(InvoiceType.TICKET, viewModel.uiState.value.selectedInvoiceType)
+    }
+
+    @Test
+    fun selectInvoiceType_whenElectronicBillingEnabled_allowsConsumidorFinalAndCreditoFiscal() = runTest {
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.selectInvoiceType(InvoiceType.CONSUMIDOR_FINAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(InvoiceType.CONSUMIDOR_FINAL, viewModel.uiState.value.selectedInvoiceType)
+
+        viewModel.selectInvoiceType(InvoiceType.CREDITO_FISCAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(InvoiceType.CREDITO_FISCAL, viewModel.uiState.value.selectedInvoiceType)
+    }
+
+    @Test
+    fun electronicBillingDisabled_autoFallsBackSelectedInvoiceTypeToTicket() = runTest {
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.selectInvoiceType(InvoiceType.CREDITO_FISCAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(InvoiceType.CREDITO_FISCAL, viewModel.uiState.value.selectedInvoiceType)
+
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(InvoiceType.TICKET, viewModel.uiState.value.selectedInvoiceType)
     }
 }

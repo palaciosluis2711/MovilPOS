@@ -1,5 +1,10 @@
 package com.lopezapp.movilpos.ui
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
+import com.lopezapp.movilpos.ui.components.CompactSearchBar
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -44,7 +49,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -101,7 +105,9 @@ fun POSScreen(
     onNavigateToCheckout: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val allProducts by viewModel.allProducts.collectAsState()
     val selectedCartItemIds by viewModel.selectedCartItemIds.collectAsState()
     val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
         ?: SettingsUiState()
@@ -115,6 +121,33 @@ fun POSScreen(
         } else {
             viewModel.checkout()
         }
+    }
+
+    var showScannerDialog by remember { mutableStateOf(false) }
+
+    if (showScannerDialog) {
+        BarcodeScannerDialog(
+            onDismissRequest = { showScannerDialog = false },
+            onBarcodeScanned = { scannedCode ->
+                val trimmedCode = scannedCode.trim()
+                val matchingProduct = if (trimmedCode.isNotEmpty()) {
+                    allProducts.find { product ->
+                        product.barcode?.trim() == trimmedCode
+                    }
+                } else {
+                    null
+                }
+
+                if (matchingProduct != null) {
+                    viewModel.addToCart(matchingProduct)
+                    Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
+                } else {
+                    viewModel.onSearchQueryChanged(scannedCode)
+                    Toast.makeText(context, "No se encontró producto con el código: $scannedCode", Toast.LENGTH_SHORT).show()
+                }
+                showScannerDialog = false
+            }
+        )
     }
 
     Scaffold(
@@ -142,7 +175,8 @@ fun POSScreen(
                     Column(modifier = Modifier.weight(1.5f).fillMaxHeight()) {
                         ProductSearchBar(
                             searchQuery = uiState.searchQuery,
-                            onSearchQueryChange = { viewModel.setSearchQuery(it) }
+                            onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                            onScanBarcodeClick = { showScannerDialog = true }
                         )
                         ProductGrid(
                             products = uiState.products,
@@ -180,7 +214,8 @@ fun POSScreen(
                     Column(modifier = Modifier.fillMaxSize().padding(bottom = 72.dp)) {
                         ProductSearchBar(
                             searchQuery = uiState.searchQuery,
-                            onSearchQueryChange = { viewModel.setSearchQuery(it) }
+                            onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                            onScanBarcodeClick = { showScannerDialog = true }
                         )
                         ProductGrid(
                             products = uiState.products,
@@ -222,30 +257,14 @@ fun POSScreen(
 fun ProductSearchBar(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
+    onScanBarcodeClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedTextField(
-        value = searchQuery,
-        onValueChange = onSearchQueryChange,
-        placeholder = { Text("Buscar producto por nombre o código...") },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = "Buscar"
-            )
-        },
-        trailingIcon = {
-            if (searchQuery.isNotEmpty()) {
-                IconButton(onClick = { onSearchQueryChange("") }) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Limpiar"
-                    )
-                }
-            }
-        },
-        singleLine = true,
-        shape = CircleShape,
+    CompactSearchBar(
+        query = searchQuery,
+        onQueryChange = onSearchQueryChange,
+        placeholder = "Buscar producto por nombre o código...",
+        onScanBarcodeClick = onScanBarcodeClick,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -347,7 +366,8 @@ fun PriceRuleCapsules(
     priceRules: List<PriceRule>,
     selectedPriceRuleId: String?,
     onRuleSelected: (String?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
     if (priceRules.isEmpty()) return
 
@@ -356,14 +376,14 @@ fun PriceRuleCapsules(
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = "Reglas de Precio:",
-            style = MaterialTheme.typography.labelMedium,
+            style = if (isCompact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 6.dp)
+            modifier = Modifier.padding(bottom = if (isCompact) 2.dp else 6.dp)
         )
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (isCompact) 6.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            contentPadding = PaddingValues(horizontal = 2.dp)
+            contentPadding = PaddingValues(horizontal = 2.dp, vertical = if (isCompact) 0.dp else 2.dp)
         ) {
             itemsIndexed(priceRules, key = { _, rule -> rule.id }) { index, rule ->
                 val isSelected = rule.id == selectedPriceRuleId
@@ -382,12 +402,15 @@ fun PriceRuleCapsules(
                     shape = CircleShape,
                     color = bgColor,
                     contentColor = accentColor,
-                    border = if (isSelected) BorderStroke(2.dp, accentColor) else null,
-                    shadowElevation = if (isSelected) 2.dp else 0.dp
+                    border = if (isSelected) BorderStroke(if (isCompact) 1.5.dp else 2.dp, accentColor) else null,
+                    shadowElevation = if (isSelected) 1.dp else 0.dp
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        modifier = Modifier.padding(
+                            horizontal = if (isCompact) 8.dp else 12.dp,
+                            vertical = if (isCompact) 3.dp else 6.dp
+                        )
                     ) {
                         if (isSelected) {
                             Icon(
@@ -395,13 +418,13 @@ fun PriceRuleCapsules(
                                 contentDescription = null,
                                 tint = accentColor,
                                 modifier = Modifier
-                                    .size(14.dp)
+                                    .size(if (isCompact) 12.dp else 14.dp)
                                     .padding(end = 2.dp)
                             )
                         }
                         Text(
                             text = rule.name,
-                            style = MaterialTheme.typography.labelMedium,
+                            style = if (isCompact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             color = accentColor
                         )

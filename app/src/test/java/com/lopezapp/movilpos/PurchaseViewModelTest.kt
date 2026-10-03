@@ -1,6 +1,6 @@
 package com.lopezapp.movilpos
 
-import com.lopezapp.movilpos.data.model.PurchaseItem
+import com.lopezapp.movilpos.data.model.Purchase
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.PurchaseViewModel
 import kotlinx.coroutines.Dispatchers
@@ -126,6 +126,52 @@ class PurchaseViewModelTest {
     }
 
     @Test
+    fun filteredPurchases_filtersBySearchQuerySupplierIdAndDate() = runTest {
+        val supplier = repository.suppliers.value.first()
+        val initialPurchase = viewModel.allPurchases.value.first()
+
+        // 1. Text Search Filter
+        viewModel.onSearchQueryChanged("Central")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, viewModel.filteredPurchases.value.size)
+
+        viewModel.onSearchQueryChanged("Inexistente")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(0, viewModel.filteredPurchases.value.size)
+
+        viewModel.onSearchQueryChanged("")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // 2. Supplier Filter
+        viewModel.setSelectedSupplierIdFilter(supplier.id)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, viewModel.filteredPurchases.value.size)
+
+        viewModel.setSelectedSupplierIdFilter("non_existent_supplier_id")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(0, viewModel.filteredPurchases.value.size)
+
+        viewModel.setSelectedSupplierIdFilter(null)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // 3. Date Filter
+        viewModel.setSelectedDateFilterMillis(initialPurchase.dateMillis)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, viewModel.filteredPurchases.value.size)
+
+        // 4. Reset Filters
+        viewModel.onSearchQueryChanged("Central")
+        viewModel.setSelectedSupplierIdFilter(supplier.id)
+        viewModel.resetFilters()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("", viewModel.searchQuery.value)
+        assertNull(viewModel.selectedSupplierIdFilter.value)
+        assertNull(viewModel.selectedDateFilterMillis.value)
+        assertEquals(1, viewModel.filteredPurchases.value.size)
+    }
+
+    @Test
     fun deletePurchase_removesPurchaseFromRepository() = runTest {
         val existingPurchase = viewModel.allPurchases.value.first()
         viewModel.deletePurchase(existingPurchase.id)
@@ -144,5 +190,34 @@ class PurchaseViewModelTest {
         assertEquals(supplier.name, foundSupplier?.name)
         assertNull(viewModel.getSupplierById(null))
         assertNull(viewModel.getSupplierById("non_existent_id"))
+    }
+
+    @Test
+    fun filteredPurchases_isSortedByDateDescending() = runTest {
+        val supplier = repository.suppliers.value.first()
+        val now = System.currentTimeMillis()
+        val purchaseOld = Purchase(
+            supplierId = supplier.id,
+            supplierName = supplier.name,
+            dateMillis = now - 100000,
+            items = emptyList(),
+            totalCost = 10.0
+        )
+        val purchaseNew = Purchase(
+            supplierId = supplier.id,
+            supplierName = supplier.name,
+            dateMillis = now,
+            items = emptyList(),
+            totalCost = 20.0
+        )
+        repository.addPurchase(purchaseOld)
+        repository.addPurchase(purchaseNew)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val list = viewModel.filteredPurchases.value
+        val newIndex = list.indexOfFirst { it.dateMillis == now }
+        val oldIndex = list.indexOfFirst { it.dateMillis == now - 100000 }
+        assertTrue(newIndex != -1 && oldIndex != -1)
+        assertTrue(newIndex < oldIndex)
     }
 }

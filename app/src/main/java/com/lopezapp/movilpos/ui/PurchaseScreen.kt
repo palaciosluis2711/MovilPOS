@@ -1,9 +1,12 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.ui.components.CompactSearchBar
+
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,9 +26,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FilterAltOff
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Search
@@ -37,6 +45,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -184,8 +193,58 @@ fun PurchaseListScreen(
     onCreatePurchaseClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val purchases by viewModel.purchases.collectAsState()
+    val filteredPurchases by viewModel.filteredPurchases.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val selectedSupplierIdFilter by viewModel.selectedSupplierIdFilter.collectAsState()
+    val selectedDateFilterMillis by viewModel.selectedDateFilterMillis.collectAsState()
+
+    val allSuppliers by viewModel.allSuppliers.collectAsState()
+
+    var showDatePicker by remember { mutableStateOf(false) }
+    var supplierDropdownExpanded by remember { mutableStateOf(false) }
+
+    val isFilterActive = searchQuery.isNotBlank() ||
+            selectedSupplierIdFilter != null ||
+            selectedDateFilterMillis != null
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDateFilterMillis ?: System.currentTimeMillis()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { utcMillis ->
+                            val utcCalendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                                timeInMillis = utcMillis
+                            }
+                            val localCalendar = Calendar.getInstance().apply {
+                                set(
+                                    utcCalendar.get(Calendar.YEAR),
+                                    utcCalendar.get(Calendar.MONTH),
+                                    utcCalendar.get(Calendar.DAY_OF_MONTH),
+                                    12, 0, 0
+                                )
+                            }
+                            viewModel.setSelectedDateFilterMillis(localCalendar.timeInMillis)
+                        }
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("Aceptar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancelar")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -209,45 +268,120 @@ fun PurchaseListScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = viewModel::onSearchQueryChanged,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                placeholder = { Text("Buscar compra por proveedor o producto...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Limpiar búsqueda")
-                        }
-                    }
-                },
-                singleLine = true
+            // Search Bar
+            CompactSearchBar(
+                query = searchQuery,
+                onQueryChange = viewModel::onSearchQueryChanged,
+                placeholder = "Buscar compra por ID, proveedor o producto...",
+                modifier = Modifier.padding(vertical = 4.dp)
             )
 
-            if (purchases.isEmpty()) {
+            // Filter Chips Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Fecha Filter
+                val formattedFilterDate = selectedDateFilterMillis?.let {
+                    SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(it))
+                }
+                FilterChip(
+                    selected = selectedDateFilterMillis != null,
+                    onClick = { showDatePicker = true },
+                    label = { Text(formattedFilterDate?.let { "Fecha: $it" } ?: "Fecha") },
+                    leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (selectedDateFilterMillis != null) {
+                            IconButton(
+                                onClick = { viewModel.setSelectedDateFilterMillis(null) },
+                                modifier = Modifier.size(18.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Quitar filtro fecha")
+                            }
+                        }
+                    }
+                )
+
+                // Proveedor Filter
+                Box {
+                    val selectedSupplier = allSuppliers.find { it.id == selectedSupplierIdFilter }
+                    FilterChip(
+                        selected = selectedSupplierIdFilter != null,
+                        onClick = { supplierDropdownExpanded = true },
+                        label = { Text(selectedSupplier?.let { "Proveedor: ${it.name}" } ?: "Proveedor") },
+                        leadingIcon = { Icon(Icons.Default.LocalShipping, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) }
+                    )
+                    DropdownMenu(
+                        expanded = supplierDropdownExpanded,
+                        onDismissRequest = { supplierDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Todos los proveedores") },
+                            onClick = {
+                                viewModel.setSelectedSupplierIdFilter(null)
+                                supplierDropdownExpanded = false
+                            }
+                        )
+                        allSuppliers.forEach { supplier ->
+                            DropdownMenuItem(
+                                text = { Text(supplier.name) },
+                                onClick = {
+                                    viewModel.setSelectedSupplierIdFilter(supplier.id)
+                                    supplierDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Reset Filters Button
+                if (isFilterActive) {
+                    IconButton(onClick = { viewModel.resetFilters() }) {
+                        Icon(
+                            Icons.Default.FilterAltOff,
+                            contentDescription = "Limpiar filtros",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
+            if (filteredPurchases.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = if (searchQuery.isBlank()) "No hay compras registradas" else "No se encontraron compras",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = if (isFilterActive) "No hay compras que coincidan con los filtros" else "No hay compras registradas",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (isFilterActive) {
+                            Button(onClick = { viewModel.resetFilters() }) {
+                                Text("Limpiar filtros")
+                            }
+                        }
+                    }
                 }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(purchases, key = { it.id }) { purchase ->
+                    items(filteredPurchases, key = { it.id }) { purchase ->
                         PurchaseItemCard(
                             purchase = purchase,
                             onClick = { onPurchaseClick(purchase.id) }

@@ -52,6 +52,9 @@ data object SettingsBusinessInfoKey : NavKey
 data object SettingsTicketKey : NavKey
 
 @Serializable
+data object SettingsElectronicBillingKey : NavKey
+
+@Serializable
 data class PriceRuleEditKey(val ruleId: String? = null) : NavKey
 
 @Serializable
@@ -80,3 +83,24 @@ data class PurchaseDetailRoute(val purchaseId: String) : NavKey
 
 @Serializable
 data class PurchaseEditRoute(val purchaseId: String? = null) : NavKey
+
+@Serializable
+data object SalesRoute : NavKey
+
+@Serializable
+data class SaleDetailRoute(val saleId: String) : NavKey
+
+@Serializable
+data object DteReportsRoute : NavKey
+
+@Serializable
+data class DteDetailRoute(val saleId: String) : NavKey
+
+@Serializable
+data object QuotationsRoute : NavKey
+
+@Serializable
+data class QuotationDetailRoute(val quotationId: String) : NavKey
+
+@Serializable
+data class QuotationEditRoute(val quotationId: String? = null) : NavKey

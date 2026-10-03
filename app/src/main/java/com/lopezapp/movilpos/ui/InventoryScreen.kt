@@ -1,5 +1,8 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
+import com.lopezapp.movilpos.ui.components.CompactSearchBar
+
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -20,6 +23,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,23 +47,31 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.BrandingWatermark
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FilterAltOff
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Percent
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.TrendingUp
+import java.util.Locale
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -73,7 +85,9 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import com.lopezapp.movilpos.ui.viewmodel.ProductTypeFilter
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -251,8 +265,27 @@ fun ProductListScreen(
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true
 ) {
-    val products by viewModel.inventoryState.collectAsState()
+    val products by viewModel.filteredProducts.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val selectedCategoryFilter by viewModel.selectedCategoryFilter.collectAsState()
+    val selectedBrandFilter by viewModel.selectedBrandFilter.collectAsState()
+    val selectedTypeFilter by viewModel.selectedTypeFilter.collectAsState()
+    val lowStockOnlyFilter by viewModel.lowStockOnlyFilter.collectAsState()
+
+    val categories by viewModel.categories.collectAsState()
+    val brands by viewModel.brands.collectAsState()
+
+    var showScannerDialog by remember { mutableStateOf(false) }
+
+    if (showScannerDialog) {
+        BarcodeScannerDialog(
+            onDismissRequest = { showScannerDialog = false },
+            onBarcodeScanned = { scannedCode ->
+                viewModel.onSearchQueryChanged(scannedCode)
+                showScannerDialog = false
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -279,53 +312,232 @@ fun ProductListScreen(
                 .imePadding()
                 .padding(horizontal = 16.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.onSearchQueryChanged(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                placeholder = { Text("Buscar productos...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true
+            // Search Bar
+            CompactSearchBar(
+                query = searchQuery,
+                onQueryChange = { viewModel.onSearchQueryChanged(it) },
+                placeholder = "Buscar productos...",
+                onScanBarcodeClick = { showScannerDialog = true },
+                modifier = Modifier.padding(vertical = 8.dp)
             )
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(products, key = { it.id }) { product ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable { onProductClick(product) }
+            // Horizontal Filter Chips Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Categoría Dropdown Menu
+                var categoryDropdownExpanded by remember { mutableStateOf(false) }
+                Box {
+                    FilterChip(
+                        selected = selectedCategoryFilter != null,
+                        onClick = { categoryDropdownExpanded = true },
+                        label = { Text(selectedCategoryFilter?.let { "Cat: $it" } ?: "Categoría") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Category,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    DropdownMenu(
+                        expanded = categoryDropdownExpanded,
+                        onDismissRequest = { categoryDropdownExpanded = false }
                     ) {
-                        Row(
+                        DropdownMenuItem(
+                            text = { Text("Todas las categorías") },
+                            onClick = {
+                                viewModel.setSelectedCategoryFilter(null)
+                                categoryDropdownExpanded = false
+                            }
+                        )
+                        categories.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.name) },
+                                onClick = {
+                                    viewModel.setSelectedCategoryFilter(category.name)
+                                    categoryDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Marca Dropdown Menu
+                var brandDropdownExpanded by remember { mutableStateOf(false) }
+                Box {
+                    FilterChip(
+                        selected = selectedBrandFilter != null,
+                        onClick = { brandDropdownExpanded = true },
+                        label = { Text(selectedBrandFilter?.let { "Marca: $it" } ?: "Marca") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.BrandingWatermark,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    DropdownMenu(
+                        expanded = brandDropdownExpanded,
+                        onDismissRequest = { brandDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Todas las marcas") },
+                            onClick = {
+                                viewModel.setSelectedBrandFilter(null)
+                                brandDropdownExpanded = false
+                            }
+                        )
+                        brands.forEach { brand ->
+                            DropdownMenuItem(
+                                text = { Text(brand.name) },
+                                onClick = {
+                                    viewModel.setSelectedBrandFilter(brand.name)
+                                    brandDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Tipo Chips: Normal, Bundle, Servicio
+                FilterChip(
+                    selected = selectedTypeFilter == ProductTypeFilter.NORMAL,
+                    onClick = {
+                        viewModel.setSelectedTypeFilter(
+                            if (selectedTypeFilter == ProductTypeFilter.NORMAL) null else ProductTypeFilter.NORMAL
+                        )
+                    },
+                    label = { Text("Normal") }
+                )
+                FilterChip(
+                    selected = selectedTypeFilter == ProductTypeFilter.BUNDLE,
+                    onClick = {
+                        viewModel.setSelectedTypeFilter(
+                            if (selectedTypeFilter == ProductTypeFilter.BUNDLE) null else ProductTypeFilter.BUNDLE
+                        )
+                    },
+                    label = { Text("Bundle") }
+                )
+                FilterChip(
+                    selected = selectedTypeFilter == ProductTypeFilter.SERVICE,
+                    onClick = {
+                        viewModel.setSelectedTypeFilter(
+                            if (selectedTypeFilter == ProductTypeFilter.SERVICE) null else ProductTypeFilter.SERVICE
+                        )
+                    },
+                    label = { Text("Servicio") }
+                )
+
+                // Stock Bajo Filter Chip
+                FilterChip(
+                    selected = lowStockOnlyFilter,
+                    onClick = { viewModel.setLowStockOnlyFilter(!lowStockOnlyFilter) },
+                    label = { Text("Stock Bajo") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                )
+
+                // Limpiar Filtros Reset Button
+                val isFilterActive = searchQuery.isNotBlank() ||
+                        selectedCategoryFilter != null ||
+                        selectedBrandFilter != null ||
+                        selectedTypeFilter != null ||
+                        lowStockOnlyFilter
+
+                if (isFilterActive) {
+                    IconButton(onClick = { viewModel.resetFilters() }) {
+                        Icon(
+                            Icons.Default.FilterAltOff,
+                            contentDescription = "Limpiar filtros",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
+            if (products.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val isFilterActive = searchQuery.isNotBlank() ||
+                            selectedCategoryFilter != null ||
+                            selectedBrandFilter != null ||
+                            selectedTypeFilter != null ||
+                            lowStockOnlyFilter
+
+                    Text(
+                        text = if (isFilterActive) "No se encontraron productos con los filtros aplicados." else "No hay productos registrados.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(products, key = { it.id }) { product ->
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(vertical = 4.dp)
+                                .clickable { onProductClick(product) }
                         ) {
-                            if (!product.imageUri.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = product.imageUri,
-                                    contentDescription = "Foto de ${product.name}",
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = product.name, style = MaterialTheme.typography.titleMedium)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (!product.imageUri.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = product.imageUri,
+                                        contentDescription = "Foto de ${product.name}",
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = product.name, style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        text = if (product.isService) "Servicio" else "Stock: ${product.stock}",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                                 Text(
-                                    text = if (product.isService) "Servicio" else "Stock: ${product.stock}",
-                                    style = MaterialTheme.typography.bodyMedium
+                                    text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                    style = MaterialTheme.typography.titleMedium
                                 )
                             }
-                            Text(
-                                text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
-                                style = MaterialTheme.typography.titleMedium
-                            )
                         }
                     }
                 }
@@ -980,6 +1192,16 @@ fun ProductReadOnlyView(
                         value = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
                     )
 
+                    val profit = product.price - product.cost
+                    val margin = if (product.price > 0) (profit / product.price) * 100 else 0.0
+                    val profitColor = if (isSystemInDarkTheme()) Color(0xFF4CAF50) else Color(0xFF2E7D32)
+                    InfoRow(
+                        icon = Icons.AutoMirrored.Filled.TrendingUp,
+                        label = "Ganancia (Margen)",
+                        value = "${formatCurrency(profit, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)} (${String.format(Locale.US, "%.1f%%", margin)})",
+                        valueColor = profitColor
+                    )
+
                     if (!product.isService) {
                         InfoRow(
                             icon = Icons.Default.Warning,
@@ -1031,6 +1253,7 @@ private fun InfoRow(
     label: String,
     value: String,
     onClick: (() -> Unit)? = null,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
     trailingContent: (@Composable () -> Unit)? = null
 ) {
     Row(
@@ -1062,7 +1285,7 @@ private fun InfoRow(
                 text = value,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = valueColor
             )
         }
         if (trailingContent != null) {
@@ -1109,6 +1332,17 @@ fun ProductEditForm(
 
     var pendingCropUri by remember { mutableStateOf<String?>(null) }
     var barcodeNotApplicable by remember(product) { mutableStateOf(product != null && product.barcode.isNullOrBlank()) }
+    var showBarcodeScanner by remember { mutableStateOf(false) }
+
+    if (showBarcodeScanner) {
+        BarcodeScannerDialog(
+            onDismissRequest = { showBarcodeScanner = false },
+            onBarcodeScanned = { scannedCode ->
+                barcode = scannedCode
+                showBarcodeScanner = false
+            }
+        )
+    }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1422,6 +1656,15 @@ fun ProductEditForm(
                     enabled = !barcodeNotApplicable,
                     trailingIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { showBarcodeScanner = true },
+                                enabled = !barcodeNotApplicable
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QrCodeScanner,
+                                    contentDescription = "Escanear código de barras con la cámara"
+                                )
+                            }
                             if (barcode.isNotBlank()) {
                                 IconButton(
                                     onClick = {

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lopezapp.movilpos.data.model.CartItem
 import com.lopezapp.movilpos.data.model.Customer
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
@@ -13,6 +14,8 @@ import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.SaleItem
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.util.roundToTwoDecimals
+import java.util.UUID
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +40,8 @@ data class POSState(
     val selectedInvoiceType: InvoiceType = InvoiceType.CONSUMIDOR_FINAL,
     val selectedPaymentMethodId: String? = null,
     val cashReceivedStr: String = "",
-    val changeAmount: Double = 0.0
+    val changeAmount: Double = 0.0,
+    val electronicBillingConfig: ElectronicBillingConfig = ElectronicBillingConfig()
 )
 
 class POSViewModel(
@@ -45,6 +49,12 @@ class POSViewModel(
 ) : ViewModel() {
 
     val sales: StateFlow<List<Sale>> = repository.sales
+
+    private val _isDteEmitting = MutableStateFlow(false)
+    val isDteEmitting: StateFlow<Boolean> = _isDteEmitting.asStateFlow()
+
+    private val _dteStatusMessage = MutableStateFlow("")
+    val dteStatusMessage: StateFlow<String> = _dteStatusMessage.asStateFlow()
 
     private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
     private val _searchQuery = MutableStateFlow("")
@@ -56,6 +66,7 @@ class POSViewModel(
     private val _cashReceivedStr = MutableStateFlow("")
 
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    val allProducts: StateFlow<List<Product>> = repository.products
     val selectedPriceRuleId: StateFlow<String?> = _selectedPriceRuleId.asStateFlow()
     val selectedCartItemIds: StateFlow<Set<String>> = _selectedCartItemIds.asStateFlow()
     val selectedCustomerId: StateFlow<String?> = _selectedCustomerId.asStateFlow()
@@ -78,6 +89,16 @@ class POSViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            repository.electronicBillingConfig.collect { config ->
+                if (!config.isEnabled) {
+                    if (_selectedInvoiceType.value == InvoiceType.CONSUMIDOR_FINAL ||
+                        _selectedInvoiceType.value == InvoiceType.CREDITO_FISCAL) {
+                        _selectedInvoiceType.value = InvoiceType.TICKET
+                    }
+                }
+            }
+        }
     }
 
     val uiState: StateFlow<POSState> = combine(
@@ -92,7 +113,8 @@ class POSViewModel(
         _selectedCustomerId,
         _selectedInvoiceType,
         _selectedPaymentMethodId,
-        _cashReceivedStr
+        _cashReceivedStr,
+        repository.electronicBillingConfig
     ) { flows: Array<Any?> ->
         @Suppress("UNCHECKED_CAST")
         val products = flows[0] as List<Product>
@@ -112,6 +134,7 @@ class POSViewModel(
         val invoiceType = flows[9] as InvoiceType
         val pmId = flows[10] as String?
         val cashStr = flows[11] as String
+        val ebConfig = flows[12] as ElectronicBillingConfig
 
         val activeRules = allRules.filter { it.isActive }
 
@@ -149,7 +172,8 @@ class POSViewModel(
             selectedInvoiceType = invoiceType,
             selectedPaymentMethodId = effectivePmId,
             cashReceivedStr = cashStr,
-            changeAmount = changeAmount
+            changeAmount = changeAmount,
+            electronicBillingConfig = ebConfig
         )
     }.stateIn(
         scope = viewModelScope,
@@ -159,6 +183,10 @@ class POSViewModel(
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        setSearchQuery(query)
     }
 
     fun selectPriceRule(ruleId: String?) {
@@ -624,7 +652,12 @@ class POSViewModel(
     }
 
     fun selectInvoiceType(invoiceType: InvoiceType) {
-        _selectedInvoiceType.value = invoiceType
+        if ((invoiceType == InvoiceType.CONSUMIDOR_FINAL || invoiceType == InvoiceType.CREDITO_FISCAL) &&
+            !repository.electronicBillingConfig.value.isEnabled) {
+            _selectedInvoiceType.value = InvoiceType.TICKET
+        } else {
+            _selectedInvoiceType.value = invoiceType
+        }
     }
 
     fun selectPaymentMethod(paymentMethodId: String?) {
@@ -635,9 +668,13 @@ class POSViewModel(
         _cashReceivedStr.value = value
     }
 
-    fun processSale(): Sale? {
+    fun processSale(onNavigateToReceipt: (String) -> Unit = {}): Sale? {
         val currentCart = _cartItems.value
         if (currentCart.isEmpty()) return null
+
+        val ebConfig = repository.electronicBillingConfig.value
+        val invoiceType = _selectedInvoiceType.value
+        val isDte = ebConfig.isEnabled || invoiceType == InvoiceType.CONSUMIDOR_FINAL || invoiceType == InvoiceType.CREDITO_FISCAL
 
         val customers = repository.customers.value
         val paymentMethods = repository.paymentMethods.value
@@ -652,31 +689,78 @@ class POSViewModel(
         val cashReceived = _cashReceivedStr.value.toDoubleOrNull() ?: total
         val changeAmount = maxOf(0.0, (cashReceived - total).roundToTwoDecimals())
 
-        val sale = Sale(
-            customerId = custId,
-            customerName = custName,
-            invoiceType = _selectedInvoiceType.value,
-            paymentMethodId = pmId,
-            paymentMethodName = pmName,
-            items = currentCart.map { item ->
-                SaleItem(
-                    productId = item.product.id,
-                    productName = item.product.name,
-                    quantity = item.quantity,
-                    unitPrice = item.effectiveUnitPrice,
-                    subtotal = item.subtotal
-                )
-            },
-            totalAmount = total,
-            cashReceived = cashReceived,
-            changeAmount = changeAmount,
-            dateMillis = System.currentTimeMillis()
-        )
+        val items = currentCart.map { item ->
+            SaleItem(
+                productId = item.product.id,
+                productName = item.product.name,
+                quantity = item.quantity,
+                unitPrice = item.effectiveUnitPrice,
+                subtotal = item.subtotal
+            )
+        }
 
-        repository.addSale(sale)
-        clearCart()
-        _cashReceivedStr.value = ""
-        return sale
+        if (isDte) {
+            viewModelScope.launch {
+                _isDteEmitting.value = true
+                _dteStatusMessage.value = "Conectando con Ministerio de Hacienda..."
+                delay(800)
+                _dteStatusMessage.value = "Generando Código de Generación..."
+                delay(800)
+                _dteStatusMessage.value = "Firmando DTE..."
+                delay(800)
+                _dteStatusMessage.value = "¡DTE Emitido con Éxito!"
+                delay(800)
+
+                val generationCode = UUID.randomUUID().toString().uppercase()
+                val receptionSeal = "MH-DTE-" + System.currentTimeMillis()
+                val controlNumber = "DTE-${if (invoiceType == InvoiceType.CONSUMIDOR_FINAL) "01" else "03"}-${ebConfig.establishmentCode}${ebConfig.posCode}-${(1000000000..9999999999).random()}"
+                val dteTypeStr = if (invoiceType == InvoiceType.CONSUMIDOR_FINAL) "01" else "03"
+
+                val sale = Sale(
+                    customerId = custId,
+                    customerName = custName,
+                    invoiceType = invoiceType,
+                    paymentMethodId = pmId,
+                    paymentMethodName = pmName,
+                    items = items,
+                    totalAmount = total,
+                    cashReceived = cashReceived,
+                    changeAmount = changeAmount,
+                    dateMillis = System.currentTimeMillis(),
+                    isDteIssued = true,
+                    dteGenerationCode = generationCode,
+                    dteReceptionSeal = receptionSeal,
+                    dteControlNumber = controlNumber,
+                    dteType = dteTypeStr
+                )
+
+                repository.addSale(sale)
+                clearCart()
+                _cashReceivedStr.value = ""
+                _isDteEmitting.value = false
+                onNavigateToReceipt(sale.id)
+            }
+            return null
+        } else {
+            val sale = Sale(
+                customerId = custId,
+                customerName = custName,
+                invoiceType = invoiceType,
+                paymentMethodId = pmId,
+                paymentMethodName = pmName,
+                items = items,
+                totalAmount = total,
+                cashReceived = cashReceived,
+                changeAmount = changeAmount,
+                dateMillis = System.currentTimeMillis(),
+                isDteIssued = false
+            )
+
+            repository.addSale(sale)
+            clearCart()
+            _cashReceivedStr.value = ""
+            return sale
+        }
     }
 
     fun checkout() {

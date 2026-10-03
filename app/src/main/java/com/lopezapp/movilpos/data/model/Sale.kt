@@ -27,5 +27,10 @@ data class Sale(
     val totalAmount: Double,
     val cashReceived: Double = 0.0,
     val changeAmount: Double = 0.0,
-    val dateMillis: Long = System.currentTimeMillis()
+    val dateMillis: Long = System.currentTimeMillis(),
+    val isDteIssued: Boolean = false,
+    val dteGenerationCode: String? = null,
+    val dteReceptionSeal: String? = null,
+    val dteControlNumber: String? = null,
+    val dteType: String? = null
 )

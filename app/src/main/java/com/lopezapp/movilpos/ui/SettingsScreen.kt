@@ -39,24 +39,36 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.AttachMoney
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Store
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
+import com.lopezapp.movilpos.data.model.DteEnvironment
+import com.lopezapp.movilpos.util.ElSalvadorCommercialActivities
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -144,6 +156,7 @@ fun SettingsScreen(
     onNavigateToPaymentMethods: () -> Unit = {},
     onNavigateToBusinessInfo: () -> Unit = {},
     onNavigateToTicket: () -> Unit = {},
+    onNavigateToElectronicBilling: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
     SettingsHomeScreen(
@@ -157,6 +170,7 @@ fun SettingsScreen(
         onNavigateToPaymentMethods = onNavigateToPaymentMethods,
         onNavigateToBusinessInfo = onNavigateToBusinessInfo,
         onNavigateToTicket = onNavigateToTicket,
+        onNavigateToElectronicBilling = onNavigateToElectronicBilling,
         onNavigateBack = onNavigateBack,
         modifier = modifier,
     )
@@ -175,6 +189,7 @@ fun SettingsHomeScreen(
     onNavigateToPaymentMethods: () -> Unit,
     onNavigateToBusinessInfo: () -> Unit,
     onNavigateToTicket: () -> Unit = {},
+    onNavigateToElectronicBilling: () -> Unit = {},
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -276,6 +291,13 @@ fun SettingsHomeScreen(
                 subtitle = "Configurar los métodos de pago aceptados",
                 icon = Icons.Rounded.Payments,
                 onClick = onNavigateToPaymentMethods,
+            )
+
+            SettingEntryCard(
+                title = "Facturación Electrónica",
+                subtitle = "Configuración DTE Ministerio de Hacienda de El Salvador",
+                icon = Icons.Rounded.CloudSync,
+                onClick = onNavigateToElectronicBilling,
             )
         }
     }
@@ -2139,11 +2161,15 @@ fun SettingsBusinessInfoScreen(
     val context = LocalContext.current
 
     var name by rememberSaveable { mutableStateOf(uiState.businessInfo.name) }
-    var nit by rememberSaveable { mutableStateOf(uiState.businessInfo.nit) }
+    var nit by remember(uiState.businessInfo) {
+        mutableStateOf(uiState.businessInfo.nit.filter { it.isDigit() }.take(14))
+    }
     var nrc by rememberSaveable { mutableStateOf(uiState.businessInfo.nrc) }
     var address by rememberSaveable { mutableStateOf(uiState.businessInfo.address) }
     var phone by rememberSaveable { mutableStateOf(uiState.businessInfo.phone) }
+    var email by rememberSaveable { mutableStateOf(uiState.businessInfo.email) }
     var socialMedia by rememberSaveable { mutableStateOf(uiState.businessInfo.socialMedia) }
+    var commercialName by rememberSaveable { mutableStateOf(uiState.businessInfo.commercialName) }
     var logoUri by rememberSaveable { mutableStateOf(uiState.businessInfo.logoUri) }
     var nameError by rememberSaveable { mutableStateOf(false) }
 
@@ -2285,6 +2311,18 @@ fun SettingsBusinessInfoScreen(
             )
 
             OutlinedTextField(
+                value = commercialName,
+                onValueChange = { commercialName = it },
+                label = { Text("Nombre Comercial") },
+                placeholder = { Text("Ej. Mi Negocio Comercial") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Storefront, contentDescription = null)
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
                 value = nit,
                 onValueChange = { input ->
                     nit = input.filter { it.isDigit() }.take(14)
@@ -2339,6 +2377,19 @@ fun SettingsBusinessInfoScreen(
             )
 
             OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Correo electrónico") },
+                placeholder = { Text("ejemplo@correo.com") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Email, contentDescription = null)
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
                 value = socialMedia,
                 onValueChange = { socialMedia = it },
                 label = { Text("Redes Sociales") },
@@ -2359,11 +2410,13 @@ fun SettingsBusinessInfoScreen(
                     } else {
                         val updatedInfo = BusinessInfo(
                             name = name.trim(),
-                            nit = nit,
+                            nit = formatNit(nit),
                             nrc = nrc.trim(),
                             address = address.trim(),
                             phone = phone,
+                            email = email.trim(),
                             socialMedia = socialMedia.trim(),
+                            commercialName = commercialName.trim(),
                             logoUri = logoUri,
                         )
                         viewModel.updateBusinessInfo(updatedInfo)
@@ -2846,6 +2899,322 @@ fun TicketSwitchRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsElectronicBillingScreen(
+    viewModel: SettingsViewModel,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val config = uiState.electronicBillingConfig
+
+    var isEnabled by rememberSaveable { mutableStateOf(config.isEnabled) }
+    var environment by rememberSaveable { mutableStateOf(config.environment) }
+    var nit by rememberSaveable { mutableStateOf(config.nit) }
+    var apiToken by rememberSaveable { mutableStateOf(config.apiToken) }
+    var establishmentCode by rememberSaveable { mutableStateOf(config.establishmentCode) }
+    var posCode by rememberSaveable { mutableStateOf(config.posCode) }
+    var economicActivity by rememberSaveable { mutableStateOf(config.economicActivity) }
+    var certificatePassword by rememberSaveable { mutableStateOf(config.certificatePassword) }
+
+    var apiTokenVisible by rememberSaveable { mutableStateOf(false) }
+    var certPasswordVisible by rememberSaveable { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Facturación Electrónica") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Volver",
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            )
+        },
+        modifier = modifier,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Habilitar Facturación Electrónica (DTE)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Emisión de Documentos Tributarios Electrónicos con el MH",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = isEnabled,
+                        onCheckedChange = { isEnabled = it },
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "Ambiente DTE",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        FilterChip(
+                            selected = environment == DteEnvironment.SANDBOX,
+                            onClick = { environment = DteEnvironment.SANDBOX },
+                            label = { Text("Pruebas / Sandbox") },
+                            modifier = Modifier.weight(1f),
+                        )
+                        FilterChip(
+                            selected = environment == DteEnvironment.PRODUCTION,
+                            onClick = { environment = DteEnvironment.PRODUCTION },
+                            label = { Text("Producción") },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = nit,
+                onValueChange = { nit = it },
+                label = { Text("NIT del Emisor") },
+                placeholder = { Text("0614-000000-000-0") },
+                leadingIcon = { Icon(imageVector = Icons.Default.Badge, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = apiToken,
+                onValueChange = { apiToken = it },
+                label = { Text("Token / API Key MH") },
+                placeholder = { Text("Ingrese el token de autenticación") },
+                leadingIcon = { Icon(imageVector = Icons.Default.Key, contentDescription = null) },
+                trailingIcon = {
+                    IconButton(onClick = { apiTokenVisible = !apiTokenVisible }) {
+                        Icon(
+                            imageVector = if (apiTokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (apiTokenVisible) "Ocultar token" else "Mostrar token",
+                        )
+                    }
+                },
+                visualTransformation = if (apiTokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                OutlinedTextField(
+                    value = establishmentCode,
+                    onValueChange = { establishmentCode = it },
+                    label = { Text("Código de Establecimiento") },
+                    placeholder = { Text("0001") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = posCode,
+                    onValueChange = { posCode = it },
+                    label = { Text("Código de Punto de Venta") },
+                    placeholder = { Text("0001") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            SettingsEditableSearchableDropdownField(
+                value = economicActivity,
+                onValueChange = { economicActivity = it },
+                label = "Actividad Económica",
+                options = ElSalvadorCommercialActivities.activities,
+                placeholder = "Buscar actividad económica...",
+                leadingIcon = Icons.Default.Work,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = certificatePassword,
+                onValueChange = { certificatePassword = it },
+                label = { Text("Contraseña de Certificado") },
+                placeholder = { Text("Contraseña del certificado MH") },
+                leadingIcon = { Icon(imageVector = Icons.Default.Lock, contentDescription = null) },
+                trailingIcon = {
+                    IconButton(onClick = { certPasswordVisible = !certPasswordVisible }) {
+                        Icon(
+                            imageVector = if (certPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (certPasswordVisible) "Ocultar contraseña" else "Mostrar contraseña",
+                        )
+                    }
+                },
+                visualTransformation = if (certPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = {
+                    val updatedConfig = ElectronicBillingConfig(
+                        isEnabled = isEnabled,
+                        environment = environment,
+                        nit = nit.trim(),
+                        apiToken = apiToken.trim(),
+                        establishmentCode = establishmentCode.trim().ifBlank { "0001" },
+                        posCode = posCode.trim().ifBlank { "0001" },
+                        economicActivity = economicActivity.trim(),
+                        certificatePassword = certificatePassword,
+                    )
+                    viewModel.updateElectronicBillingConfig(updatedConfig)
+                    Toast.makeText(
+                        context,
+                        "Configuración de facturación electrónica guardada exitosamente",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+            ) {
+                Text(
+                    text = "Guardar Configuración",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsEditableSearchableDropdownField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    options: List<String>,
+    modifier: Modifier = Modifier,
+    leadingIcon: ImageVector? = null,
+    placeholder: String = "",
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val filteredOptions = remember(value, options) {
+        if (value.isBlank()) {
+            options
+        } else {
+            val query = value.trim().lowercase()
+            options.filter { option ->
+                option.lowercase().contains(query)
+            }
+        }
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier,
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = { newValue ->
+                onValueChange(newValue)
+                expanded = true
+            },
+            label = { Text(label) },
+            placeholder = { if (placeholder.isNotEmpty()) Text(placeholder) },
+            leadingIcon = leadingIcon?.let {
+                { Icon(imageVector = it, contentDescription = null) }
+            },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryEditable),
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            if (filteredOptions.isNotEmpty()) {
+                filteredOptions.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            onValueChange(option)
+                            expanded = false
+                        },
+                    )
+                }
+            } else if (value.isNotBlank()) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "Sin sugerencias. Se usará el texto ingresado.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    },
+                    onClick = {},
+                    enabled = false,
+                )
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun SettingsHomeScreenPreview() {
@@ -2861,6 +3230,7 @@ fun SettingsHomeScreenPreview() {
             onNavigateToPaymentMethods = {},
             onNavigateToBusinessInfo = {},
             onNavigateToTicket = {},
+            onNavigateToElectronicBilling = {},
             onNavigateBack = {},
         )
     }

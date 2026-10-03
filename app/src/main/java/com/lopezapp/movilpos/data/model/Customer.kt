@@ -22,5 +22,6 @@ data class Customer(
     val address: String? = null,
     val isLargeContributor: Boolean = false,
     val commercialActivity: String? = null,
+    val commercialName: String = "",
     val isDefault: Boolean = false
 )

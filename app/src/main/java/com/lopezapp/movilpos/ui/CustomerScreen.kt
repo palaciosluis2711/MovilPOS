@@ -1,5 +1,7 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.ui.components.CompactSearchBar
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -226,24 +229,11 @@ fun CustomerListScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.onSearchQueryChanged(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                placeholder = { Text("Buscar por nombre, documento, teléfono...") },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Default.Search, contentDescription = "Buscar")
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                            Icon(imageVector = Icons.Default.Clear, contentDescription = "Limpiar")
-                        }
-                    }
-                },
-                singleLine = true
+            CompactSearchBar(
+                query = searchQuery,
+                onQueryChange = { viewModel.onSearchQueryChanged(it) },
+                placeholder = "Buscar por nombre, documento, teléfono...",
+                modifier = Modifier.padding(vertical = 8.dp)
             )
 
             if (customers.isEmpty()) {
@@ -698,6 +688,7 @@ fun CustomerEditForm(
     var address by remember(existingCustomer) { mutableStateOf(existingCustomer?.address ?: "") }
     var isLargeContributor by remember(existingCustomer) { mutableStateOf(existingCustomer?.isLargeContributor ?: false) }
     var commercialActivity by remember(existingCustomer) { mutableStateOf(existingCustomer?.commercialActivity ?: "") }
+    var commercialName by remember(existingCustomer) { mutableStateOf(existingCustomer?.commercialName ?: "") }
     var isDefault by remember(existingCustomer) { mutableStateOf(existingCustomer?.isDefault ?: false) }
 
     var isNameError by remember { mutableStateOf(false) }
@@ -728,6 +719,7 @@ fun CustomerEditForm(
                     address = address.ifBlank { null },
                     isLargeContributor = if (documentType == DocumentType.NIT) isLargeContributor else false,
                     commercialActivity = if (documentType == DocumentType.NIT) commercialActivity.ifBlank { null } else null,
+                    commercialName = commercialName.trim(),
                     isDefault = isDefault
                 )
                 viewModel.addCustomer(newCustomer)
@@ -746,6 +738,7 @@ fun CustomerEditForm(
                     address = address.ifBlank { null },
                     isLargeContributor = if (documentType == DocumentType.NIT) isLargeContributor else false,
                     commercialActivity = if (documentType == DocumentType.NIT) commercialActivity.ifBlank { null } else null,
+                    commercialName = commercialName.trim(),
                     isDefault = isDefault
                 )
                 viewModel.updateCustomer(updatedCustomer)
@@ -804,6 +797,19 @@ fun CustomerEditForm(
                     if (isNameError) {
                         Text("El nombre es requerido", color = MaterialTheme.colorScheme.error)
                     }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Nombre Comercial
+            OutlinedTextField(
+                value = commercialName,
+                onValueChange = { commercialName = it },
+                label = { Text("Nombre Comercial") },
+                placeholder = { Text("Ej. Mi Negocio Comercial") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Storefront, contentDescription = null)
                 },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()

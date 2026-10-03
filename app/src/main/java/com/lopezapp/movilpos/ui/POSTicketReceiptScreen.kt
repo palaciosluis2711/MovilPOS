@@ -291,6 +291,31 @@ fun POSTicketReceiptScreen(
                                 Text(text = "Método de Pago: ${sale.paymentMethodName}", fontSize = 11.sp, color = Color.Black)
                             }
 
+                            if (sale.isDteIssued) {
+                                HorizontalDivider(
+                                    color = Color.LightGray,
+                                    thickness = 1.dp,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                                Text(
+                                    text = "DOCUMENTO TRIBUTARIO ELECTRÓNICO (DTE)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = Color.Black,
+                                    textAlign = TextAlign.Center
+                                )
+                                val dteTypeDesc = if (sale.dteType == "03" || sale.invoiceType == InvoiceType.CREDITO_FISCAL) "Crédito Fiscal (03)" else "Consumidor Final (01)"
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(text = "Tipo: $dteTypeDesc", fontSize = 10.sp, color = Color.Black)
+                                    Text(text = "Código de Generación: ${sale.dteGenerationCode ?: ""}", fontSize = 10.sp, color = Color.Black)
+                                    Text(text = "Sello de Recepción: ${sale.dteReceptionSeal ?: ""}", fontSize = 10.sp, color = Color.Black)
+                                    Text(text = "Número de Control: ${sale.dteControlNumber ?: ""}", fontSize = 10.sp, color = Color.Black)
+                                }
+                            }
+
                             HorizontalDivider(
                                 color = Color.LightGray,
                                 thickness = 1.dp,
@@ -343,17 +368,57 @@ fun POSTicketReceiptScreen(
                             )
 
                             // Totals Section
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("TOTAL:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Black)
-                                Text(
-                                    text = formatCurrency(sale.totalAmount, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = Color.Black
-                                )
+                            if (sale.invoiceType == InvoiceType.CREDITO_FISCAL) {
+                                val calculatedSubtotal = sale.totalAmount / 1.13
+                                val calculatedTax = sale.totalAmount - calculatedSubtotal
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Subtotal (sin IVA):", fontSize = 11.sp, color = Color.Black)
+                                    Text(
+                                        text = formatCurrency(calculatedSubtotal, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                        fontSize = 11.sp,
+                                        color = Color.Black
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("IVA (13%):", fontSize = 11.sp, color = Color.Black)
+                                    Text(
+                                        text = formatCurrency(calculatedTax, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                        fontSize = 11.sp,
+                                        color = Color.Black
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("TOTAL FINAL:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Black)
+                                    Text(
+                                        text = formatCurrency(sale.totalAmount, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color.Black
+                                    )
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("TOTAL:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Black)
+                                    Text(
+                                        text = formatCurrency(sale.totalAmount, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color.Black
+                                    )
+                                }
                             }
 
                             if (sale.cashReceived > 0 || sale.paymentMethodName.contains("Efectivo", ignoreCase = true)) {

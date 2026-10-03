@@ -19,10 +19,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.Inventory
 import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PointOfSale
+import androidx.compose.material.icons.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.RequestQuote
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material3.ElevatedCard
@@ -31,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -51,11 +55,19 @@ import com.lopezapp.movilpos.ui.PriceRuleEditScreen
 import com.lopezapp.movilpos.ui.PurchaseEditForm
 import com.lopezapp.movilpos.ui.PurchaseReadOnlyView
 import com.lopezapp.movilpos.ui.PurchaseScreen
+import com.lopezapp.movilpos.ui.QuotationEditForm
+import com.lopezapp.movilpos.ui.QuotationListScreen
+import com.lopezapp.movilpos.ui.QuotationReadOnlyView
+import com.lopezapp.movilpos.ui.SaleReadOnlyView
+import com.lopezapp.movilpos.ui.SalesListScreen
+import com.lopezapp.movilpos.ui.DteReportsListScreen
+import com.lopezapp.movilpos.ui.DteDetailScreen
 import com.lopezapp.movilpos.ui.SettingsAnimationScreen
 import com.lopezapp.movilpos.ui.SettingsBrandsScreen
 import com.lopezapp.movilpos.ui.SettingsBusinessInfoScreen
 import com.lopezapp.movilpos.ui.SettingsCategoriesScreen
 import com.lopezapp.movilpos.ui.SettingsCurrencyScreen
+import com.lopezapp.movilpos.ui.SettingsElectronicBillingScreen
 import com.lopezapp.movilpos.ui.SettingsPaymentMethodsScreen
 import com.lopezapp.movilpos.ui.SettingsPriceRulesScreen
 import com.lopezapp.movilpos.ui.SettingsScreen
@@ -78,11 +90,19 @@ import com.lopezapp.movilpos.ui.navigation.PriceRuleEditKey
 import com.lopezapp.movilpos.ui.navigation.PurchaseDetailRoute
 import com.lopezapp.movilpos.ui.navigation.PurchaseEditRoute
 import com.lopezapp.movilpos.ui.navigation.PurchasesRoute
+import com.lopezapp.movilpos.ui.navigation.QuotationDetailRoute
+import com.lopezapp.movilpos.ui.navigation.QuotationEditRoute
+import com.lopezapp.movilpos.ui.navigation.QuotationsRoute
+import com.lopezapp.movilpos.ui.navigation.SaleDetailRoute
+import com.lopezapp.movilpos.ui.navigation.SalesRoute
+import com.lopezapp.movilpos.ui.navigation.DteReportsRoute
+import com.lopezapp.movilpos.ui.navigation.DteDetailRoute
 import com.lopezapp.movilpos.ui.navigation.SettingsAnimationKey
 import com.lopezapp.movilpos.ui.navigation.SettingsBrandsKey
 import com.lopezapp.movilpos.ui.navigation.SettingsBusinessInfoKey
 import com.lopezapp.movilpos.ui.navigation.SettingsCategoriesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsCurrencyKey
+import com.lopezapp.movilpos.ui.navigation.SettingsElectronicBillingKey
 import com.lopezapp.movilpos.ui.navigation.SettingsPaymentMethodsKey
 import com.lopezapp.movilpos.ui.navigation.SettingsPriceRulesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsRoute
@@ -97,6 +117,9 @@ import com.lopezapp.movilpos.ui.viewmodel.CustomerViewModel
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import com.lopezapp.movilpos.ui.viewmodel.PurchaseViewModel
+import com.lopezapp.movilpos.ui.viewmodel.QuotationViewModel
+import com.lopezapp.movilpos.ui.viewmodel.SalesViewModel
+import com.lopezapp.movilpos.ui.viewmodel.DteReportsViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SupplierViewModel
 
@@ -131,10 +154,13 @@ class MainActivity : ComponentActivity() {
                                     HomeScreen(
                                         onNavigateToInventory = { backStack.add(InventoryRoute) },
                                         onNavigateToPOS = { backStack.add(POSRoute) },
+                                        onNavigateToSales = { backStack.add(SalesRoute) },
+                                        onNavigateToQuotations = { backStack.add(QuotationsRoute) },
                                         onNavigateToPurchases = { backStack.add(PurchasesRoute) },
                                         onNavigateToSuppliers = { backStack.add(SuppliersRoute) },
                                         onNavigateToCustomers = { backStack.add(CustomersRoute) },
-                                        onNavigateToSettings = { backStack.add(SettingsRoute) }
+                                        onNavigateToSettings = { backStack.add(SettingsRoute) },
+                                        onNavigateToDteReports = { backStack.add(DteReportsRoute) }
                                     )
                                 }
                                 is InventoryRoute -> NavEntry(key) {
@@ -181,6 +207,91 @@ class MainActivity : ComponentActivity() {
                                                 backStack.add(POSRoute)
                                             }
                                         }
+                                    )
+                                }
+                                is SalesRoute -> NavEntry(key) {
+                                    val salesViewModel: SalesViewModel = viewModel(
+                                        factory = SalesViewModel.Factory(appRepository)
+                                    )
+                                    SalesListScreen(
+                                        viewModel = salesViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateToDetail = { saleId -> backStack.add(SaleDetailRoute(saleId)) },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is DteReportsRoute -> NavEntry(key) {
+                                    val dteReportsViewModel: DteReportsViewModel = viewModel(
+                                        factory = DteReportsViewModel.Factory(appRepository)
+                                    )
+                                    DteReportsListScreen(
+                                        viewModel = dteReportsViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateToDetail = { saleId -> backStack.add(DteDetailRoute(saleId)) },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is DteDetailRoute -> NavEntry(key) {
+                                    val dteReportsViewModel: DteReportsViewModel = viewModel(
+                                        factory = DteReportsViewModel.Factory(appRepository)
+                                    )
+                                    DteDetailScreen(
+                                        saleId = key.saleId,
+                                        viewModel = dteReportsViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SaleDetailRoute -> NavEntry(key) {
+                                    val salesViewModel: SalesViewModel = viewModel(
+                                        factory = SalesViewModel.Factory(appRepository)
+                                    )
+                                    SaleReadOnlyView(
+                                        saleId = key.saleId,
+                                        salesViewModel = salesViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is QuotationsRoute -> NavEntry(key) {
+                                    val quotationViewModel: QuotationViewModel = viewModel(
+                                        factory = QuotationViewModel.Factory(appRepository)
+                                    )
+                                    QuotationListScreen(
+                                        viewModel = quotationViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateToDetail = { quotationId -> backStack.add(QuotationDetailRoute(quotationId)) },
+                                        onNavigateToCreate = { backStack.add(QuotationEditRoute()) },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is QuotationDetailRoute -> NavEntry(key) {
+                                    val quotationViewModel: QuotationViewModel = viewModel(
+                                        factory = QuotationViewModel.Factory(appRepository)
+                                    )
+                                    QuotationReadOnlyView(
+                                        quotationId = key.quotationId,
+                                        viewModel = quotationViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateToEdit = { quotationId -> backStack.add(QuotationEditRoute(quotationId)) },
+                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is QuotationEditRoute -> NavEntry(key) {
+                                    val quotationViewModel: QuotationViewModel = viewModel(
+                                        factory = QuotationViewModel.Factory(appRepository)
+                                    )
+                                    LaunchedEffect(key.quotationId) {
+                                        key.quotationId?.let { id ->
+                                            quotationViewModel.getQuotationById(id)?.let { q ->
+                                                quotationViewModel.loadQuotationForEdit(q)
+                                            }
+                                        }
+                                    }
+                                    QuotationEditForm(
+                                        viewModel = quotationViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateUp = { backStack.removeLastOrNull() }
                                     )
                                 }
                                 is PurchasesRoute -> NavEntry(key) {
@@ -287,6 +398,7 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToPaymentMethods = { backStack.add(SettingsPaymentMethodsKey) },
                                         onNavigateToBusinessInfo = { backStack.add(SettingsBusinessInfoKey) },
                                         onNavigateToTicket = { backStack.add(SettingsTicketKey) },
+                                        onNavigateToElectronicBilling = { backStack.add(SettingsElectronicBillingKey) },
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
@@ -298,6 +410,12 @@ class MainActivity : ComponentActivity() {
                                 }
                                 is SettingsTicketKey -> NavEntry(key) {
                                     SettingsTicketScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsElectronicBillingKey -> NavEntry(key) {
+                                    SettingsElectronicBillingScreen(
                                         viewModel = settingsViewModel,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
@@ -374,10 +492,13 @@ class MainActivity : ComponentActivity() {
 fun HomeScreen(
     onNavigateToInventory: () -> Unit,
     onNavigateToPOS: () -> Unit,
+    onNavigateToSales: () -> Unit,
+    onNavigateToQuotations: () -> Unit,
     onNavigateToPurchases: () -> Unit,
     onNavigateToSuppliers: () -> Unit,
     onNavigateToCustomers: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToDteReports: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyVerticalGrid(
@@ -399,6 +520,27 @@ fun HomeScreen(
                 title = "POS",
                 icon = Icons.Rounded.PointOfSale,
                 onClick = onNavigateToPOS
+            )
+        }
+        item {
+            MenuCard(
+                title = "Ventas",
+                icon = Icons.Rounded.ReceiptLong,
+                onClick = onNavigateToSales
+            )
+        }
+        item {
+            MenuCard(
+                title = "Reportes DTE y MH",
+                icon = Icons.Rounded.CloudDone,
+                onClick = onNavigateToDteReports
+            )
+        }
+        item {
+            MenuCard(
+                title = "Cotizaciones",
+                icon = Icons.Rounded.RequestQuote,
+                onClick = onNavigateToQuotations
             )
         }
         item {

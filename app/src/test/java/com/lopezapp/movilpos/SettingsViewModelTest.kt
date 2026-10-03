@@ -3,6 +3,8 @@ package com.lopezapp.movilpos
 import com.lopezapp.movilpos.data.model.ArithmeticOperator
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.DteEnvironment
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
@@ -511,6 +513,36 @@ class SettingsViewModelTest {
         val updatedRepoConfig = repository.ticketConfig.value
         assertEquals(TicketPaperSize.SIZE_57MM, updatedRepoConfig.paperSize)
         assertEquals("Gracias por preferirnos", updatedRepoConfig.footerMessage)
+    }
+
+    @Test
+    fun updateElectronicBillingConfig_updatesConfigInViewModelAndRepository() = runTest {
+        val newConfig = ElectronicBillingConfig(
+            isEnabled = true,
+            environment = DteEnvironment.PRODUCTION,
+            nit = "0614-010190-101-2",
+            apiToken = "secret_token_123",
+            establishmentCode = "0002",
+            posCode = "0003",
+            economicActivity = "Servicios de restaurantes, cafeterías y servicios móviles de comidas",
+            certificatePassword = "cert_password"
+        )
+        viewModel.updateElectronicBillingConfig(newConfig)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updatedState = viewModel.uiState.value.electronicBillingConfig
+        assertTrue(updatedState.isEnabled)
+        assertEquals(DteEnvironment.PRODUCTION, updatedState.environment)
+        assertEquals("0614-010190-101-2", updatedState.nit)
+        assertEquals("secret_token_123", updatedState.apiToken)
+        assertEquals("0002", updatedState.establishmentCode)
+        assertEquals("0003", updatedState.posCode)
+        assertEquals("Servicios de restaurantes, cafeterías y servicios móviles de comidas", updatedState.economicActivity)
+        assertEquals("cert_password", updatedState.certificatePassword)
+
+        val updatedRepo = repository.electronicBillingConfig.value
+        assertTrue(updatedRepo.isEnabled)
+        assertEquals(DteEnvironment.PRODUCTION, updatedRepo.environment)
     }
 
     @Test

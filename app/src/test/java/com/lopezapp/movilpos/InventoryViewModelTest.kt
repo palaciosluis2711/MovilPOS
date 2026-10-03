@@ -3,14 +3,19 @@ package com.lopezapp.movilpos
 import com.lopezapp.movilpos.data.model.BundleItem
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
+import com.lopezapp.movilpos.ui.viewmodel.ProductTypeFilter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -241,5 +246,108 @@ class InventoryViewModelTest {
         assertTrue(productInRepo?.isService == true)
         assertEquals("Servicio", productInRepo?.unitOfMeasure)
         assertEquals(0, productInRepo?.alertQuantity)
+    }
+
+    @Test
+    fun categoryFilter_filtersProductsByCategory() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        viewModel.setSelectedCategoryFilter("Bebidas")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val filtered = viewModel.filteredProducts.value
+        assertEquals(2, filtered.size)
+        assertTrue(filtered.all { it.category == "Bebidas" })
+    }
+
+    @Test
+    fun brandFilter_filtersProductsByBrand() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        viewModel.setSelectedBrandFilter("Nestlé")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val filtered = viewModel.filteredProducts.value
+        assertEquals(1, filtered.size)
+        assertEquals("Coffee", filtered.first().name)
+    }
+
+    @Test
+    fun typeFilter_filtersProductsByProductType() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        viewModel.addProduct(
+            name = "Combo Breakfast",
+            price = 6.5,
+            isBundle = true
+        )
+        viewModel.addProduct(
+            name = "Corte de Cabello",
+            price = 15.0,
+            isService = true
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Filter Normal
+        viewModel.setSelectedTypeFilter(ProductTypeFilter.NORMAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val normalProducts = viewModel.filteredProducts.value
+        assertTrue(normalProducts.all { !it.isBundle && !it.isService })
+
+        // Filter Bundle
+        viewModel.setSelectedTypeFilter(ProductTypeFilter.BUNDLE)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val bundleProducts = viewModel.filteredProducts.value
+        assertEquals(1, bundleProducts.size)
+        assertEquals("Combo Breakfast", bundleProducts.first().name)
+
+        // Filter Service
+        viewModel.setSelectedTypeFilter(ProductTypeFilter.SERVICE)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val serviceProducts = viewModel.filteredProducts.value
+        assertEquals(1, serviceProducts.size)
+        assertEquals("Corte de Cabello", serviceProducts.first().name)
+    }
+
+    @Test
+    fun lowStockFilter_filtersProductsWithLowStock() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        viewModel.addProduct(
+            name = "Low Stock Item",
+            price = 5.0,
+            stock = 2,
+            alertQuantity = 5
+        )
+        viewModel.addProduct(
+            name = "High Stock Item",
+            price = 5.0,
+            stock = 20,
+            alertQuantity = 5
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.setLowStockOnlyFilter(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val filtered = viewModel.filteredProducts.value
+        assertEquals(1, filtered.size)
+        assertEquals("Low Stock Item", filtered.first().name)
+    }
+
+    @Test
+    fun resetFilters_clearsAllActiveFilters() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        viewModel.onSearchQueryChanged("Coffee")
+        viewModel.setSelectedCategoryFilter("Bebidas")
+        viewModel.setSelectedBrandFilter("Nestlé")
+        viewModel.setSelectedTypeFilter(ProductTypeFilter.NORMAL)
+        viewModel.setLowStockOnlyFilter(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.resetFilters()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("", viewModel.searchQuery.value)
+        assertNull(viewModel.selectedCategoryFilter.value)
+        assertNull(viewModel.selectedBrandFilter.value)
+        assertNull(viewModel.selectedTypeFilter.value)
+        assertFalse(viewModel.lowStockOnlyFilter.value)
     }
 }

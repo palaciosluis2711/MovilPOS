@@ -8,6 +8,7 @@ import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Tax
@@ -37,7 +38,8 @@ data class SettingsUiState(
     val priceRules: List<PriceRule> = emptyList(),
     val paymentMethods: List<PaymentMethod> = emptyList(),
     val businessInfo: BusinessInfo = BusinessInfo(),
-    val ticketConfig: TicketConfig = TicketConfig()
+    val ticketConfig: TicketConfig = TicketConfig(),
+    val electronicBillingConfig: ElectronicBillingConfig = ElectronicBillingConfig()
 )
 
 class SettingsViewModel(
@@ -56,14 +58,6 @@ class SettingsViewModel(
         val taxes: List<Tax>
     )
 
-    private data class ExtraData(
-        val customers: List<Customer>,
-        val priceRules: List<PriceRule>,
-        val paymentMethods: List<PaymentMethod>,
-        val businessInfo: BusinessInfo,
-        val ticketConfig: TicketConfig
-    )
-
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(_animationDurationMs, _animationType, _currencySymbol, _defaultDecimalPlaces, _allowExtraDecimals) { duration, type, symbol, decimals, extra ->
             SettingsUiState(
@@ -77,20 +71,24 @@ class SettingsViewModel(
         combine(repository.categories, repository.brands, repository.unitsOfMeasure, repository.taxes) { categories, brands, unitsOfMeasure, taxes ->
             CatalogData(categories, brands, unitsOfMeasure, taxes)
         },
-        combine(repository.customers, repository.priceRules, repository.paymentMethods, repository.businessInfo, repository.ticketConfig) { customers, priceRules, paymentMethods, businessInfo, ticketConfig ->
-            ExtraData(customers, priceRules, paymentMethods, businessInfo, ticketConfig)
+        combine(repository.customers, repository.priceRules, repository.paymentMethods) { customers, priceRules, paymentMethods ->
+            Triple(customers, priceRules, paymentMethods)
+        },
+        combine(repository.businessInfo, repository.ticketConfig, repository.electronicBillingConfig) { businessInfo, ticketConfig, electronicBillingConfig ->
+            Triple(businessInfo, ticketConfig, electronicBillingConfig)
         }
-    ) { baseState, catalog, extraData ->
+    ) { baseState, catalog, extra, billing ->
         baseState.copy(
             categories = catalog.categories,
             brands = catalog.brands,
             unitsOfMeasure = catalog.unitsOfMeasure,
             taxes = catalog.taxes,
-            customers = extraData.customers,
-            priceRules = extraData.priceRules,
-            paymentMethods = extraData.paymentMethods,
-            businessInfo = extraData.businessInfo,
-            ticketConfig = extraData.ticketConfig
+            customers = extra.first,
+            priceRules = extra.second,
+            paymentMethods = extra.third,
+            businessInfo = billing.first,
+            ticketConfig = billing.second,
+            electronicBillingConfig = billing.third
         )
     }.stateIn(
         scope = viewModelScope,
@@ -104,7 +102,8 @@ class SettingsViewModel(
             priceRules = repository.priceRules.value,
             paymentMethods = repository.paymentMethods.value,
             businessInfo = repository.businessInfo.value,
-            ticketConfig = repository.ticketConfig.value
+            ticketConfig = repository.ticketConfig.value,
+            electronicBillingConfig = repository.electronicBillingConfig.value
         )
     )
 
@@ -334,6 +333,12 @@ class SettingsViewModel(
     fun updateTicketConfig(config: TicketConfig) {
         viewModelScope.launch {
             repository.updateTicketConfig(config)
+        }
+    }
+
+    fun updateElectronicBillingConfig(config: ElectronicBillingConfig) {
+        viewModelScope.launch {
+            repository.updateElectronicBillingConfig(config)
         }
     }
 

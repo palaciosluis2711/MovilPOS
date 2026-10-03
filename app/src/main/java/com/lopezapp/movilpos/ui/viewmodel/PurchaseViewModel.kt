@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 class PurchaseViewModel(
     private val repository: AppRepository
@@ -24,27 +25,49 @@ class PurchaseViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _selectedSupplierIdFilter = MutableStateFlow<String?>(null)
+    val selectedSupplierIdFilter: StateFlow<String?> = _selectedSupplierIdFilter.asStateFlow()
+
+    private val _selectedDateFilterMillis = MutableStateFlow<Long?>(null)
+    val selectedDateFilterMillis: StateFlow<Long?> = _selectedDateFilterMillis.asStateFlow()
+
     val allPurchases: StateFlow<List<Purchase>> = repository.purchases
     val allSuppliers: StateFlow<List<Supplier>> = repository.suppliers
     val allProducts: StateFlow<List<Product>> = repository.products
 
-    val purchases: StateFlow<List<Purchase>> = combine(
+    val filteredPurchases: StateFlow<List<Purchase>> = combine(
         repository.purchases,
-        _searchQuery
-    ) { purchaseList, query ->
-        if (query.isBlank()) {
-            purchaseList
-        } else {
-            purchaseList.filter { purchase ->
+        _searchQuery,
+        _selectedSupplierIdFilter,
+        _selectedDateFilterMillis
+    ) { flows ->
+        @Suppress("UNCHECKED_CAST")
+        val purchasesList = flows[0] as List<Purchase>
+        val query = flows[1] as String
+        val supplierId = flows[2] as String?
+        val dateMillis = flows[3] as Long?
+
+        purchasesList.filter { purchase ->
+            val matchesQuery = if (query.isBlank()) {
+                true
+            } else {
                 purchase.supplierName.contains(query, ignoreCase = true) ||
+                        purchase.id.contains(query, ignoreCase = true) ||
                         purchase.items.any { it.productName.contains(query, ignoreCase = true) }
             }
-        }
+
+            val matchesSupplier = supplierId == null || purchase.supplierId == supplierId
+            val matchesDate = dateMillis == null || isSameDay(purchase.dateMillis, dateMillis)
+
+            matchesQuery && matchesSupplier && matchesDate
+        }.sortedByDescending { it.dateMillis }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = emptyList()
     )
+
+    val purchases: StateFlow<List<Purchase>> = filteredPurchases
 
     // Draft / Edit Form State
     private val _selectedDateMillis = MutableStateFlow(System.currentTimeMillis())
@@ -66,6 +89,20 @@ class PurchaseViewModel(
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
+    }
+
+    fun setSelectedSupplierIdFilter(supplierId: String?) {
+        _selectedSupplierIdFilter.value = supplierId
+    }
+
+    fun setSelectedDateFilterMillis(dateMillis: Long?) {
+        _selectedDateFilterMillis.value = dateMillis
+    }
+
+    fun resetFilters() {
+        _searchQuery.value = ""
+        _selectedSupplierIdFilter.value = null
+        _selectedDateFilterMillis.value = null
     }
 
     fun setDateMillis(millis: Long) {
@@ -165,6 +202,13 @@ class PurchaseViewModel(
         viewModelScope.launch {
             repository.deletePurchase(purchaseId)
         }
+    }
+
+    private fun isSameDay(millis1: Long, millis2: Long): Boolean {
+        val cal1 = Calendar.getInstance().apply { timeInMillis = millis1 }
+        val cal2 = Calendar.getInstance().apply { timeInMillis = millis2 }
+        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+                cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
     }
 
     class Factory(private val repository: AppRepository) : ViewModelProvider.Factory {

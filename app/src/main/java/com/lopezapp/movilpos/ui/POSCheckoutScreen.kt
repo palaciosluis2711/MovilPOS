@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -63,7 +64,11 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.lopezapp.movilpos.data.model.DteEnvironment
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsUiState
@@ -82,6 +87,8 @@ fun POSCheckoutScreen(
     onNavigateToReceipt: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isDteEmitting by viewModel.isDteEmitting.collectAsState()
+    val dteStatusMessage by viewModel.dteStatusMessage.collectAsState()
     val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
         ?: SettingsUiState()
     val currencySymbol = settingsUiState.currencySymbol
@@ -358,9 +365,15 @@ fun POSCheckoutScreen(
                             InvoiceType.CREDITO_FISCAL -> "Crédito Fiscal"
                             InvoiceType.TICKET -> "Ticket"
                         }
+                        val isEbEnabled = uiState.electronicBillingConfig.isEnabled
+                        val isChipEnabled = when (invoiceType) {
+                            InvoiceType.CONSUMIDOR_FINAL, InvoiceType.CREDITO_FISCAL -> isEbEnabled
+                            InvoiceType.TICKET -> true
+                        }
                         FilterChip(
                             selected = isSelected,
                             onClick = { viewModel.selectInvoiceType(invoiceType) },
+                            enabled = isChipEnabled,
                             label = { Text(label) },
                             leadingIcon = if (isSelected) {
                                 { Icon(Icons.Rounded.Check, contentDescription = null) }
@@ -373,13 +386,30 @@ fun POSCheckoutScreen(
                     }
                 }
 
-                Text(
-                    text = "Facturación electrónica próximamente ⚡",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(start = 4.dp, top = 2.dp)
-                )
+                if (!uiState.electronicBillingConfig.isEnabled) {
+                    Text(
+                        text = "Consumidor Final y Crédito Fiscal requieren habilitar Facturación Electrónica en Ajustes",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                    )
+                }
+
+                if (uiState.selectedInvoiceType == InvoiceType.CONSUMIDOR_FINAL ||
+                    uiState.selectedInvoiceType == InvoiceType.CREDITO_FISCAL
+                ) {
+                    val environmentText = when (uiState.electronicBillingConfig.environment) {
+                        DteEnvironment.SANDBOX -> "Ambiente DTE activo: Pruebas (Sandbox)"
+                        DteEnvironment.PRODUCTION -> "Ambiente DTE activo: Producción"
+                    }
+                    Text(
+                        text = environmentText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                    )
+                }
             }
 
             // Método de Pago Section
@@ -539,7 +569,10 @@ fun POSCheckoutScreen(
             // Completar Cobro Button
             Button(
                 onClick = {
-                    val sale = viewModel.processSale()
+                    val sale = viewModel.processSale { saleId ->
+                        Toast.makeText(context, "DTE Emitido con Éxito", Toast.LENGTH_SHORT).show()
+                        onNavigateToReceipt(saleId)
+                    }
                     if (sale != null) {
                         Toast.makeText(context, "Venta realizada con éxito", Toast.LENGTH_SHORT).show()
                         onNavigateToReceipt(sale.id)
@@ -557,6 +590,47 @@ fun POSCheckoutScreen(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+            }
+
+            if (isDteEmitting) {
+                Dialog(
+                    onDismissRequest = { },
+                    properties = DialogProperties(
+                        dismissOnBackPress = false,
+                        dismissOnClickOutside = false
+                    )
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Emitiendo Documento Tributario Electrónico - MH El Salvador",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                            if (dteStatusMessage.isNotBlank()) {
+                                Text(
+                                    text = dteStatusMessage,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

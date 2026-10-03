@@ -6,6 +6,8 @@ data class BusinessInfo(
     val nrc: String = "",
     val address: String = "",
     val phone: String = "",
+    val email: String = "",
     val socialMedia: String = "",
+    val commercialName: String = "",
     val logoUri: String? = null
 )

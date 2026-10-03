@@ -3,15 +3,20 @@ package com.lopezapp.movilpos.data.repository
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.DocumentType
+import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.model.Purchase
 import com.lopezapp.movilpos.data.model.PurchaseItem
+import com.lopezapp.movilpos.data.model.Quotation
+import com.lopezapp.movilpos.data.model.QuotationItem
 import com.lopezapp.movilpos.data.model.Sale
+import com.lopezapp.movilpos.data.model.SaleItem
 import com.lopezapp.movilpos.data.model.Supplier
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
@@ -50,6 +55,9 @@ class AppRepository {
     private val _sales = MutableStateFlow<List<Sale>>(emptyList())
     val sales: StateFlow<List<Sale>> = _sales.asStateFlow()
 
+    private val _quotations = MutableStateFlow<List<Quotation>>(emptyList())
+    val quotations: StateFlow<List<Quotation>> = _quotations.asStateFlow()
+
     private val _priceRules = MutableStateFlow<List<PriceRule>>(emptyList())
     val priceRules: StateFlow<List<PriceRule>> = _priceRules.asStateFlow()
 
@@ -61,6 +69,9 @@ class AppRepository {
 
     private val _ticketConfig = MutableStateFlow(TicketConfig())
     val ticketConfig: StateFlow<TicketConfig> = _ticketConfig.asStateFlow()
+
+    private val _electronicBillingConfig = MutableStateFlow(ElectronicBillingConfig())
+    val electronicBillingConfig: StateFlow<ElectronicBillingConfig> = _electronicBillingConfig.asStateFlow()
 
     init {
         // Load initial dummy data
@@ -138,6 +149,46 @@ class AppRepository {
             PaymentMethod(name = "Tarjeta de Crédito / Débito"),
             PaymentMethod(name = "Transferencia Bancaria"),
             PaymentMethod(name = "Cheque")
+        )
+        _sales.value = listOf(
+            Sale(
+                customerId = _customers.value.firstOrNull()?.id ?: "",
+                customerName = _customers.value.firstOrNull()?.name ?: "Cliente General",
+                invoiceType = InvoiceType.CONSUMIDOR_FINAL,
+                paymentMethodId = _paymentMethods.value.firstOrNull()?.id ?: "",
+                paymentMethodName = _paymentMethods.value.firstOrNull()?.name ?: "Efectivo",
+                items = listOf(
+                    SaleItem(
+                        productId = _products.value.firstOrNull()?.id ?: "",
+                        productName = _products.value.firstOrNull()?.name ?: "Coffee",
+                        quantity = 2,
+                        unitPrice = 2.5,
+                        subtotal = 5.0
+                    )
+                ),
+                totalAmount = 5.0,
+                cashReceived = 10.0,
+                changeAmount = 5.0,
+                dateMillis = System.currentTimeMillis()
+            )
+        )
+        _quotations.value = listOf(
+            Quotation(
+                customerName = "Cliente General",
+                customerEmail = "cliente@ejemplo.com",
+                dateMillis = System.currentTimeMillis(),
+                expirationDateMillis = System.currentTimeMillis() + (15L * 24 * 3600 * 1000),
+                items = listOf(
+                    QuotationItem(
+                        productId = _products.value.firstOrNull()?.id ?: "",
+                        productName = _products.value.firstOrNull()?.name ?: "Coffee",
+                        quantity = 5,
+                        unitPrice = 2.5,
+                        isDiscounted = false
+                    )
+                ),
+                totalAmount = 12.5
+            )
         )
     }
 
@@ -361,6 +412,10 @@ class AppRepository {
     fun updateTicketConfig(config: TicketConfig) {
         _ticketConfig.value = config
     }
+    
+    fun updateElectronicBillingConfig(config: ElectronicBillingConfig) {
+        _electronicBillingConfig.value = config
+    }
 
     fun addSale(sale: Sale) {
         _sales.update { currentList ->
@@ -388,6 +443,24 @@ class AppRepository {
     fun deleteSale(saleId: String) {
         _sales.update { currentList ->
             currentList.filter { it.id != saleId }
+        }
+    }
+
+    fun addQuotation(quotation: Quotation) {
+        _quotations.update { currentList ->
+            currentList + quotation
+        }
+    }
+
+    fun updateQuotation(quotation: Quotation) {
+        _quotations.update { currentList ->
+            currentList.map { if (it.id == quotation.id) quotation else it }
+        }
+    }
+
+    fun deleteQuotation(quotationId: String) {
+        _quotations.update { currentList ->
+            currentList.filter { it.id != quotationId }
         }
     }
 }
