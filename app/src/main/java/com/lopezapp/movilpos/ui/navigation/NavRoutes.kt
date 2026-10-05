@@ -55,6 +55,9 @@ data object SettingsTicketKey : NavKey
 data object SettingsElectronicBillingKey : NavKey
 
 @Serializable
+data object SettingsUsersKey : NavKey
+
+@Serializable
 data class PriceRuleEditKey(val ruleId: String? = null) : NavKey
 
 @Serializable

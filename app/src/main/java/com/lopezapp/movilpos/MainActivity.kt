@@ -74,6 +74,7 @@ import com.lopezapp.movilpos.ui.SettingsScreen
 import com.lopezapp.movilpos.ui.SettingsTaxesScreen
 import com.lopezapp.movilpos.ui.SettingsTicketScreen
 import com.lopezapp.movilpos.ui.SettingsUnitsScreen
+import com.lopezapp.movilpos.ui.SettingsUsersScreen
 import com.lopezapp.movilpos.ui.SupplierEditForm
 import com.lopezapp.movilpos.ui.SupplierReadOnlyView
 import com.lopezapp.movilpos.ui.SupplierScreen
@@ -109,6 +110,7 @@ import com.lopezapp.movilpos.ui.navigation.SettingsRoute
 import com.lopezapp.movilpos.ui.navigation.SettingsTaxesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsTicketKey
 import com.lopezapp.movilpos.ui.navigation.SettingsUnitsKey
+import com.lopezapp.movilpos.ui.navigation.SettingsUsersKey
 import com.lopezapp.movilpos.ui.navigation.SupplierDetailRoute
 import com.lopezapp.movilpos.ui.navigation.SupplierEditRoute
 import com.lopezapp.movilpos.ui.navigation.SuppliersRoute
@@ -399,6 +401,13 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToBusinessInfo = { backStack.add(SettingsBusinessInfoKey) },
                                         onNavigateToTicket = { backStack.add(SettingsTicketKey) },
                                         onNavigateToElectronicBilling = { backStack.add(SettingsElectronicBillingKey) },
+                                        onNavigateToUsers = { backStack.add(SettingsUsersKey) },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsUsersKey -> NavEntry(key) {
+                                    SettingsUsersScreen(
+                                        viewModel = settingsViewModel,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.CashShift
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
@@ -15,6 +16,7 @@ import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
+import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.model.AnimationType
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,12 +41,17 @@ data class SettingsUiState(
     val paymentMethods: List<PaymentMethod> = emptyList(),
     val businessInfo: BusinessInfo = BusinessInfo(),
     val ticketConfig: TicketConfig = TicketConfig(),
-    val electronicBillingConfig: ElectronicBillingConfig = ElectronicBillingConfig()
+    val electronicBillingConfig: ElectronicBillingConfig = ElectronicBillingConfig(),
+    val users: List<User> = emptyList(),
+    val shiftHistory: List<CashShift> = emptyList()
 )
 
 class SettingsViewModel(
     private val repository: AppRepository = AppRepository()
 ) : ViewModel() {
+    val users: StateFlow<List<User>> = repository.users
+    val shiftHistory: StateFlow<List<CashShift>> = repository.shiftHistory
+
     private val _animationDurationMs = MutableStateFlow(400)
     private val _animationType = MutableStateFlow(AnimationType.SLIDE_AND_FADE)
     private val _currencySymbol = MutableStateFlow("$")
@@ -76,8 +83,11 @@ class SettingsViewModel(
         },
         combine(repository.businessInfo, repository.ticketConfig, repository.electronicBillingConfig) { businessInfo, ticketConfig, electronicBillingConfig ->
             Triple(businessInfo, ticketConfig, electronicBillingConfig)
+        },
+        combine(repository.users, repository.shiftHistory) { users, shiftHistory ->
+            Pair(users, shiftHistory)
         }
-    ) { baseState, catalog, extra, billing ->
+    ) { baseState, catalog, extra, billing, userShiftData ->
         baseState.copy(
             categories = catalog.categories,
             brands = catalog.brands,
@@ -88,7 +98,9 @@ class SettingsViewModel(
             paymentMethods = extra.third,
             businessInfo = billing.first,
             ticketConfig = billing.second,
-            electronicBillingConfig = billing.third
+            electronicBillingConfig = billing.third,
+            users = userShiftData.first,
+            shiftHistory = userShiftData.second
         )
     }.stateIn(
         scope = viewModelScope,
@@ -103,7 +115,9 @@ class SettingsViewModel(
             paymentMethods = repository.paymentMethods.value,
             businessInfo = repository.businessInfo.value,
             ticketConfig = repository.ticketConfig.value,
-            electronicBillingConfig = repository.electronicBillingConfig.value
+            electronicBillingConfig = repository.electronicBillingConfig.value,
+            users = repository.users.value,
+            shiftHistory = repository.shiftHistory.value
         )
     )
 
@@ -340,6 +354,28 @@ class SettingsViewModel(
         viewModelScope.launch {
             repository.updateElectronicBillingConfig(config)
         }
+    }
+
+    fun addUser(user: User) {
+        viewModelScope.launch {
+            repository.addUser(user)
+        }
+    }
+
+    fun updateUser(user: User) {
+        viewModelScope.launch {
+            repository.updateUser(user)
+        }
+    }
+
+    fun deleteUser(userId: String) {
+        viewModelScope.launch {
+            repository.deleteUser(userId)
+        }
+    }
+
+    fun validateAdminPin(pin: String): Boolean {
+        return repository.validateAdminPin(pin)
     }
 
     class Factory(private val repository: AppRepository) : ViewModelProvider.Factory {

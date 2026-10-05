@@ -8,6 +8,9 @@ import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.Role
+import com.lopezapp.movilpos.data.model.ShiftStatus
+import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -1160,5 +1163,63 @@ class POSViewModelTest {
         repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
         testDispatcher.scheduler.advanceUntilIdle()
         assertEquals(InvoiceType.TICKET, viewModel.uiState.value.selectedInvoiceType)
+    }
+
+    @Test
+    fun openShift_validPin_opensShiftAndReturnsTrue() = runTest {
+        val cashier = User(id = "user1", name = "Juan Pérez", pin = "1234", role = Role.CASHIER)
+        repository.addUser(cashier)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val success = viewModel.openShift(cashier, "1234", 50.0)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(success)
+        val active = viewModel.activeShift.value
+        assertTrue(active != null)
+        assertEquals("Juan Pérez", active?.cashierName)
+        assertEquals(50.0, active?.initialFloat ?: 0.0, 0.001)
+        assertEquals(ShiftStatus.OPEN, active?.status)
+    }
+
+    @Test
+    fun openShift_invalidPin_returnsFalse() = runTest {
+        val cashier = User(id = "user1", name = "Juan Pérez", pin = "1234", role = Role.CASHIER)
+        repository.addUser(cashier)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val success = viewModel.openShift(cashier, "9999", 50.0)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(success)
+        assertNull(viewModel.activeShift.value)
+    }
+
+    @Test
+    fun closeShift_closesActiveShiftAndReturnsClosedShift() = runTest {
+        val cashier = User(id = "user1", name = "Juan Pérez", pin = "1234", role = Role.CASHIER)
+        viewModel.openShift(cashier, "1234", 100.0)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val active = viewModel.activeShift.value
+        assertTrue(active != null)
+
+        val closed = viewModel.closeShift(120.0)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(closed != null)
+        assertEquals(120.0, closed?.actualCashCounted ?: 0.0, 0.001)
+        assertEquals(20.0, closed?.difference ?: 0.0, 0.001)
+        assertEquals(ShiftStatus.CLOSED, closed?.status)
+        assertNull(viewModel.activeShift.value)
+    }
+
+    @Test
+    fun activeShiftAndUsers_exposesRepositoryStateFlows() = runTest {
+        testDispatcher.scheduler.advanceUntilIdle()
+        val users = viewModel.users.value
+        assertTrue(users.isNotEmpty())
+        assertEquals("Administrador", users.first().name)
+        assertNull(viewModel.activeShift.value)
     }
 }

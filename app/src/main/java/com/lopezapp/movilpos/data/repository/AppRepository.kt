@@ -3,6 +3,7 @@ package com.lopezapp.movilpos.data.repository
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.CashShift
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
@@ -15,13 +16,16 @@ import com.lopezapp.movilpos.data.model.Purchase
 import com.lopezapp.movilpos.data.model.PurchaseItem
 import com.lopezapp.movilpos.data.model.Quotation
 import com.lopezapp.movilpos.data.model.QuotationItem
+import com.lopezapp.movilpos.data.model.Role
 import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.SaleItem
+import com.lopezapp.movilpos.data.model.ShiftStatus
 import com.lopezapp.movilpos.data.model.Supplier
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
+import com.lopezapp.movilpos.data.model.User
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,6 +76,19 @@ class AppRepository {
 
     private val _electronicBillingConfig = MutableStateFlow(ElectronicBillingConfig())
     val electronicBillingConfig: StateFlow<ElectronicBillingConfig> = _electronicBillingConfig.asStateFlow()
+
+    private val _users = MutableStateFlow<List<User>>(
+        listOf(
+            User(id = "admin_1", name = "Administrador", pin = "1234", role = Role.ADMINISTRATOR)
+        )
+    )
+    val users: StateFlow<List<User>> = _users.asStateFlow()
+
+    private val _activeShift = MutableStateFlow<CashShift?>(null)
+    val activeShift: StateFlow<CashShift?> = _activeShift.asStateFlow()
+
+    private val _shiftHistory = MutableStateFlow<List<CashShift>>(emptyList())
+    val shiftHistory: StateFlow<List<CashShift>> = _shiftHistory.asStateFlow()
 
     init {
         // Load initial dummy data
@@ -417,11 +434,118 @@ class AppRepository {
         _electronicBillingConfig.value = config
     }
 
-    fun addSale(sale: Sale) {
-        _sales.update { currentList ->
-            currentList + sale
+    fun addUser(user: User) {
+        _users.update { currentList ->
+            currentList + user
         }
-        val quantitySoldMap = sale.items.groupBy { it.productId }
+    }
+
+    fun updateUser(user: User) {
+        _users.update { currentList ->
+            currentList.map { if (it.id == user.id) user else it }
+        }
+        val currentShift = _activeShift.value
+        if (currentShift != null && currentShift.cashierId == user.id) {
+            val updatedShift = currentShift.copy(cashierName = user.name)
+            _activeShift.value = updatedShift
+            _shiftHistory.update { history ->
+                val index = history.indexOfFirst { it.id == updatedShift.id }
+                if (index >= 0) {
+                    history.map { if (it.id == updatedShift.id) updatedShift else it }
+                } else {
+                    history + updatedShift
+                }
+            }
+        }
+    }
+
+    fun deleteUser(userId: String) {
+        _users.update { currentList ->
+            currentList.filter { it.id != userId }
+        }
+    }
+
+    fun validateAdminPin(pin: String): Boolean {
+        return _users.value.any { user ->
+            user.isActive &&
+            (user.role == Role.ADMINISTRATOR || user.role == Role.SUPERVISOR) &&
+            user.pin == pin
+        }
+    }
+
+    fun openShift(cashier: User, initialFloat: Double): CashShift {
+        val shift = CashShift(
+            cashierId = cashier.id,
+            cashierName = cashier.name,
+            initialFloat = initialFloat,
+            status = ShiftStatus.OPEN
+        )
+        _activeShift.value = shift
+        _shiftHistory.update { history ->
+            history + shift
+        }
+        return shift
+    }
+
+    fun closeShift(countedCash: Double): CashShift? {
+        val currentShift = _activeShift.value ?: return null
+        val closedShift = currentShift.copy(
+            closedAtMillis = System.currentTimeMillis(),
+            actualCashCounted = countedCash,
+            difference = countedCash - currentShift.expectedCash,
+            status = ShiftStatus.CLOSED
+        )
+        _shiftHistory.update { history ->
+            val index = history.indexOfFirst { it.id == closedShift.id }
+            if (index >= 0) {
+                history.map { if (it.id == closedShift.id) closedShift else it }
+            } else {
+                history + closedShift
+            }
+        }
+        _activeShift.value = null
+        return closedShift
+    }
+
+    fun updateActiveShiftSales(cashAmount: Double, cardAmount: Double, otherAmount: Double) {
+        val shift = _activeShift.value ?: return
+        val newCashSales = shift.totalCashSales + cashAmount
+        val newCardSales = shift.totalCardSales + cardAmount
+        val newOtherSales = shift.totalOtherSales + otherAmount
+        val newExpectedCash = shift.initialFloat + newCashSales
+        val updatedShift = shift.copy(
+            totalCashSales = newCashSales,
+            totalCardSales = newCardSales,
+            totalOtherSales = newOtherSales,
+            expectedCash = newExpectedCash
+        )
+        _activeShift.value = updatedShift
+        _shiftHistory.update { history ->
+            val index = history.indexOfFirst { it.id == updatedShift.id }
+            if (index >= 0) {
+                history.map { if (it.id == updatedShift.id) updatedShift else it }
+            } else {
+                history + updatedShift
+            }
+        }
+    }
+
+    fun addSale(sale: Sale) {
+        val currentShift = _activeShift.value
+        val saleToSave = if (currentShift != null) {
+            sale.copy(
+                shiftId = currentShift.id,
+                cashierId = if (sale.cashierId.isBlank()) currentShift.cashierId else sale.cashierId,
+                cashierName = if (sale.cashierName.isBlank()) currentShift.cashierName else sale.cashierName
+            )
+        } else {
+            sale
+        }
+
+        _sales.update { currentList ->
+            currentList + saleToSave
+        }
+        val quantitySoldMap = saleToSave.items.groupBy { it.productId }
             .mapValues { entry -> entry.value.sumOf { it.quantity } }
 
         _products.update { currentProducts ->
@@ -437,6 +561,14 @@ class AppRepository {
                     product
                 }
             }
+        }
+
+        if (currentShift != null) {
+            val pmName = saleToSave.paymentMethodName.lowercase()
+            val cash = if (pmName.contains("efectivo")) saleToSave.totalAmount else 0.0
+            val card = if (pmName.contains("tarjeta") || pmName.contains("card")) saleToSave.totalAmount else 0.0
+            val other = if (!pmName.contains("efectivo") && !pmName.contains("tarjeta") && !pmName.contains("card")) saleToSave.totalAmount else 0.0
+            updateActiveShiftSales(cashAmount = cash, cardAmount = card, otherAmount = other)
         }
     }
 

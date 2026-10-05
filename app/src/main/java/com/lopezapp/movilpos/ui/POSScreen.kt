@@ -1,10 +1,8 @@
 package com.lopezapp.movilpos.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
-import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
-import com.lopezapp.movilpos.ui.components.CompactSearchBar
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -52,12 +50,17 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockClock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -76,6 +79,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,16 +89,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.CartItem
+import com.lopezapp.movilpos.data.model.CashShift
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.Role
+import com.lopezapp.movilpos.data.model.User
+import com.lopezapp.movilpos.data.model.toSpanishLabel
+import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
+import com.lopezapp.movilpos.ui.components.CloseShiftDialog
+import com.lopezapp.movilpos.ui.components.CompactSearchBar
+import com.lopezapp.movilpos.ui.components.OpenShiftDialog
 import com.lopezapp.movilpos.ui.theme.PriceRuleColors
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsUiState
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
+import com.lopezapp.movilpos.util.PdfReportGenerator
 import com.lopezapp.movilpos.util.formatCurrency
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -109,21 +125,113 @@ fun POSScreen(
     val uiState by viewModel.uiState.collectAsState()
     val allProducts by viewModel.allProducts.collectAsState()
     val selectedCartItemIds by viewModel.selectedCartItemIds.collectAsState()
+    val activeShift by viewModel.activeShift.collectAsState()
+    val users by viewModel.users.collectAsState()
+
     val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
         ?: SettingsUiState()
     val currencySymbol = settingsUiState.currencySymbol
     val defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces
     val allowExtraDecimals = settingsUiState.allowExtraDecimals
 
+    var showOpenShiftDialog by remember { mutableStateOf(false) }
+    var openShiftErrorMessage by remember { mutableStateOf<String?>(null) }
+    var showCloseShiftDialog by remember { mutableStateOf(false) }
+    var showScannerDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(activeShift) {
+        if (activeShift == null) {
+            showOpenShiftDialog = true
+        }
+    }
+
+    val handleAddToCart = { product: Product ->
+        if (activeShift == null) {
+            showOpenShiftDialog = true
+            Toast.makeText(context, "Debe abrir un turno antes de realizar ventas", Toast.LENGTH_SHORT).show()
+        } else {
+            viewModel.addToCart(product)
+        }
+    }
+
+    val handleAddCartItem = { item: CartItem ->
+        if (activeShift == null) {
+            showOpenShiftDialog = true
+            Toast.makeText(context, "Debe abrir un turno antes de realizar ventas", Toast.LENGTH_SHORT).show()
+        } else {
+            viewModel.addToCart(item)
+        }
+    }
+
     val handleCheckout = {
-        if (onNavigateToCheckout != null) {
+        if (activeShift == null) {
+            showOpenShiftDialog = true
+            Toast.makeText(context, "Debe abrir un turno antes de realizar ventas", Toast.LENGTH_SHORT).show()
+        } else if (onNavigateToCheckout != null) {
             onNavigateToCheckout()
         } else {
             viewModel.checkout()
         }
     }
 
-    var showScannerDialog by remember { mutableStateOf(false) }
+    if (showOpenShiftDialog) {
+        OpenShiftDialog(
+            users = users,
+            errorMessage = openShiftErrorMessage,
+            onOpenShift = { cashier, pin, initialFloat ->
+                val success = viewModel.openShift(cashier, pin, initialFloat)
+                if (success) {
+                    showOpenShiftDialog = false
+                    openShiftErrorMessage = null
+                    Toast.makeText(context, "Turno abierto con éxito", Toast.LENGTH_SHORT).show()
+                } else {
+                    openShiftErrorMessage = "PIN incorrecto para ${cashier.name}"
+                }
+            },
+            onDismiss = {
+                showOpenShiftDialog = false
+                openShiftErrorMessage = null
+            }
+        )
+    }
+
+    if (showCloseShiftDialog && activeShift != null) {
+        CloseShiftDialog(
+            cashShift = activeShift!!,
+            onCloseShift = { actualCashCounted ->
+                val closedShift = viewModel.closeShift(actualCashCounted)
+                showCloseShiftDialog = false
+                Toast.makeText(context, "Turno cerrado con éxito", Toast.LENGTH_SHORT).show()
+                if (closedShift != null) {
+                    try {
+                        val businessInfo = settingsViewModel?.uiState?.value?.businessInfo
+                            ?: BusinessInfo()
+                        val pdfFile = PdfReportGenerator.generateCashShiftPdf(
+                            context = context,
+                            shift = closedShift,
+                            businessInfo = businessInfo
+                        )
+                        val uri: Uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            pdfFile
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/pdf")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Ver Reporte de Cierre de Turno"))
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        Toast.makeText(context, "Error al generar reporte PDF: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onDismiss = {
+                showCloseShiftDialog = false
+            }
+        )
+    }
 
     if (showScannerDialog) {
         BarcodeScannerDialog(
@@ -139,8 +247,7 @@ fun POSScreen(
                 }
 
                 if (matchingProduct != null) {
-                    viewModel.addToCart(matchingProduct)
-                    Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
+                    handleAddToCart(matchingProduct)
                 } else {
                     viewModel.onSearchQueryChanged(scannedCode)
                     Toast.makeText(context, "No se encontró producto con el código: $scannedCode", Toast.LENGTH_SHORT).show()
@@ -152,13 +259,24 @@ fun POSScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Punto de Venta") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            Column {
+                TopAppBar(
+                    title = { Text("Punto de Venta") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 )
-            )
+                ActiveShiftHeaderBar(
+                    activeShift = activeShift,
+                    users = users,
+                    onOpenShiftClick = { showOpenShiftDialog = true },
+                    onCloseShiftClick = { showCloseShiftDialog = true },
+                    currencySymbol = currencySymbol,
+                    defaultDecimalPlaces = defaultDecimalPlaces,
+                    allowExtraDecimals = allowExtraDecimals
+                )
+            }
         },
         modifier = modifier
     ) { innerPadding ->
@@ -180,7 +298,7 @@ fun POSScreen(
                         )
                         ProductGrid(
                             products = uiState.products,
-                            onAddClick = { viewModel.addToCart(it) },
+                            onAddClick = handleAddToCart,
                             currencySymbol = currencySymbol,
                             defaultDecimalPlaces = defaultDecimalPlaces,
                             allowExtraDecimals = allowExtraDecimals,
@@ -195,7 +313,7 @@ fun POSScreen(
                         priceRules = uiState.priceRules,
                         selectedPriceRuleId = uiState.selectedPriceRuleId,
                         onRuleSelected = { viewModel.selectPriceRule(it) },
-                        onAddClick = { viewModel.addToCart(it) },
+                        onAddClick = handleAddCartItem,
                         onRemoveClick = { viewModel.removeFromCart(it) },
                         onDeleteClick = { viewModel.deleteFromCart(it) },
                         onToggleSelection = { viewModel.toggleItemSelection(it) },
@@ -219,7 +337,7 @@ fun POSScreen(
                         )
                         ProductGrid(
                             products = uiState.products,
-                            onAddClick = { viewModel.addToCart(it) },
+                            onAddClick = handleAddToCart,
                             currencySymbol = currencySymbol,
                             defaultDecimalPlaces = defaultDecimalPlaces,
                             allowExtraDecimals = allowExtraDecimals,
@@ -235,7 +353,7 @@ fun POSScreen(
                         priceRules = uiState.priceRules,
                         selectedPriceRuleId = uiState.selectedPriceRuleId,
                         onRuleSelected = { viewModel.selectPriceRule(it) },
-                        onAddClick = { viewModel.addToCart(it) },
+                        onAddClick = handleAddCartItem,
                         onRemoveClick = { viewModel.removeFromCart(it) },
                         onDeleteClick = { viewModel.deleteFromCart(it) },
                         onToggleSelection = { viewModel.toggleItemSelection(it) },
@@ -247,6 +365,161 @@ fun POSScreen(
                         allowExtraDecimals = allowExtraDecimals,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ActiveShiftHeaderBar(
+    activeShift: CashShift?,
+    users: List<User> = emptyList(),
+    onOpenShiftClick: () -> Unit,
+    onCloseShiftClick: () -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 2.dp,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        if (activeShift != null) {
+            val currentCashierUser = users.find { it.id == activeShift.cashierId }
+            val primaryTitle = currentCashierUser?.name ?: activeShift.cashierName
+            val displayRole = currentCashierUser?.role?.toSpanishLabel() ?: Role.CASHIER.toSpanishLabel()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = primaryTitle.ifBlank { "Cajero" },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = displayRole,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Fondo: ${formatCurrency(activeShift.initialFloat, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "En Caja: ${formatCurrency(activeShift.expectedCash, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onCloseShiftClick,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LockClock,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Cerrar Turno",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Text(
+                        text = "Sin turno de caja activo",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                Button(
+                    onClick = onOpenShiftClick,
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PointOfSale,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Abrir Turno")
                 }
             }
         }

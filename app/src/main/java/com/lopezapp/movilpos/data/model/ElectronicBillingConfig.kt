@@ -12,5 +12,7 @@ data class ElectronicBillingConfig(
     val establishmentCode: String = "0001",
     val posCode: String = "0001",
     val economicActivity: String = "",
-    val certificatePassword: String = ""
+    val certificatePassword: String = "",
+    val certificateUri: String? = null,
+    val certificateFileName: String? = null,
 )

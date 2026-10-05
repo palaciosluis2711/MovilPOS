@@ -527,6 +527,14 @@ fun CustomerReadOnlyView(
                     )
 
                     if (customer.documentType == DocumentType.NIT) {
+                        if (customer.commercialName.isNotBlank()) {
+                            CustomerDetailRow(
+                                icon = Icons.Default.Storefront,
+                                label = "Nombre Comercial",
+                                value = customer.commercialName
+                            )
+                        }
+
                         CustomerDetailRow(
                             icon = Icons.Default.Business,
                             label = "NRC",
@@ -719,7 +727,7 @@ fun CustomerEditForm(
                     address = address.ifBlank { null },
                     isLargeContributor = if (documentType == DocumentType.NIT) isLargeContributor else false,
                     commercialActivity = if (documentType == DocumentType.NIT) commercialActivity.ifBlank { null } else null,
-                    commercialName = commercialName.trim(),
+                    commercialName = if (documentType == DocumentType.NIT) commercialName.trim() else "",
                     isDefault = isDefault
                 )
                 viewModel.addCustomer(newCustomer)
@@ -738,7 +746,7 @@ fun CustomerEditForm(
                     address = address.ifBlank { null },
                     isLargeContributor = if (documentType == DocumentType.NIT) isLargeContributor else false,
                     commercialActivity = if (documentType == DocumentType.NIT) commercialActivity.ifBlank { null } else null,
-                    commercialName = commercialName.trim(),
+                    commercialName = if (documentType == DocumentType.NIT) commercialName.trim() else "",
                     isDefault = isDefault
                 )
                 viewModel.updateCustomer(updatedCustomer)
@@ -802,18 +810,20 @@ fun CustomerEditForm(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Nombre Comercial
-            OutlinedTextField(
-                value = commercialName,
-                onValueChange = { commercialName = it },
-                label = { Text("Nombre Comercial") },
-                placeholder = { Text("Ej. Mi Negocio Comercial") },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Default.Storefront, contentDescription = null)
-                },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            // Nombre Comercial (Solo si es NIT)
+            if (documentType == DocumentType.NIT) {
+                OutlinedTextField(
+                    value = commercialName,
+                    onValueChange = { commercialName = it },
+                    label = { Text("Nombre Comercial") },
+                    placeholder = { Text("Ej. Mi Negocio Comercial") },
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Default.Storefront, contentDescription = null)
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             // Tipo Documento Dropdown
             DropdownField(

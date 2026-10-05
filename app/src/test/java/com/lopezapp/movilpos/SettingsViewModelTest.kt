@@ -6,9 +6,11 @@ import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.DteEnvironment
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.PriceRule
+import com.lopezapp.movilpos.data.model.Role
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.TicketPaperSize
+import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.model.AnimationType
 import com.lopezapp.movilpos.ui.navigation.buildNavTransition
@@ -86,6 +88,47 @@ class SettingsViewModelTest {
         assertTrue(state.ticketConfig.showLogo)
         assertEquals("¡Gracias por su compra! Vuelva pronto.", state.ticketConfig.footerMessage)
         assertEquals(TicketPaperSize.SIZE_80MM, state.ticketConfig.paperSize)
+    }
+
+    @Test
+    fun usersAndShiftHistory_exposedInStateAndProperties() = runTest {
+        testDispatcher.scheduler.advanceUntilIdle()
+        val state = viewModel.uiState.value
+
+        assertEquals(1, state.users.size)
+        assertEquals("admin_1", state.users.first().id)
+        assertEquals(1, viewModel.users.value.size)
+
+        assertTrue(state.shiftHistory.isEmpty())
+        assertTrue(viewModel.shiftHistory.value.isEmpty())
+    }
+
+    @Test
+    fun userCrudAndValidateAdminPin_worksCorrectly() = runTest {
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.validateAdminPin("1234"))
+        assertFalse(viewModel.validateAdminPin("9999"))
+
+        val newUser = User(id = "u_test", name = "Test User", pin = "8888", role = Role.SUPERVISOR)
+        viewModel.addUser(newUser)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(2, viewModel.users.value.size)
+        assertTrue(viewModel.validateAdminPin("8888"))
+
+        val updatedUser = newUser.copy(name = "Updated User")
+        viewModel.updateUser(updatedUser)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val fetched = viewModel.users.value.find { it.id == "u_test" }
+        assertEquals("Updated User", fetched?.name)
+
+        viewModel.deleteUser("u_test")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, viewModel.users.value.size)
+        assertFalse(viewModel.validateAdminPin("8888"))
     }
 
     @Test

@@ -13,7 +13,7 @@ data class SaleItem(
     val productName: String,
     val quantity: Int,
     val unitPrice: Double,
-    val subtotal: Double
+    val subtotal: Double,
 )
 
 data class Sale(
@@ -32,5 +32,8 @@ data class Sale(
     val dteGenerationCode: String? = null,
     val dteReceptionSeal: String? = null,
     val dteControlNumber: String? = null,
-    val dteType: String? = null
+    val dteType: String? = null,
+    val shiftId: String? = null,
+    val cashierId: String = "",
+    val cashierName: String = "",
 )

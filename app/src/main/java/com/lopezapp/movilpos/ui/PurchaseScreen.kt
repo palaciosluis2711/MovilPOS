@@ -75,6 +75,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -961,8 +962,15 @@ fun PurchaseDraftItemRow(
     modifier: Modifier = Modifier
 ) {
     var quantityText by remember(item.productId) { mutableStateOf(item.quantity.toString()) }
+    var isQuantityFocused by remember { mutableStateOf(false) }
     var costTextFieldValue by remember(item.productId) {
         mutableStateOf(TextFieldValue(if (item.unitCost == 0.0) "" else item.unitCost.toString()))
+    }
+
+    LaunchedEffect(item.quantity) {
+        if (!isQuantityFocused) {
+            quantityText = item.quantity.toString()
+        }
     }
 
     val subtotal = item.quantity * item.unitCost
@@ -1001,13 +1009,28 @@ fun PurchaseDraftItemRow(
                 onValueChange = { newText ->
                     val filtered = newText.filter { it.isDigit() }
                     quantityText = filtered
-                    val qty = filtered.toIntOrNull() ?: 1
-                    onQuantityChange(qty)
+                    val qty = filtered.toIntOrNull()
+                    if (qty != null && qty > 0) {
+                        onQuantityChange(qty)
+                    }
                 },
                 label = { Text("Cantidad") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { focusState ->
+                        isQuantityFocused = focusState.isFocused
+                        if (!focusState.isFocused) {
+                            val parsed = quantityText.toIntOrNull()
+                            if (parsed == null || parsed <= 0) {
+                                quantityText = "1"
+                                onQuantityChange(1)
+                            } else {
+                                quantityText = parsed.toString()
+                            }
+                        }
+                    }
             )
 
             // Edit Costo Unitario using sanitizeDecimalTextFieldValue

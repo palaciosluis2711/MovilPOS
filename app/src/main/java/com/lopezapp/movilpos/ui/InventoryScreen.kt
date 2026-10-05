@@ -127,6 +127,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -139,11 +141,13 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import com.lopezapp.movilpos.util.formatCurrency
 import com.lopezapp.movilpos.util.roundToTwoDecimals
 import com.lopezapp.movilpos.util.sanitizeDecimalTextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -1921,12 +1925,24 @@ fun ProductEditForm(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                                         ) {
+                                            var quantityText by remember(bundleItem.productId) {
+                                                mutableStateOf(bundleItem.quantity.toString())
+                                            }
+                                            var isFocused by remember { mutableStateOf(false) }
+
+                                            LaunchedEffect(bundleItem.quantity) {
+                                                if (!isFocused) {
+                                                    quantityText = bundleItem.quantity.toString()
+                                                }
+                                            }
+
                                             IconButton(
                                                 onClick = {
                                                     val newQty = bundleItem.quantity - 1
                                                     if (newQty <= 0) {
                                                         updateBundleItems(bundleItems.filter { it.productId != bundleItem.productId })
                                                     } else {
+                                                        quantityText = newQty.toString()
                                                         updateBundleItems(bundleItems.map {
                                                             if (it.productId == bundleItem.productId) it.copy(quantity = newQty) else it
                                                         })
@@ -1935,16 +1951,41 @@ fun ProductEditForm(
                                             ) {
                                                 Icon(Icons.Default.Remove, contentDescription = "Disminuir cantidad")
                                             }
-                                            Text(
-                                                text = bundleItem.quantity.toString(),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 4.dp)
+                                            OutlinedTextField(
+                                                value = quantityText,
+                                                onValueChange = { newText ->
+                                                    val filtered = newText.filter { it.isDigit() }
+                                                    val parsed = filtered.toIntOrNull() ?: filtered.toLongOrNull()?.coerceAtMost(999999L)?.toInt()
+                                                    quantityText = if (filtered.isBlank()) "" else (parsed?.toString() ?: filtered)
+                                                    val validQty = parsed?.takeIf { it > 0 } ?: 1
+                                                    updateBundleItems(bundleItems.map {
+                                                        if (it.productId == bundleItem.productId) it.copy(quantity = validQty) else it
+                                                    })
+                                                },
+                                                singleLine = true,
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                textStyle = LocalTextStyle.current.copy(
+                                                    textAlign = TextAlign.Center,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp
+                                                ),
+                                                modifier = Modifier
+                                                    .width(68.dp)
+                                                    .onFocusChanged { focusState ->
+                                                        isFocused = focusState.isFocused
+                                                        if (!focusState.isFocused) {
+                                                            if (quantityText.isBlank() || (quantityText.toIntOrNull() ?: 0) <= 0) {
+                                                                quantityText = bundleItem.quantity.toString()
+                                                            }
+                                                        }
+                                                    }
                                             )
                                             IconButton(
                                                 onClick = {
+                                                    val newQty = bundleItem.quantity + 1
+                                                    quantityText = newQty.toString()
                                                     updateBundleItems(bundleItems.map {
-                                                        if (it.productId == bundleItem.productId) it.copy(quantity = it.quantity + 1) else it
+                                                        if (it.productId == bundleItem.productId) it.copy(quantity = newQty) else it
                                                     })
                                                 }
                                             ) {

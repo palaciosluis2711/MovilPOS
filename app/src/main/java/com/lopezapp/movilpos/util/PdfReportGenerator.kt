@@ -11,12 +11,14 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.CashShift
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.Purchase
 import com.lopezapp.movilpos.data.model.Quotation
 import com.lopezapp.movilpos.data.model.Sale
+import com.lopezapp.movilpos.data.model.ShiftStatus
 import com.lopezapp.movilpos.data.model.Supplier
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TicketConfig
@@ -29,6 +31,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 object PdfReportGenerator {
 
@@ -1981,5 +1984,129 @@ object PdfReportGenerator {
         pdfDocument.close()
 
         return outputFile
+    }
+
+    fun generateCashShiftPdf(
+        context: Context,
+        shift: CashShift,
+        businessInfo: BusinessInfo? = null,
+    ): File {
+        val pdfDocument = PdfDocument()
+
+        val pageWidth = 612
+        val pageHeight = 792
+        val margin = 40f
+
+        val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas: Canvas = page.canvas
+
+        val paintTitle = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(24, 43, 73)
+            textSize = 18f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintHeader = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(30, 30, 30)
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintText = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(50, 50, 50)
+            textSize = 10f
+        }
+
+        val paintBoldText = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(30, 30, 30)
+            textSize = 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintGrid = Paint().apply {
+            color = Color.LTGRAY
+            strokeWidth = 1f
+            style = Paint.Style.STROKE
+        }
+
+        var yPos = margin
+
+        val busName = businessInfo?.name?.ifBlank { "MOVILPOS" } ?: "MOVILPOS"
+        canvas.drawText(busName.uppercase(Locale.getDefault()), margin, yPos + 18f, paintTitle)
+        yPos += 24f
+
+        canvas.drawText("REPORTE DE CIERRE Y ARQUEO DE CAJA", margin, yPos + 14f, paintHeader)
+        yPos += 24f
+
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault())
+        val openedStr = dateFormat.format(Date(shift.openedAtMillis))
+        val closedStr = shift.closedAtMillis?.let { dateFormat.format(Date(it)) } ?: "En progreso"
+
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintGrid)
+        yPos += 12f
+
+        canvas.drawText("Cajero: ${shift.cashierName}", margin, yPos, paintText)
+        canvas.drawText("Estado: ${if (shift.status == ShiftStatus.CLOSED) "CERRADO" else "ABIERTO"}", pageWidth - margin - 150f, yPos, paintText)
+        yPos += 14f
+
+        canvas.drawText("Fecha Apertura: $openedStr", margin, yPos, paintText)
+        canvas.drawText("Fecha Cierre: $closedStr", pageWidth - margin - 150f, yPos, paintText)
+        yPos += 18f
+
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintGrid)
+        yPos += 16f
+
+        canvas.drawText("RESUMEN DE OPERACIONES", margin, yPos, paintHeader)
+        yPos += 16f
+
+        fun drawRow(label: String, value: String, isBold: Boolean = false) {
+            val p = if (isBold) paintBoldText else paintText
+            canvas.drawText(label, margin + 10f, yPos, p)
+            canvas.drawText(value, pageWidth - margin - 100f, yPos, p)
+            yPos += 14f
+        }
+
+        val fmt = { amt: Double -> String.format(Locale.US, "$%.2f", amt) }
+
+        drawRow("Fondo Inicial de Efectivo:", fmt(shift.initialFloat))
+        drawRow("(+) Ventas en Efectivo:", fmt(shift.totalCashSales))
+        drawRow("(+) Ventas con Tarjeta:", fmt(shift.totalCardSales))
+        drawRow("(+) Otras Ventas:", fmt(shift.totalOtherSales))
+        drawRow("Efectivo Esperado en Caja:", fmt(shift.expectedCash), isBold = true)
+
+        yPos += 6f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintGrid)
+        yPos += 16f
+
+        if (shift.actualCashCounted != null) {
+            drawRow("Efectivo Contado (Arqueo):", fmt(shift.actualCashCounted), isBold = true)
+            val diff = shift.difference ?: (shift.actualCashCounted - shift.expectedCash)
+            val diffLabel = when {
+                abs(diff) < 0.001 -> "Sin Diferencia (0.00)"
+                diff > 0 -> "Sobrante (+${fmt(diff)})"
+                else -> "Faltante (${fmt(diff)})"
+            }
+            drawRow("Diferencia de Arqueo:", diffLabel, isBold = true)
+        }
+
+        yPos += 30f
+        canvas.drawText("Firma del Cajero: _______________________", margin + 10f, yPos, paintText)
+        canvas.drawText("Firma Supervisor: _______________________", pageWidth - margin - 220f, yPos, paintText)
+
+        pdfDocument.finishPage(page)
+
+        val pdfDir = File(context.cacheDir, "pdf_reports").apply { if (!exists()) mkdirs() }
+        val file = File(pdfDir, "Cierre_Turno_${shift.id.take(8)}_${System.currentTimeMillis()}.pdf")
+        val fos = FileOutputStream(file)
+        pdfDocument.writeTo(fos)
+        pdfDocument.close()
+        fos.close()
+
+        return file
     }
 }

@@ -1,6 +1,8 @@
 package com.lopezapp.movilpos.ui
 
+import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,14 +29,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.ChevronRight
@@ -48,8 +53,10 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Work
@@ -58,6 +65,7 @@ import androidx.compose.material.icons.rounded.AttachMoney
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Store
 import androidx.compose.material.icons.rounded.Storefront
@@ -157,6 +165,7 @@ fun SettingsScreen(
     onNavigateToBusinessInfo: () -> Unit = {},
     onNavigateToTicket: () -> Unit = {},
     onNavigateToElectronicBilling: () -> Unit = {},
+    onNavigateToUsers: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
     SettingsHomeScreen(
@@ -171,6 +180,7 @@ fun SettingsScreen(
         onNavigateToBusinessInfo = onNavigateToBusinessInfo,
         onNavigateToTicket = onNavigateToTicket,
         onNavigateToElectronicBilling = onNavigateToElectronicBilling,
+        onNavigateToUsers = onNavigateToUsers,
         onNavigateBack = onNavigateBack,
         modifier = modifier,
     )
@@ -190,6 +200,7 @@ fun SettingsHomeScreen(
     onNavigateToBusinessInfo: () -> Unit,
     onNavigateToTicket: () -> Unit = {},
     onNavigateToElectronicBilling: () -> Unit = {},
+    onNavigateToUsers: () -> Unit = {},
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -235,6 +246,13 @@ fun SettingsHomeScreen(
                 subtitle = "Encabezado, mensaje de pie de página, tamaño 57mm/80mm y previsualización",
                 icon = Icons.Rounded.Receipt,
                 onClick = onNavigateToTicket,
+            )
+
+            SettingEntryCard(
+                title = "Usuarios y Permisos",
+                subtitle = "Administrar usuarios, roles de acceso y PINs de seguridad",
+                icon = Icons.Rounded.Group,
+                onClick = onNavigateToUsers,
             )
 
             SettingEntryCard(
@@ -2912,15 +2930,39 @@ fun SettingsElectronicBillingScreen(
 
     var isEnabled by rememberSaveable { mutableStateOf(config.isEnabled) }
     var environment by rememberSaveable { mutableStateOf(config.environment) }
-    var nit by rememberSaveable { mutableStateOf(config.nit) }
+    var nit by rememberSaveable { mutableStateOf(config.nit.filter { it.isDigit() }.take(14)) }
     var apiToken by rememberSaveable { mutableStateOf(config.apiToken) }
     var establishmentCode by rememberSaveable { mutableStateOf(config.establishmentCode) }
     var posCode by rememberSaveable { mutableStateOf(config.posCode) }
     var economicActivity by rememberSaveable { mutableStateOf(config.economicActivity) }
     var certificatePassword by rememberSaveable { mutableStateOf(config.certificatePassword) }
+    var certificateUri by rememberSaveable { mutableStateOf(config.certificateUri) }
+    var certificateFileName by rememberSaveable { mutableStateOf(config.certificateFileName) }
 
     var apiTokenVisible by rememberSaveable { mutableStateOf(false) }
     var certPasswordVisible by rememberSaveable { mutableStateOf(false) }
+
+    val certificatePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            certificateUri = uri.toString()
+            certificateFileName = getFileNameFromUri(context, uri)
+        }
+    }
+
+    LaunchedEffect(config) {
+        isEnabled = config.isEnabled
+        environment = config.environment
+        nit = config.nit.filter { it.isDigit() }.take(14)
+        apiToken = config.apiToken
+        establishmentCode = config.establishmentCode
+        posCode = config.posCode
+        economicActivity = config.economicActivity
+        certificatePassword = config.certificatePassword
+        certificateUri = config.certificateUri
+        certificateFileName = config.certificateFileName
+    }
 
     Scaffold(
         topBar = {
@@ -3023,10 +3065,14 @@ fun SettingsElectronicBillingScreen(
 
             OutlinedTextField(
                 value = nit,
-                onValueChange = { nit = it },
+                onValueChange = { input ->
+                    nit = input.filter { it.isDigit() }.take(14)
+                },
+                visualTransformation = NitVisualTransformation(),
                 label = { Text("NIT del Emisor") },
                 placeholder = { Text("0614-000000-000-0") },
                 leadingIcon = { Icon(imageVector = Icons.Default.Badge, contentDescription = null) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -3082,6 +3128,104 @@ fun SettingsElectronicBillingScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            // Certificado Digital (.p12 / .pfx)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "Certificado Digital (.p12 / .pfx)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+
+                    if (certificateFileName != null && certificateUri != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = certificateFileName ?: "",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Row {
+                                TextButton(onClick = { certificatePickerLauncher.launch("*/*") }) {
+                                    Text("Cambiar")
+                                }
+                                IconButton(
+                                    onClick = {
+                                        certificateUri = null
+                                        certificateFileName = null
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Eliminar certificado",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "No se ha cargado ningún certificado .p12",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(
+                            onClick = { certificatePickerLauncher.launch("*/*") },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.UploadFile,
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Text("Seleccionar Certificado (.p12 / .pfx)")
+                        }
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = certificatePassword,
                 onValueChange = { certificatePassword = it },
@@ -3108,12 +3252,14 @@ fun SettingsElectronicBillingScreen(
                     val updatedConfig = ElectronicBillingConfig(
                         isEnabled = isEnabled,
                         environment = environment,
-                        nit = nit.trim(),
+                        nit = formatNit(nit),
                         apiToken = apiToken.trim(),
                         establishmentCode = establishmentCode.trim().ifBlank { "0001" },
                         posCode = posCode.trim().ifBlank { "0001" },
                         economicActivity = economicActivity.trim(),
                         certificatePassword = certificatePassword,
+                        certificateUri = certificateUri,
+                        certificateFileName = certificateFileName,
                     )
                     viewModel.updateElectronicBillingConfig(updatedConfig)
                     Toast.makeText(
@@ -3134,6 +3280,27 @@ fun SettingsElectronicBillingScreen(
             }
         }
     }
+}
+
+private fun getFileNameFromUri(context: Context, uri: Uri): String {
+    var name: String? = null
+    if (uri.scheme == "content") {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index != -1) {
+                    name = cursor.getString(index)
+                }
+            }
+        }
+    }
+    if (name == null) {
+        name = uri.path?.let { path ->
+            val cut = path.lastIndexOf('/')
+            if (cut != -1) path.substring(cut + 1) else path
+        }
+    }
+    return name ?: "certificado.p12"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

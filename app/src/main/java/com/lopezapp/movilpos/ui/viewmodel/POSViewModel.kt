@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lopezapp.movilpos.data.model.CartItem
+import com.lopezapp.movilpos.data.model.CashShift
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.InvoiceType
@@ -12,6 +13,7 @@ import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.SaleItem
+import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.util.roundToTwoDecimals
 import java.util.UUID
@@ -49,6 +51,8 @@ class POSViewModel(
 ) : ViewModel() {
 
     val sales: StateFlow<List<Sale>> = repository.sales
+    val activeShift: StateFlow<CashShift?> = repository.activeShift
+    val users: StateFlow<List<User>> = repository.users
 
     private val _isDteEmitting = MutableStateFlow(false)
     val isDteEmitting: StateFlow<Boolean> = _isDteEmitting.asStateFlow()
@@ -761,6 +765,18 @@ class POSViewModel(
             _cashReceivedStr.value = ""
             return sale
         }
+    }
+
+    fun openShift(cashier: User, pin: String, initialFloat: Double): Boolean {
+        if (cashier.pin != pin) {
+            return false
+        }
+        repository.openShift(cashier, initialFloat)
+        return true
+    }
+
+    fun closeShift(actualCashCounted: Double): CashShift? {
+        return repository.closeShift(actualCashCounted)
     }
 
     fun checkout() {

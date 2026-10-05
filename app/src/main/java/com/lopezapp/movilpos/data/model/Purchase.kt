@@ -6,7 +6,7 @@ data class PurchaseItem(
     val productId: String,
     val productName: String,
     val quantity: Int = 1,
-    val unitCost: Double = 0.0
+    val unitCost: Double = 0.0,
 )
 
 data class Purchase(
@@ -15,5 +15,6 @@ data class Purchase(
     val supplierName: String,
     val dateMillis: Long = System.currentTimeMillis(),
     val items: List<PurchaseItem> = emptyList(),
-    val totalCost: Double = 0.0
+    val totalCost: Double = 0.0,
+    val registeredByUserName: String = "",
 )
