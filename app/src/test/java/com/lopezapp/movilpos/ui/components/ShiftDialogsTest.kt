@@ -72,4 +72,34 @@ class ShiftDialogsTest {
 
         assertEquals(0.0, difference, 0.001)
     }
+
+    @Test
+    fun closeShift_withExpenses_recalculatesExpectedCashAndDifference() {
+        val shiftWithExpenses = CashShift(
+            cashierId = "1",
+            cashierName = "Carlos",
+            initialFloat = 100.0,
+            totalCashSales = 150.0,
+            totalCardSales = 50.0,
+            totalExpenses = 25.0
+        )
+
+        // Expected Cash = (100.0 + 150.0) - 25.0 = 225.0
+        assertEquals(225.0, shiftWithExpenses.expectedCash, 0.001)
+
+        // Counted 225.0 -> difference = 0.0
+        val actualCountedCuadrado = 225.0
+        val diffCuadrado = (actualCountedCuadrado - shiftWithExpenses.expectedCash).roundToTwoDecimals()
+        assertEquals(0.0, diffCuadrado, 0.001)
+
+        // Counted 230.0 -> difference = +5.0 (Sobrante)
+        val actualCountedSobrante = 230.0
+        val diffSobrante = (actualCountedSobrante - shiftWithExpenses.expectedCash).roundToTwoDecimals()
+        assertEquals(5.0, diffSobrante, 0.001)
+
+        // Counted 210.0 -> difference = -15.0 (Faltante)
+        val actualCountedFaltante = 210.0
+        val diffFaltante = (actualCountedFaltante - shiftWithExpenses.expectedCash).roundToTwoDecimals()
+        assertEquals(-15.0, diffFaltante, 0.001)
+    }
 }

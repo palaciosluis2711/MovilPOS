@@ -133,8 +133,8 @@ class DteReportsViewModel(
         }
     }
 
-    fun retryContingencyTransmissions(): Result<Int> {
-        return repository.retryContingencyTransmissions()
+    fun retryContingencyTransmissions(context: Context? = null): Result<Int> {
+        return repository.retryContingencyTransmissions(context = context)
     }
 
     class Factory(private val repository: AppRepository) : ViewModelProvider.Factory {

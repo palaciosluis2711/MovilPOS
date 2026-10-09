@@ -4,6 +4,9 @@ import com.lopezapp.movilpos.data.model.ArithmeticOperator
 import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.BundleItem
 import com.lopezapp.movilpos.data.model.CartItem
+import com.lopezapp.movilpos.data.model.CreditStatus
+import com.lopezapp.movilpos.data.model.Customer
+import com.lopezapp.movilpos.data.model.DteEnvironment
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PriceRule
@@ -1120,6 +1123,39 @@ class POSViewModelTest {
     }
 
     @Test
+    fun processSale_whenDteTransmissionFails_savesInContingencyModeAndNavigates() = runTest {
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                isEnabled = true,
+                environment = DteEnvironment.SANDBOX,
+                nit = "", // missing credentials -> contingency
+                apiToken = "",
+                isSimulationMode = false
+            )
+        )
+        viewModel.selectInvoiceType(InvoiceType.CONSUMIDOR_FINAL)
+
+        val product = repository.products.value.first { !it.isService }
+        viewModel.addToCart(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        var navigatedSaleId: String? = null
+        viewModel.processSale { saleId ->
+            navigatedSaleId = saleId
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(navigatedSaleId != null)
+        val savedSale = repository.sales.value.find { it.id == navigatedSaleId }
+        assertTrue(savedSale != null)
+        assertTrue(savedSale!!.contingencyMode)
+        assertFalse(savedSale.isDteIssued)
+        assertEquals(InvoiceType.CONSUMIDOR_FINAL, savedSale.invoiceType)
+        assertTrue(repository.contingencyDtes.value.any { it.id == navigatedSaleId })
+        assertTrue(viewModel.uiState.value.cartItems.isEmpty())
+    }
+
+    @Test
     fun selectInvoiceType_whenElectronicBillingDisabled_fallsBackToTicketForConsumidorFinalAndCreditoFiscal() = runTest {
         repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
         testDispatcher.scheduler.advanceUntilIdle()
@@ -1221,5 +1257,92 @@ class POSViewModelTest {
         assertTrue(users.isNotEmpty())
         assertEquals("Administrador", users.first().name)
         assertNull(viewModel.activeShift.value)
+    }
+
+    @Test
+    fun setIsCreditSale_updatesStateFlowAndUiState() = runTest {
+        assertFalse(viewModel.isCreditSale.value)
+        assertFalse(viewModel.uiState.value.isCreditSale)
+
+        val targetDueDate = System.currentTimeMillis() + 15L * 24 * 60 * 60 * 1000L
+        viewModel.setIsCreditSale(true)
+        viewModel.setCreditDueDateMillis(targetDueDate)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.isCreditSale.value)
+        assertTrue(viewModel.uiState.value.isCreditSale)
+        assertEquals(targetDueDate, viewModel.creditDueDateMillis.value)
+        assertEquals(targetDueDate, viewModel.uiState.value.creditDueDateMillis)
+    }
+
+    @Test
+    fun processSale_creditSale_withDefaultCustomer_failsValidationAndReturnsNull() = runTest {
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
+        viewModel.selectInvoiceType(InvoiceType.TICKET)
+
+        val product = repository.products.value.first { !it.isService }
+        viewModel.addToCart(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Enable credit sale with default customer selected
+        val defaultCustomer = repository.customers.value.find { it.isDefault }
+        viewModel.selectCustomer(defaultCustomer?.id)
+        viewModel.setIsCreditSale(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val sale = viewModel.processSale()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(sale)
+        assertFalse(viewModel.uiState.value.cartItems.isEmpty())
+    }
+
+    @Test
+    fun processSale_creditSale_withSpecificCustomer_createsCreditSaleWithCorrectFields() = runTest {
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
+        viewModel.selectInvoiceType(InvoiceType.TICKET)
+
+        // Add a specific non-default customer
+        val specificCustomer = Customer(
+            id = "cust_credit_1",
+            name = "Empresa X, S.A.",
+            documentNumber = "01234567-8",
+            department = "San Salvador",
+            municipality = "San Salvador Centro",
+            district = "San Salvador",
+            isDefault = false
+        )
+        repository.addCustomer(specificCustomer)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val product = repository.products.value.first { !it.isService }
+        viewModel.addToCart(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val expectedTotal = viewModel.uiState.value.total
+        val targetDueDate = System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000L
+
+        viewModel.selectCustomer(specificCustomer.id)
+        viewModel.setIsCreditSale(true)
+        viewModel.setCreditDueDateMillis(targetDueDate)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val sale = viewModel.processSale()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(sale != null)
+        assertEquals(specificCustomer.id, sale!!.customerId)
+        assertEquals(specificCustomer.name, sale.customerName)
+        assertTrue(sale.isCredit)
+        assertEquals(targetDueDate, sale.creditDueDateMillis)
+        assertEquals("Crédito / Fiado", sale.paymentMethodName)
+        assertEquals(0.0, sale.cashReceived, 0.001)
+        assertEquals(0.0, sale.changeAmount, 0.001)
+        assertEquals(expectedTotal, sale.remainingBalance, 0.001)
+        assertEquals(CreditStatus.UNPAID, sale.creditStatus)
+
+        // After successful sale, cart is cleared and isCreditSale resets to false
+        assertTrue(viewModel.uiState.value.cartItems.isEmpty())
+        assertFalse(viewModel.isCreditSale.value)
     }
 }

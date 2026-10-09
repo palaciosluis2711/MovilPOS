@@ -23,5 +23,6 @@ data class Customer(
     val isLargeContributor: Boolean = false,
     val commercialActivity: String? = null,
     val commercialName: String = "",
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    val currentDebt: Double = 0.0,
 )

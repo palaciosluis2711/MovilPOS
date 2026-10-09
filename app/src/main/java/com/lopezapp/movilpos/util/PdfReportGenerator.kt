@@ -7,14 +7,20 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.BarcodeLabelConfig
+import com.lopezapp.movilpos.data.model.BatchLabelItem
 import com.lopezapp.movilpos.data.model.CashShift
 import com.lopezapp.movilpos.data.model.Customer
+import com.lopezapp.movilpos.data.model.CustomerPayment
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.InvoiceType
+import com.lopezapp.movilpos.data.model.LabelSize
+import com.lopezapp.movilpos.data.model.PrintMode
 import com.lopezapp.movilpos.data.model.Purchase
 import com.lopezapp.movilpos.data.model.Quotation
 import com.lopezapp.movilpos.data.model.Sale
@@ -2071,12 +2077,18 @@ object PdfReportGenerator {
             yPos += 14f
         }
 
-        val fmt = { amt: Double -> String.format(Locale.US, "$%.2f", amt) }
+        val fmt = { amt: Double ->
+            if (amt < 0) "-$${String.format(Locale.US, "%.2f", abs(amt))}"
+            else "$${String.format(Locale.US, "%.2f", amt)}"
+        }
+
+        val expenseFmt = if (shift.totalExpenses > 0) "-${fmt(shift.totalExpenses)}" else fmt(0.0)
 
         drawRow("Fondo Inicial de Efectivo:", fmt(shift.initialFloat))
         drawRow("(+) Ventas en Efectivo:", fmt(shift.totalCashSales))
         drawRow("(+) Ventas con Tarjeta:", fmt(shift.totalCardSales))
         drawRow("(+) Otras Ventas:", fmt(shift.totalOtherSales))
+        drawRow("(-) Gastos / Egresos de Caja:", expenseFmt)
         drawRow("Efectivo Esperado en Caja:", fmt(shift.expectedCash), isBold = true)
 
         yPos += 6f
@@ -2084,14 +2096,14 @@ object PdfReportGenerator {
         yPos += 16f
 
         if (shift.actualCashCounted != null) {
-            drawRow("Efectivo Contado (Arqueo):", fmt(shift.actualCashCounted), isBold = true)
+            drawRow("Efectivo Contado:", fmt(shift.actualCashCounted), isBold = true)
             val diff = shift.difference ?: (shift.actualCashCounted - shift.expectedCash)
             val diffLabel = when {
-                abs(diff) < 0.001 -> "Sin Diferencia (0.00)"
+                abs(diff) < 0.001 -> "Sin Diferencia ($0.00)"
                 diff > 0 -> "Sobrante (+${fmt(diff)})"
                 else -> "Faltante (${fmt(diff)})"
             }
-            drawRow("Diferencia de Arqueo:", diffLabel, isBold = true)
+            drawRow("Diferencia (Sobrante / Faltante):", diffLabel, isBold = true)
         }
 
         yPos += 30f
@@ -2108,5 +2120,932 @@ object PdfReportGenerator {
         fos.close()
 
         return file
+    }
+
+    fun generatePaymentReceiptPdf(
+        context: Context,
+        payment: CustomerPayment,
+        customer: Customer?,
+        businessInfo: BusinessInfo
+    ): File {
+        val pdfDocument = PdfDocument()
+
+        // Standard Letter dimensions in points at 72 DPI: 612 x 792 points
+        val pageWidth = 612
+        val pageHeight = 792
+        val margin = 40f
+
+        val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas: Canvas = page.canvas
+
+        // Paint definitions
+        val paintTitle = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(24, 43, 73)
+            textSize = 18f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintSubTitle = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(30, 30, 30)
+            textSize = 13f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintHeader = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(30, 30, 30)
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintText = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(50, 50, 50)
+            textSize = 10f
+        }
+
+        val paintBold = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(30, 30, 30)
+            textSize = 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintTextRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(50, 50, 50)
+            textSize = 10f
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintBoldRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(30, 30, 30)
+            textSize = 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintGrid = Paint().apply {
+            color = Color.LTGRAY
+            strokeWidth = 1f
+            style = Paint.Style.STROKE
+        }
+
+        val paintBoxBg = Paint().apply {
+            color = Color.rgb(245, 247, 250)
+            style = Paint.Style.FILL
+        }
+
+        val paintBoxBorder = Paint().apply {
+            color = Color.rgb(200, 210, 220)
+            strokeWidth = 1f
+            style = Paint.Style.STROKE
+        }
+
+        val paintFooter = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(80, 80, 80)
+            textSize = 11f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        var yPos = margin
+
+        // Header Title
+        canvas.drawText("MOVILPOS - COMPROBANTE DE ABONO / PAGO", margin, yPos + 18f, paintTitle)
+        yPos += 30f
+
+        // Business Info
+        val businessName = businessInfo.commercialName.ifBlank { businessInfo.name.ifBlank { "Mi Negocio" } }
+        canvas.drawText(businessName, margin, yPos + 12f, paintSubTitle)
+        yPos += 18f
+
+        if (businessInfo.nit.isNotBlank()) {
+            canvas.drawText("NIT: ${businessInfo.nit}", margin, yPos + 10f, paintText)
+            yPos += 14f
+        }
+
+        if (businessInfo.address.isNotBlank()) {
+            canvas.drawText("Dirección: ${businessInfo.address}", margin, yPos + 10f, paintText)
+            yPos += 14f
+        }
+
+        if (businessInfo.phone.isNotBlank()) {
+            canvas.drawText("Teléfono: ${businessInfo.phone}", margin, yPos + 10f, paintText)
+            yPos += 14f
+        }
+
+        yPos += 10f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintGrid)
+        yPos += 16f
+
+        // Payment Details
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+        val formattedDate = dateFormat.format(Date(payment.dateMillis))
+
+        canvas.drawText("DETALLES DEL PAGO", margin, yPos + 10f, paintHeader)
+        yPos += 18f
+
+        canvas.drawText("Recibo N°: ${payment.id}", margin, yPos + 10f, paintText)
+        yPos += 14f
+        canvas.drawText("Fecha y Hora: $formattedDate", margin, yPos + 10f, paintText)
+        yPos += 18f
+
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintGrid)
+        yPos += 16f
+
+        // Customer Info Section
+        canvas.drawText("INFORMACIÓN DEL CLIENTE", margin, yPos + 10f, paintHeader)
+        yPos += 18f
+
+        val customerName = customer?.name ?: payment.customerName
+        canvas.drawText("Cliente: $customerName", margin, yPos + 10f, paintText)
+        yPos += 14f
+
+        val docText = if (customer != null) {
+            "${customer.documentType}: ${customer.documentNumber}"
+        } else {
+            "-"
+        }
+        canvas.drawText("DUI/NIT: $docText", margin, yPos + 10f, paintText)
+        yPos += 14f
+
+        val phoneText = customer?.phone?.takeIf { it.isNotBlank() } ?: "-"
+        canvas.drawText("Teléfono: $phoneText", margin, yPos + 10f, paintText)
+        yPos += 18f
+
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintGrid)
+        yPos += 20f
+
+        // Payment Summary Box
+        canvas.drawText("RESUMEN DEL PAGO", margin, yPos + 10f, paintHeader)
+        yPos += 20f
+
+        val boxTop = yPos
+        val boxWidth = pageWidth - 2 * margin
+        val boxRowHeight = 26f
+        val boxHeight = boxRowHeight * 4 + 10f
+
+        canvas.drawRect(margin, boxTop, margin + boxWidth, boxTop + boxHeight, paintBoxBg)
+        canvas.drawRect(margin, boxTop, margin + boxWidth, boxTop + boxHeight, paintBoxBorder)
+
+        var currentBoxY = boxTop + 18f
+
+        // Row 1: Monto Abonado
+        canvas.drawText("Monto Abonado:", margin + 12f, currentBoxY, paintBold)
+        canvas.drawText(formatCurrency(payment.amount), margin + boxWidth - 12f, currentBoxY, paintBoldRight)
+        currentBoxY += boxRowHeight
+
+        // Row 2: Método de Pago
+        canvas.drawText("Método de Pago:", margin + 12f, currentBoxY, paintText)
+        canvas.drawText(payment.paymentMethodName, margin + boxWidth - 12f, currentBoxY, paintTextRight)
+        currentBoxY += boxRowHeight
+
+        // Row 3: Saldo Restante del Cliente
+        canvas.drawText("Saldo Restante del Cliente:", margin + 12f, currentBoxY, paintText)
+        canvas.drawText(formatCurrency(customer?.currentDebt ?: 0.0), margin + boxWidth - 12f, currentBoxY, paintTextRight)
+        currentBoxY += boxRowHeight
+
+        // Row 4: Notas / Observaciones
+        val notesDisplay = payment.notes?.takeIf { it.isNotBlank() } ?: "-"
+        canvas.drawText("Notas / Observaciones:", margin + 12f, currentBoxY, paintText)
+        canvas.drawText(notesDisplay, margin + boxWidth - 12f, currentBoxY, paintTextRight)
+
+        yPos = boxTop + boxHeight + 40f
+
+        // Footer
+        canvas.drawText("Gracias por su pago - MovilPOS", pageWidth / 2f, yPos, paintFooter)
+
+        pdfDocument.finishPage(page)
+
+        val outputFile = File(context.cacheDir, "recibo_abono_${payment.id}.pdf")
+        FileOutputStream(outputFile).use { out ->
+            pdfDocument.writeTo(out)
+        }
+        pdfDocument.close()
+
+        return outputFile
+    }
+
+    fun generatePaymentReceiptTicketPdf(
+        context: Context,
+        payment: CustomerPayment,
+        customer: Customer?,
+        businessInfo: BusinessInfo,
+        ticketConfig: TicketConfig
+    ): File {
+        val pdfDocument = PdfDocument()
+
+        val is57mm = ticketConfig.paperSize == TicketPaperSize.SIZE_57MM
+        val pageWidth = if (is57mm) 162 else 227
+        val margin = if (is57mm) 8f else 12f
+
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+        val formattedDate = dateFormat.format(Date(payment.dateMillis))
+
+        val paintTitleCenter = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 10f else 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintHeaderCenter = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 8.5f else 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintTextCenter = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 7.5f else 8.5f
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintTextLeft = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 7.5f else 8.5f
+            textAlign = Paint.Align.LEFT
+        }
+
+        val paintTextRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 7.5f else 8.5f
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintBoldLeft = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 8f else 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.LEFT
+        }
+
+        val paintBoldRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = if (is57mm) 8f else 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintLine = Paint().apply {
+            color = Color.DKGRAY
+            strokeWidth = 0.8f
+            style = Paint.Style.STROKE
+        }
+
+        var logoBitmap: Bitmap? = null
+        if (ticketConfig.showLogo && !businessInfo.logoUri.isNullOrBlank()) {
+            try {
+                val uri = Uri.parse(businessInfo.logoUri)
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val decoded = BitmapFactory.decodeStream(stream)
+                    if (decoded != null) {
+                        val maxLogoDim = if (is57mm) 36 else 48
+                        val scale = minOf(maxLogoDim.toFloat() / decoded.width, maxLogoDim.toFloat() / decoded.height)
+                        val w = (decoded.width * scale).toInt().coerceAtLeast(1)
+                        val h = (decoded.height * scale).toInt().coerceAtLeast(1)
+                        logoBitmap = Bitmap.createScaledBitmap(decoded, w, h, true)
+                    }
+                }
+            } catch (_: Exception) {
+                logoBitmap = null
+            }
+        }
+
+        fun getWrappedTextHeight(
+            text: String,
+            paint: Paint,
+            maxWidth: Float,
+            lineHeight: Float
+        ): Float {
+            val words = text.split(" ")
+            var lines = 0
+            var currentLine = ""
+            for (word in words) {
+                val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
+                if (paint.measureText(testLine) > maxWidth) {
+                    if (currentLine.isNotEmpty()) {
+                        lines++
+                        currentLine = word
+                    } else {
+                        lines++
+                        currentLine = ""
+                    }
+                } else {
+                    currentLine = testLine
+                }
+            }
+            if (currentLine.isNotEmpty()) {
+                lines++
+            }
+            return (lines * lineHeight).coerceAtLeast(lineHeight)
+        }
+
+        val contentWidth = pageWidth - 2 * margin
+        var estimatedHeight = margin * 2 + 10f
+
+        if (logoBitmap != null) estimatedHeight += logoBitmap.height + 6f
+        val businessName = businessInfo.commercialName.ifBlank { businessInfo.name }
+        if (ticketConfig.showBusinessName && businessName.isNotBlank()) {
+            estimatedHeight += getWrappedTextHeight(businessName, paintTitleCenter, contentWidth, 14f)
+        }
+        if (ticketConfig.showNit && businessInfo.nit.isNotBlank()) estimatedHeight += 12f
+        if (ticketConfig.showNrc && businessInfo.nrc.isNotBlank()) estimatedHeight += 12f
+        if (ticketConfig.showAddress && businessInfo.address.isNotBlank()) {
+            estimatedHeight += getWrappedTextHeight(businessInfo.address, paintTextCenter, contentWidth, 12f)
+        }
+        if (ticketConfig.showPhone && businessInfo.phone.isNotBlank()) estimatedHeight += 12f
+        if (ticketConfig.showSocialMedia && businessInfo.socialMedia.isNotBlank()) estimatedHeight += 12f
+
+        // Title + Receipt Info
+        estimatedHeight += 6f + 10f + 14f + 12f + 12f
+
+        // Customer Info
+        val customerName = customer?.name ?: payment.customerName
+        estimatedHeight += 6f + 10f + 14f
+        estimatedHeight += getWrappedTextHeight("Cliente: $customerName", paintTextLeft, contentWidth, 12f)
+        estimatedHeight += 12f + 12f // DUI/NIT & Teléfono
+
+        // Payment Details
+        estimatedHeight += 6f + 10f + 14f + 12f + 12f + 12f // Header, Monto, Método, Saldo Restante
+        val notesDisplay = payment.notes?.takeIf { it.isNotBlank() } ?: "-"
+        estimatedHeight += getWrappedTextHeight("Notas: $notesDisplay", paintTextLeft, contentWidth, 12f)
+
+        // Footer
+        if (ticketConfig.footerMessage.isNotBlank()) {
+            estimatedHeight += 6f + 10f
+            estimatedHeight += getWrappedTextHeight(ticketConfig.footerMessage, paintTextCenter, contentWidth, 12f)
+        }
+        estimatedHeight += 20f
+
+        val pageHeight = estimatedHeight.toInt().coerceAtLeast(180)
+        val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas = page.canvas
+
+        val centerX = pageWidth / 2f
+        var yPos = margin + 10f
+
+        fun drawWrappedText(
+            text: String,
+            startY: Float,
+            paint: Paint,
+            align: Paint.Align = Paint.Align.LEFT,
+            lineHeight: Float = 12f
+        ): Float {
+            val words = text.split(" ")
+            var currentLine = ""
+            var currentY = startY
+            val targetX = when (align) {
+                Paint.Align.CENTER -> centerX
+                Paint.Align.RIGHT -> pageWidth - margin
+                else -> margin
+            }
+            val originalAlign = paint.textAlign
+            paint.textAlign = align
+
+            for (word in words) {
+                val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
+                if (paint.measureText(testLine) > contentWidth) {
+                    if (currentLine.isNotEmpty()) {
+                        canvas.drawText(currentLine, targetX, currentY + 9f, paint)
+                        currentY += lineHeight
+                        currentLine = word
+                    } else {
+                        canvas.drawText(word, targetX, currentY + 9f, paint)
+                        currentY += lineHeight
+                        currentLine = ""
+                    }
+                } else {
+                    currentLine = testLine
+                }
+            }
+            if (currentLine.isNotEmpty()) {
+                canvas.drawText(currentLine, targetX, currentY + 9f, paint)
+                currentY += lineHeight
+            }
+            paint.textAlign = originalAlign
+            return currentY
+        }
+
+        logoBitmap?.let { bmp ->
+            canvas.drawBitmap(bmp, centerX - (bmp.width / 2f), yPos, null)
+            yPos += bmp.height + 6f
+        }
+
+        if (ticketConfig.showBusinessName && businessName.isNotBlank()) {
+            yPos = drawWrappedText(businessName, yPos, paintTitleCenter, Paint.Align.CENTER, 14f)
+        }
+        if (ticketConfig.showNit && businessInfo.nit.isNotBlank()) {
+            canvas.drawText("NIT: ${businessInfo.nit}", centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+        if (ticketConfig.showNrc && businessInfo.nrc.isNotBlank()) {
+            canvas.drawText("NRC: ${businessInfo.nrc}", centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+        if (ticketConfig.showAddress && businessInfo.address.isNotBlank()) {
+            yPos = drawWrappedText(businessInfo.address, yPos, paintTextCenter, Paint.Align.CENTER, 12f)
+        }
+        if (ticketConfig.showPhone && businessInfo.phone.isNotBlank()) {
+            canvas.drawText("Tel: ${businessInfo.phone}", centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+        if (ticketConfig.showSocialMedia && businessInfo.socialMedia.isNotBlank()) {
+            canvas.drawText("Redes: ${businessInfo.socialMedia}", centerX, yPos + 9f, paintTextCenter)
+            yPos += 12f
+        }
+
+        // Title & Receipt metadata
+        yPos += 6f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintLine)
+        yPos += 10f
+
+        canvas.drawText("COMPROBANTE DE ABONO", centerX, yPos + 9f, paintHeaderCenter)
+        yPos += 14f
+
+        canvas.drawText("Recibo N°: ${payment.id}", margin, yPos + 9f, paintTextLeft)
+        yPos += 12f
+        canvas.drawText("Fecha: $formattedDate", margin, yPos + 9f, paintTextLeft)
+        yPos += 12f
+
+        // Customer Info
+        yPos += 6f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintLine)
+        yPos += 10f
+
+        canvas.drawText("INFORMACIÓN DEL CLIENTE", centerX, yPos + 9f, paintHeaderCenter)
+        yPos += 14f
+
+        yPos = drawWrappedText("Cliente: $customerName", yPos, paintTextLeft, Paint.Align.LEFT, 12f)
+
+        val docText = if (customer != null && customer.documentNumber.isNotBlank()) {
+            "${customer.documentType}: ${customer.documentNumber}"
+        } else {
+            "-"
+        }
+        canvas.drawText("DUI/NIT: $docText", margin, yPos + 9f, paintTextLeft)
+        yPos += 12f
+
+        val phoneText = customer?.phone?.takeIf { it.isNotBlank() } ?: "-"
+        canvas.drawText("Teléfono: $phoneText", margin, yPos + 9f, paintTextLeft)
+        yPos += 12f
+
+        // Payment Details
+        yPos += 6f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintLine)
+        yPos += 10f
+
+        canvas.drawText("DETALLES DEL PAGO", centerX, yPos + 9f, paintHeaderCenter)
+        yPos += 14f
+
+        // Monto Abonado
+        canvas.drawText("Monto Abonado:", margin, yPos + 9f, paintBoldLeft)
+        canvas.drawText(formatCurrency(payment.amount), pageWidth - margin, yPos + 9f, paintBoldRight)
+        yPos += 12f
+
+        // Método de Pago
+        canvas.drawText("Método de Pago:", margin, yPos + 9f, paintTextLeft)
+        var methodText = payment.paymentMethodName
+        val maxMethodWidth = contentWidth - paintTextLeft.measureText("Método de Pago: ")
+        if (paintTextRight.measureText(methodText) > maxMethodWidth) {
+            while (methodText.isNotEmpty() && paintTextRight.measureText("$methodText..") > maxMethodWidth) {
+                methodText = methodText.dropLast(1)
+            }
+            methodText = "$methodText.."
+        }
+        canvas.drawText(methodText, pageWidth - margin, yPos + 9f, paintTextRight)
+        yPos += 12f
+
+        // Saldo Restante Actualizado del Cliente
+        val remainingDebt = customer?.currentDebt ?: 0.0
+        canvas.drawText("Saldo Restante:", margin, yPos + 9f, paintTextLeft)
+        canvas.drawText(formatCurrency(remainingDebt), pageWidth - margin, yPos + 9f, paintBoldRight)
+        yPos += 12f
+
+        // Notas
+        yPos = drawWrappedText("Notas: $notesDisplay", yPos, paintTextLeft, Paint.Align.LEFT, 12f)
+
+        // Footer
+        if (ticketConfig.footerMessage.isNotBlank()) {
+            yPos += 6f
+            canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintLine)
+            yPos += 10f
+            drawWrappedText(ticketConfig.footerMessage, yPos, paintTextCenter, Paint.Align.CENTER, 12f)
+        }
+
+        pdfDocument.finishPage(page)
+
+        val outputFile = File(context.cacheDir, "ticket_abono_${payment.id}.pdf")
+        FileOutputStream(outputFile).use { out ->
+            pdfDocument.writeTo(out)
+        }
+        pdfDocument.close()
+
+        return outputFile
+    }
+
+    fun generateBarcodeLabelsPdf(
+        context: Context,
+        items: List<BatchLabelItem>,
+        config: BarcodeLabelConfig,
+        labelSizes: List<LabelSize>,
+        businessInfo: BusinessInfo
+    ): File {
+        val pdfDocument = PdfDocument()
+
+        val selectedSize = labelSizes.find { it.id == config.selectedSizeId }
+        val widthMm = if (selectedSize != null && config.selectedSizeId != "custom") selectedSize.widthMm else config.customWidthMm.toDouble()
+        val heightMm = if (selectedSize != null && config.selectedSizeId != "custom") selectedSize.heightMm else config.customHeightMm.toDouble()
+
+        val mmToPt = 72.0 / 25.4
+        val labelWidthPt = (widthMm * mmToPt).toInt().coerceAtLeast(50)
+        val labelHeightPt = (heightMm * mmToPt).toInt().coerceAtLeast(30)
+
+        val individualLabels = mutableListOf<BatchLabelItem>()
+        for (item in items) {
+            repeat(item.quantity.coerceAtLeast(1)) {
+                individualLabels.add(item)
+            }
+        }
+
+        if (config.printMode == PrintMode.THERMAL_ROLL) {
+            for (item in individualLabels) {
+                val pageInfo = PdfDocument.PageInfo.Builder(labelWidthPt, labelHeightPt, pdfDocument.pages.size + 1).create()
+                val page = pdfDocument.startPage(pageInfo)
+                val canvas = page.canvas
+                canvas.drawColor(Color.WHITE)
+
+                drawSingleLabel(canvas, 0f, 0f, labelWidthPt.toFloat(), labelHeightPt.toFloat(), item, config, businessInfo)
+
+                pdfDocument.finishPage(page)
+            }
+        } else {
+            val pageWidth = 612
+            val pageHeight = 792
+            val margin = 36f
+            val gapMm = if (config.hasGap) 2.0 else 0.0
+            val gapPt = (gapMm * mmToPt).toFloat()
+
+            val usableWidth = pageWidth - (margin * 2)
+            val usableHeight = pageHeight - (margin * 2)
+
+            val cols = ((usableWidth + gapPt) / (labelWidthPt + gapPt)).toInt().coerceAtLeast(1)
+            val rows = ((usableHeight + gapPt) / (labelHeightPt + gapPt)).toInt().coerceAtLeast(1)
+            val labelsPerPage = cols * rows
+
+            var labelIndex = 0
+            while (labelIndex < individualLabels.size) {
+                val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pdfDocument.pages.size + 1).create()
+                val page = pdfDocument.startPage(pageInfo)
+                val canvas = page.canvas
+                canvas.drawColor(Color.WHITE)
+
+                val paintBorder = Paint().apply {
+                    color = Color.rgb(200, 200, 200)
+                    strokeWidth = 1f
+                    style = Paint.Style.STROKE
+                    pathEffect = DashPathEffect(floatArrayOf(4f, 4f), 0f)
+                }
+
+                for (i in 0 until labelsPerPage) {
+                    if (labelIndex >= individualLabels.size) break
+                    val item = individualLabels[labelIndex]
+
+                    val col = i % cols
+                    val row = i / cols
+
+                    val x = margin + col * (labelWidthPt + gapPt)
+                    val y = margin + row * (labelHeightPt + gapPt)
+
+                    canvas.drawRect(x, y, x + labelWidthPt, y + labelHeightPt, paintBorder)
+
+                    drawSingleLabel(canvas, x + 2f, y + 2f, labelWidthPt - 4f, labelHeightPt - 4f, item, config, businessInfo)
+
+                    labelIndex++
+                }
+
+                pdfDocument.finishPage(page)
+            }
+        }
+
+        val pdfDir = File(context.cacheDir, "pdf_reports")
+        if (!pdfDir.exists()) pdfDir.mkdirs()
+        val file = File(pdfDir, "barcode_labels_${System.currentTimeMillis()}.pdf")
+        FileOutputStream(file).use { fos ->
+            pdfDocument.writeTo(fos)
+        }
+        pdfDocument.close()
+        return file
+    }
+
+    private fun drawSingleLabel(
+        canvas: Canvas,
+        left: Float,
+        top: Float,
+        width: Float,
+        height: Float,
+        item: BatchLabelItem,
+        config: BarcodeLabelConfig,
+        businessInfo: BusinessInfo
+    ) {
+        val paintText = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(80, 80, 80) // DarkGray
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintProduct = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintCategory = Paint().apply {
+            isAntiAlias = true
+            color = Color.GRAY
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintBarcodeNumber = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(80, 80, 80) // DarkGray
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintPrice = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val centerX = left + (width / 2f)
+        val maxWidth = (width - 6f).coerceAtLeast(20f)
+        val availableHeight = (height - 6f).coerceAtLeast(20f)
+
+        val showStore = config.showStoreName && businessInfo.name.isNotBlank()
+        val showProd = config.showProductName && item.productName.isNotBlank()
+        val showCat = config.showCategoryBrand && (item.category.isNotBlank() || item.brand.isNotBlank())
+        val showBarcodeImg = config.showBarcodeImage
+        val showBarcodeNum = config.showBarcodeNumber && item.barcode.isNotBlank()
+        val showPr = config.showPrice
+
+        // Scale factor based on label height in points
+        val heightScale = (height / 72.0).toFloat().coerceIn(0.5f, 2.5f)
+
+        var storeFontSize = (10f * heightScale).coerceIn(6f, 14f)
+        var productFontSize = (12f * heightScale).coerceIn(8f, 18f)
+        var catFontSize = (8f * heightScale).coerceIn(6f, 12f)
+        var barcodeNumFontSize = (8f * heightScale).coerceIn(6f, 12f)
+        var priceFontSize = (14f * heightScale).coerceIn(10f, 22f)
+        var barcodeImgHeight = if (showBarcodeImg) (height * 0.35f).coerceIn(15f, 45f) else 0f
+        var spacing = (3f * heightScale).coerceIn(1f, 8f)
+
+        // Iterative fitting / auto-scaling down if content exceeds availableHeight
+        for (i in 0 until 3) {
+            paintText.textSize = storeFontSize
+            val storeH = if (showStore) storeFontSize * 1.2f else 0f
+
+            paintProduct.textSize = productFontSize
+            val words = item.productName.split(" ")
+            var line1 = ""
+            var line2 = ""
+            for (word in words) {
+                val testLine = if (line1.isEmpty()) word else "$line1 $word"
+                if (paintProduct.measureText(testLine) <= maxWidth) {
+                    line1 = testLine
+                } else {
+                    line2 = if (line2.isEmpty()) word else "$line2 $word"
+                }
+            }
+            val productLines = if (line2.isNotBlank()) 2 else 1
+            val prodFontForH = if (productLines > 1) productFontSize * 0.9f else productFontSize
+            val prodLineSpacing = if (productLines > 1) 1.08f else 1.2f
+            val productH = if (showProd) {
+                if (productLines > 1) prodFontForH + (prodFontForH * prodLineSpacing) else prodFontForH
+            } else 0f
+
+            val catBrand = listOf(item.category, item.brand).filter { it.isNotBlank() }.joinToString(" • ")
+            paintCategory.textSize = catFontSize
+            val catH = if (showCat) catFontSize * 1.2f else 0f
+
+            paintBarcodeNumber.textSize = barcodeNumFontSize
+            val barcodeNumH = if (showBarcodeNum) barcodeNumFontSize * 1.2f else 0f
+
+            paintPrice.textSize = priceFontSize
+            val priceH = if (showPr) priceFontSize * 1.2f else 0f
+
+            val activeCount = listOf(showStore, showProd, showCat, showBarcodeImg, showBarcodeNum, showPr).count { it }
+            val totalTextH = storeH + productH + catH + barcodeImgHeight + barcodeNumH + priceH
+            val totalSpacing = if (activeCount > 1) (activeCount - 1) * spacing else 0f
+            val totalH = totalTextH + totalSpacing
+
+            if (i < 3 && totalH > availableHeight && totalH > 0f) {
+                val ratio = availableHeight / totalH
+                storeFontSize *= ratio
+                productFontSize *= ratio
+                catFontSize *= ratio
+                barcodeNumFontSize *= ratio
+                priceFontSize *= ratio
+                barcodeImgHeight *= ratio
+                spacing *= ratio
+            } else {
+                break
+            }
+        }
+
+        storeFontSize = getAutoScaledFontSizeForText(paintText, businessInfo.name, storeFontSize, maxWidth, false)
+        productFontSize = getAutoScaledFontSizeForText(paintProduct, item.productName, productFontSize, maxWidth, true)
+        val catBrand = listOf(item.category, item.brand).filter { it.isNotBlank() }.joinToString(" • ")
+        catFontSize = getAutoScaledFontSizeForText(paintCategory, catBrand, catFontSize, maxWidth, false)
+        barcodeNumFontSize = getAutoScaledFontSizeForText(paintBarcodeNumber, item.barcode, barcodeNumFontSize, maxWidth, false)
+        val formattedPrice = formatCurrency(item.price)
+        priceFontSize = getAutoScaledFontSizeForText(paintPrice, formattedPrice, priceFontSize, maxWidth, false)
+
+        paintText.textSize = storeFontSize
+        val storeHeight = if (showStore) storeFontSize * 1.2f else 0f
+
+        paintProduct.textSize = productFontSize
+        val words = item.productName.split(" ")
+        var line1 = ""
+        var line2 = ""
+        for (word in words) {
+            val testLine = if (line1.isEmpty()) word else "$line1 $word"
+            if (paintProduct.measureText(testLine) <= maxWidth) {
+                line1 = testLine
+            } else {
+                line2 = if (line2.isEmpty()) word else "$line2 $word"
+            }
+        }
+        val productLines = if (line2.isNotBlank()) 2 else 1
+        if (productLines > 1) {
+            productFontSize = (productFontSize * 0.9f).coerceAtLeast(6f)
+            paintProduct.textSize = productFontSize
+            line1 = ""
+            line2 = ""
+            for (word in words) {
+                val testLine = if (line1.isEmpty()) word else "$line1 $word"
+                if (paintProduct.measureText(testLine) <= maxWidth) {
+                    line1 = testLine
+                } else {
+                    line2 = if (line2.isEmpty()) word else "$line2 $word"
+                }
+            }
+        }
+        val productLineSpacing = if (productLines > 1) 1.08f else 1.2f
+        val productHeight = if (showProd) {
+            if (productLines > 1) {
+                productFontSize + (productFontSize * productLineSpacing)
+            } else {
+                productFontSize
+            }
+        } else 0f
+
+        paintCategory.textSize = catFontSize
+        val catHeight = if (showCat) catFontSize * 1.2f else 0f
+
+        val barcodeImgFinalHeight = if (showBarcodeImg) barcodeImgHeight else 0f
+
+        paintBarcodeNumber.textSize = barcodeNumFontSize
+        val barcodeNumHeight = if (showBarcodeNum) barcodeNumFontSize * 1.2f else 0f
+
+        paintPrice.textSize = priceFontSize
+        val priceHeight = if (showPr) priceFontSize * 1.2f else 0f
+
+        val itemsList = mutableListOf<Float>()
+        if (showStore) itemsList.add(storeHeight)
+        if (showProd) itemsList.add(productHeight)
+        if (showCat) itemsList.add(catHeight)
+        if (showBarcodeImg) itemsList.add(barcodeImgFinalHeight)
+        if (showBarcodeNum) itemsList.add(barcodeNumHeight)
+        if (showPr) itemsList.add(priceHeight)
+
+        val totalItemsHeight = itemsList.sum()
+        val totalSpacing = if (itemsList.size > 1) (itemsList.size - 1) * spacing else 0f
+        val contentHeight = totalItemsHeight + totalSpacing
+
+        var currentY = top + 3f + ((availableHeight - contentHeight) / 2f).coerceAtLeast(0f)
+
+        if (showStore) {
+            paintText.textSize = storeFontSize
+            currentY += storeFontSize
+            canvas.drawText(businessInfo.name, centerX, currentY, paintText)
+            currentY += spacing
+        }
+
+        if (showProd) {
+            paintProduct.textSize = productFontSize
+            if (productLines > 1) {
+                if (line2.isEmpty() && words.size > 1) {
+                    val mid = item.productName.length / 2
+                    line1 = item.productName.take(mid)
+                    line2 = item.productName.drop(mid)
+                }
+                currentY += productFontSize
+                canvas.drawText(line1, centerX, currentY, paintProduct)
+                if (line2.isNotBlank()) {
+                    currentY += productFontSize * productLineSpacing
+                    canvas.drawText(line2, centerX, currentY, paintProduct)
+                }
+            } else {
+                currentY += productFontSize
+                canvas.drawText(item.productName, centerX, currentY, paintProduct)
+            }
+            currentY += spacing
+        }
+
+        if (showCat) {
+            paintCategory.textSize = catFontSize
+            currentY += catFontSize
+            canvas.drawText(catBrand, centerX, currentY, paintCategory)
+            currentY += spacing
+        }
+
+        if (showBarcodeImg) {
+            val barcodeBmp = BarcodeWriter.generateBarcodeBitmap(item.barcode, 300, 80)
+            if (barcodeBmp != null) {
+                val availableWidth = (width - 4f).coerceAtLeast(20f)
+                val aspectRatio = barcodeBmp.width.toFloat() / barcodeBmp.height.toFloat()
+                val naturalBarcodeWidth = barcodeImgFinalHeight * aspectRatio
+                val barcodeWidth = if (naturalBarcodeWidth > availableWidth) {
+                    availableWidth
+                } else {
+                    naturalBarcodeWidth.coerceIn(20f, availableWidth)
+                }
+
+                val barcodeLeft = centerX - (barcodeWidth / 2f)
+                val destRect = RectF(barcodeLeft, currentY, barcodeLeft + barcodeWidth, currentY + barcodeImgFinalHeight)
+                canvas.drawBitmap(barcodeBmp, null, destRect, null)
+            }
+            currentY += barcodeImgFinalHeight + (spacing * 0.5f)
+        }
+
+        if (showBarcodeNum) {
+            paintBarcodeNumber.textSize = barcodeNumFontSize
+            currentY += barcodeNumFontSize
+            canvas.drawText(item.barcode, centerX, currentY, paintBarcodeNumber)
+            currentY += spacing
+        }
+
+        if (showPr) {
+            paintPrice.textSize = priceFontSize
+            currentY += priceFontSize
+            canvas.drawText(formattedPrice, centerX, currentY, paintPrice)
+        }
+    }
+
+    private fun getAutoScaledFontSizeForText(paint: Paint, text: String, targetSize: Float, maxWidth: Float, allowTwoLines: Boolean): Float {
+        if (text.isBlank()) return targetSize
+        paint.textSize = targetSize
+        if (!allowTwoLines) {
+            val w = paint.measureText(text)
+            if (w <= maxWidth || w == 0f) return targetSize
+            return (targetSize * (maxWidth / w)).coerceAtLeast(4f)
+        } else {
+            val w = paint.measureText(text)
+            if (w <= maxWidth) return targetSize
+            val words = text.split(" ")
+            var line1 = ""
+            var line2 = ""
+            for (word in words) {
+                val testLine = if (line1.isEmpty()) word else "$line1 $word"
+                if (paint.measureText(testLine) <= maxWidth) {
+                    line1 = testLine
+                } else {
+                    line2 = if (line2.isEmpty()) word else "$line2 $word"
+                }
+            }
+            if (line2.isNotEmpty()) {
+                val w1 = paint.measureText(line1)
+                val w2 = paint.measureText(line2)
+                if (w1 <= maxWidth && w2 <= maxWidth) {
+                    return targetSize
+                } else {
+                    val maxW = maxOf(w1, w2)
+                    return (targetSize * (maxWidth / maxW)).coerceAtLeast(4f)
+                }
+            } else {
+                return (targetSize * (maxWidth / w)).coerceAtLeast(4f)
+            }
+        }
     }
 }

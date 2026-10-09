@@ -1,9 +1,11 @@
 package com.lopezapp.movilpos.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lopezapp.movilpos.data.model.BaseVariable
+import com.lopezapp.movilpos.data.model.BluetoothPrinterConfig
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.CashShift
@@ -16,10 +18,12 @@ import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
+import com.lopezapp.movilpos.data.model.TicketPaperSize
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.model.AnimationType
+import com.lopezapp.movilpos.util.EscPosPrinter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +47,7 @@ data class SettingsUiState(
     val businessInfo: BusinessInfo = BusinessInfo(),
     val ticketConfig: TicketConfig = TicketConfig(),
     val electronicBillingConfig: ElectronicBillingConfig = ElectronicBillingConfig(),
+    val bluetoothPrinterConfig: BluetoothPrinterConfig = BluetoothPrinterConfig(),
     val users: List<User> = emptyList(),
     val shiftHistory: List<CashShift> = emptyList()
 )
@@ -53,9 +58,10 @@ class SettingsViewModel(
     val users: StateFlow<List<User>> = repository.users
     val shiftHistory: StateFlow<List<CashShift>> = repository.shiftHistory
     val contingencyDtes: StateFlow<List<Sale>> = repository.contingencyDtes
+    val bluetoothPrinterConfig: StateFlow<BluetoothPrinterConfig> = repository.bluetoothPrinterConfig
 
-    fun retryContingencyTransmissions(): Result<Int> {
-        return repository.retryContingencyTransmissions()
+    fun retryContingencyTransmissions(context: Context? = null): Result<Int> {
+        return repository.retryContingencyTransmissions(context = context)
     }
 
     private val _animationDurationMs = MutableStateFlow(400)
@@ -69,6 +75,13 @@ class SettingsViewModel(
         val brands: List<Brand>,
         val unitsOfMeasure: List<UnitOfMeasure>,
         val taxes: List<Tax>
+    )
+
+    private data class ConfigData(
+        val businessInfo: BusinessInfo,
+        val ticketConfig: TicketConfig,
+        val electronicBillingConfig: ElectronicBillingConfig,
+        val bluetoothPrinterConfig: BluetoothPrinterConfig
     )
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -87,13 +100,13 @@ class SettingsViewModel(
         combine(repository.customers, repository.priceRules, repository.paymentMethods) { customers, priceRules, paymentMethods ->
             Triple(customers, priceRules, paymentMethods)
         },
-        combine(repository.businessInfo, repository.ticketConfig, repository.electronicBillingConfig) { businessInfo, ticketConfig, electronicBillingConfig ->
-            Triple(businessInfo, ticketConfig, electronicBillingConfig)
+        combine(repository.businessInfo, repository.ticketConfig, repository.electronicBillingConfig, repository.bluetoothPrinterConfig) { businessInfo, ticketConfig, electronicBillingConfig, bluetoothPrinterConfig ->
+            ConfigData(businessInfo, ticketConfig, electronicBillingConfig, bluetoothPrinterConfig)
         },
         combine(repository.users, repository.shiftHistory) { users, shiftHistory ->
             Pair(users, shiftHistory)
         }
-    ) { baseState, catalog, extra, billing, userShiftData ->
+    ) { baseState, catalog, extra, config, userShiftData ->
         baseState.copy(
             categories = catalog.categories,
             brands = catalog.brands,
@@ -102,9 +115,10 @@ class SettingsViewModel(
             customers = extra.first,
             priceRules = extra.second,
             paymentMethods = extra.third,
-            businessInfo = billing.first,
-            ticketConfig = billing.second,
-            electronicBillingConfig = billing.third,
+            businessInfo = config.businessInfo,
+            ticketConfig = config.ticketConfig,
+            electronicBillingConfig = config.electronicBillingConfig,
+            bluetoothPrinterConfig = config.bluetoothPrinterConfig,
             users = userShiftData.first,
             shiftHistory = userShiftData.second
         )
@@ -122,6 +136,7 @@ class SettingsViewModel(
             businessInfo = repository.businessInfo.value,
             ticketConfig = repository.ticketConfig.value,
             electronicBillingConfig = repository.electronicBillingConfig.value,
+            bluetoothPrinterConfig = repository.bluetoothPrinterConfig.value,
             users = repository.users.value,
             shiftHistory = repository.shiftHistory.value
         )
@@ -360,6 +375,18 @@ class SettingsViewModel(
         viewModelScope.launch {
             repository.updateElectronicBillingConfig(config)
         }
+    }
+
+    fun updateBluetoothPrinterConfig(config: BluetoothPrinterConfig) {
+        viewModelScope.launch {
+            repository.updateBluetoothPrinterConfig(config)
+        }
+    }
+
+    fun sendTestPrint(macAddress: String, paperSize: TicketPaperSize): Result<Unit> {
+        val businessInfo = repository.businessInfo.value
+        val bytes = EscPosPrinter.formatTestTicket(paperSize, businessInfo)
+        return EscPosPrinter.printBytesViaBluetooth(macAddress, bytes)
     }
 
     fun addUser(user: User) {

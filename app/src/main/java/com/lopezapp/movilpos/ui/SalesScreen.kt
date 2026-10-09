@@ -37,7 +37,10 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +64,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
@@ -742,6 +746,50 @@ fun SaleReadOnlyView(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                if (sale.contingencyMode) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFFFF3E0)
+                        ),
+                        border = BorderStroke(1.dp, Color(0xFFFFB74D))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Contingencia",
+                                    tint = Color(0xFFE65100)
+                                )
+                                Surface(
+                                    color = Color(0xFFFFA000),
+                                    contentColor = Color.White,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = "Contingencia (Pendiente de Transmisión)",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Esta factura fue emitida localmente bajo régimen de contingencia y está pendiente de envío al MH",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontStyle = FontStyle.Italic,
+                                color = Color(0xFFBF360C)
+                            )
+                        }
+                    }
+                }
+
                 // Información General
                 ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                     Column(
@@ -781,7 +829,11 @@ fun SaleReadOnlyView(
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.elevatedCardColors(
-                        containerColor = if (sale.isVoided) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface
+                        containerColor = when {
+                            sale.isVoided -> MaterialTheme.colorScheme.errorContainer
+                            sale.contingencyMode -> Color(0xFFFFF8E1)
+                            else -> MaterialTheme.colorScheme.surface
+                        }
                     )
                 ) {
                     Column(
@@ -792,11 +844,15 @@ fun SaleReadOnlyView(
                             text = "Facturación Electrónica (DTE - MH)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (sale.isVoided) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.primary
+                            color = when {
+                                sale.isVoided -> MaterialTheme.colorScheme.onErrorContainer
+                                sale.contingencyMode -> Color(0xFFE65100)
+                                else -> MaterialTheme.colorScheme.primary
+                            }
                         )
                         HorizontalDivider()
 
-                        if (sale.isDteIssued) {
+                        if (sale.isDteIssued || sale.contingencyMode) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -813,7 +869,7 @@ fun SaleReadOnlyView(
                                     )
                                     val statusText = when {
                                         sale.isVoided -> "Invalidado"
-                                        sale.contingencyMode -> "Contingencia"
+                                        sale.contingencyMode -> "Contingencia (Pendiente de Transmisión)"
                                         else -> "Procesado (Aprobado)"
                                     }
                                     val statusColor = when {

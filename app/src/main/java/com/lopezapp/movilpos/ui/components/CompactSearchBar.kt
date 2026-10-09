@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -45,7 +46,9 @@ fun CompactSearchBar(
     placeholder: String,
     modifier: Modifier = Modifier,
     onClear: (() -> Unit)? = null,
-    onScanBarcodeClick: (() -> Unit)? = null
+    onScanBarcodeClick: (() -> Unit)? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+    keyboardActions: KeyboardActions = KeyboardActions.Default
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val enabled = true
@@ -64,7 +67,8 @@ fun CompactSearchBar(
             color = MaterialTheme.colorScheme.onSurface
         ),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
         decorationBox = { innerTextField ->
             OutlinedTextFieldDefaults.DecorationBox(
                 value = query,

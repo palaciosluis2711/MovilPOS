@@ -8,8 +8,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lopezapp.movilpos.data.model.CartItem
 import com.lopezapp.movilpos.data.model.CashShift
+import com.lopezapp.movilpos.data.model.CreditStatus
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
+import com.lopezapp.movilpos.data.model.Expense
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
@@ -53,7 +55,9 @@ data class POSState(
     val selectedPaymentMethodId: String? = null,
     val cashReceivedStr: String = "",
     val changeAmount: Double = 0.0,
-    val electronicBillingConfig: ElectronicBillingConfig = ElectronicBillingConfig()
+    val electronicBillingConfig: ElectronicBillingConfig = ElectronicBillingConfig(),
+    val isCreditSale: Boolean = false,
+    val creditDueDateMillis: Long? = null
 )
 
 class POSViewModel(
@@ -99,6 +103,8 @@ class POSViewModel(
     private val _selectedInvoiceType = MutableStateFlow(InvoiceType.CONSUMIDOR_FINAL)
     private val _selectedPaymentMethodId = MutableStateFlow<String?>(null)
     private val _cashReceivedStr = MutableStateFlow("")
+    private val _isCreditSale = MutableStateFlow(false)
+    private val _creditDueDateMillis = MutableStateFlow<Long?>(System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000L)
 
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
     val allProducts: StateFlow<List<Product>> = repository.products
@@ -108,6 +114,19 @@ class POSViewModel(
     val selectedInvoiceType: StateFlow<InvoiceType> = _selectedInvoiceType.asStateFlow()
     val selectedPaymentMethodId: StateFlow<String?> = _selectedPaymentMethodId.asStateFlow()
     val cashReceivedStr: StateFlow<String> = _cashReceivedStr.asStateFlow()
+    val isCreditSale: StateFlow<Boolean> = _isCreditSale.asStateFlow()
+    val creditDueDateMillis: StateFlow<Long?> = _creditDueDateMillis.asStateFlow()
+
+    fun setIsCreditSale(isCredit: Boolean) {
+        _isCreditSale.value = isCredit
+        if (isCredit && _creditDueDateMillis.value == null) {
+            _creditDueDateMillis.value = System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000L
+        }
+    }
+
+    fun setCreditDueDateMillis(millis: Long) {
+        _creditDueDateMillis.value = millis
+    }
 
     init {
         viewModelScope.launch {
@@ -149,7 +168,9 @@ class POSViewModel(
         _selectedInvoiceType,
         _selectedPaymentMethodId,
         _cashReceivedStr,
-        repository.electronicBillingConfig
+        repository.electronicBillingConfig,
+        _isCreditSale,
+        _creditDueDateMillis
     ) { flows: Array<Any?> ->
         @Suppress("UNCHECKED_CAST")
         val products = flows[0] as List<Product>
@@ -170,6 +191,8 @@ class POSViewModel(
         val pmId = flows[10] as String?
         val cashStr = flows[11] as String
         val ebConfig = flows[12] as ElectronicBillingConfig
+        val isCredit = flows[13] as Boolean
+        val dueDate = flows[14] as Long?
 
         val activeRules = allRules.filter { it.isActive }
 
@@ -208,7 +231,9 @@ class POSViewModel(
             selectedPaymentMethodId = effectivePmId,
             cashReceivedStr = cashStr,
             changeAmount = changeAmount,
-            electronicBillingConfig = ebConfig
+            electronicBillingConfig = ebConfig,
+            isCreditSale = isCredit,
+            creditDueDateMillis = dueDate
         )
     }.stateIn(
         scope = viewModelScope,
@@ -415,6 +440,18 @@ class POSViewModel(
             }
         }
         return ActiveRuleResult()
+    }
+
+    fun scanAndAddToCart(barcode: String): Boolean {
+        val trimmed = barcode.trim()
+        if (trimmed.isEmpty()) return false
+        val product = repository.products.value.find { it.barcode?.trim() == trimmed }
+        return if (product != null) {
+            addToCart(product)
+            true
+        } else {
+            false
+        }
     }
 
     fun addToCart(product: Product) {
@@ -680,6 +717,8 @@ class POSViewModel(
         _cartItems.value = emptyList()
         pruneCartSelection()
         _selectedPriceRuleId.value = null
+        _isCreditSale.value = false
+        _creditDueDateMillis.value = System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000L
     }
 
     fun selectCustomer(customerId: String?) {
@@ -722,22 +761,43 @@ class POSViewModel(
         val currentCart = _cartItems.value
         if (currentCart.isEmpty()) return null
 
-        val ebConfig = repository.electronicBillingConfig.value
-        val invoiceType = _selectedInvoiceType.value
-        val isDte = ebConfig.isEnabled && (invoiceType == InvoiceType.CONSUMIDOR_FINAL || invoiceType == InvoiceType.CREDITO_FISCAL)
+        val isCredit = _isCreditSale.value
+        val dueDateMillis = _creditDueDateMillis.value ?: (System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000L)
 
         val customers = repository.customers.value
         val paymentMethods = repository.paymentMethods.value
         val total = currentCart.sumOf { it.subtotal }.roundToTwoDecimals()
 
         val custId = _selectedCustomerId.value ?: customers.find { it.isDefault }?.id ?: customers.firstOrNull()?.id ?: ""
-        val custName = customers.find { it.id == custId }?.name ?: "Cliente General"
+        val selectedCustomer = customers.find { it.id == custId }
+        val custName = selectedCustomer?.name ?: "Cliente General"
+
+        if (isCredit) {
+            val isInvalidCustomer = custId.isBlank() ||
+                    selectedCustomer == null ||
+                    selectedCustomer.isDefault ||
+                    selectedCustomer.name.trim().equals("Cliente General", ignoreCase = true)
+            if (isInvalidCustomer) {
+                context?.let { ctx ->
+                    Toast.makeText(
+                        ctx,
+                        "Debe seleccionar un cliente específico para ventas a crédito",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                return null
+            }
+        }
+
+        val ebConfig = repository.electronicBillingConfig.value
+        val invoiceType = _selectedInvoiceType.value
+        val isDte = ebConfig.isEnabled && (invoiceType == InvoiceType.CONSUMIDOR_FINAL || invoiceType == InvoiceType.CREDITO_FISCAL)
 
         val pmId = _selectedPaymentMethodId.value ?: paymentMethods.find { it.id == _selectedPaymentMethodId.value }?.id ?: paymentMethods.firstOrNull()?.id ?: ""
-        val pmName = paymentMethods.find { it.id == pmId }?.name ?: "Efectivo"
+        val pmName = if (isCredit) "Crédito / Fiado" else (paymentMethods.find { it.id == pmId }?.name ?: "Efectivo")
 
-        val cashReceived = _cashReceivedStr.value.toDoubleOrNull() ?: total
-        val changeAmount = maxOf(0.0, (cashReceived - total).roundToTwoDecimals())
+        val cashReceived = if (isCredit) 0.0 else (_cashReceivedStr.value.toDoubleOrNull() ?: total)
+        val changeAmount = if (isCredit) 0.0 else maxOf(0.0, (cashReceived - total).roundToTwoDecimals())
 
         val items = currentCart.map { item ->
             SaleItem(
@@ -752,6 +812,7 @@ class POSViewModel(
         if (isDte) {
             viewModelScope.launch {
                 _isDteEmitting.value = true
+                _dteEmissionError.value = null
 
                 val generationCode = UUID.randomUUID().toString().uppercase()
                 val controlNumber = "DTE-${if (invoiceType == InvoiceType.CONSUMIDOR_FINAL) "01" else "03"}-${ebConfig.establishmentCode}${ebConfig.posCode}-${(1000000000..9999999999).random()}"
@@ -785,75 +846,73 @@ class POSViewModel(
                             ebConfig.apiToken.isNotBlank() &&
                             !ebConfig.apiToken.equals("test", ignoreCase = true)
 
-                    if (certStream == null) {
-                        _isDteEmitting.value = false
-                        _dteEmissionError.value = "Falta cargar el Certificado de Firma Digital (.p12) en Ajustes."
-                        return@launch
-                    }
-
-                    if (!hasApiCredentials) {
-                        _isDteEmitting.value = false
-                        _dteEmissionError.value = "Falta configurar el Token API de Hacienda en Ajustes."
-                        return@launch
-                    }
-
-                    runCatching {
-                        _dteStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                        val authResult = dteApiClient.authenticate(
-                            environment = ebConfig.environment,
-                            nit = ebConfig.nit,
-                            apiKey = ebConfig.apiToken
-                        )
-
-                        val token = authResult.getOrThrow()
-
-                        _dteStatusMessage.value = "Firmando DTE..."
-                        val draftSale = Sale(
-                            id = UUID.randomUUID().toString(),
-                            customerId = custId,
-                            customerName = custName,
-                            invoiceType = invoiceType,
-                            paymentMethodId = pmId,
-                            paymentMethodName = pmName,
-                            items = items,
-                            totalAmount = total,
-                            cashReceived = cashReceived,
-                            changeAmount = changeAmount,
-                            dateMillis = System.currentTimeMillis(),
-                            isDteIssued = true,
-                            dteGenerationCode = generationCode,
-                            dteControlNumber = controlNumber,
-                            dteType = dteTypeStr
-                        )
-
-                        val dteJson = DteJsonGenerator.generateDteJson(
-                            sale = draftSale,
-                            businessInfo = repository.businessInfo.value,
-                            config = ebConfig
-                        )
-
-                        val signedJws = JwsSigner.signDteJson(
-                            jsonPayload = dteJson,
-                            certificateInputStream = certStream,
-                            password = ebConfig.certificatePassword
-                        ).getOrThrow()
-
-                        _dteStatusMessage.value = "Transmitiendo DTE al MH..."
-                        val receptionResponse = dteApiClient.transmitDte(
-                            environment = ebConfig.environment,
-                            token = token,
-                            signedJwsPayload = signedJws,
-                            dteType = dteTypeStr,
-                            generationCode = generationCode
-                        ).getOrThrow()
-
-                        finalReceptionSeal = receptionResponse.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
-                        _dteStatusMessage.value = "¡DTE Emitido con Éxito!"
-                        delay(800)
-                    }.onFailure {
+                    if (certStream == null || !hasApiCredentials) {
                         contingencyMode = true
-                        _dteStatusMessage.value = "Error de conexión, guardando como contingencia..."
-                        delay(1200)
+                        _dteStatusMessage.value = "Guardando en Contingencia..."
+                        delay(500)
+                    } else {
+                        runCatching {
+                            _dteStatusMessage.value = "Conectando con Ministerio de Hacienda..."
+                            val authResult = dteApiClient.authenticate(
+                                environment = ebConfig.environment,
+                                nit = ebConfig.nit,
+                                apiKey = ebConfig.apiToken
+                            )
+
+                            val token = authResult.getOrThrow()
+
+                            _dteStatusMessage.value = "Firmando DTE..."
+                            val draftSale = Sale(
+                                id = UUID.randomUUID().toString(),
+                                customerId = custId,
+                                customerName = custName,
+                                invoiceType = invoiceType,
+                                paymentMethodId = pmId,
+                                paymentMethodName = pmName,
+                                items = items,
+                                totalAmount = total,
+                                cashReceived = cashReceived,
+                                changeAmount = changeAmount,
+                                dateMillis = System.currentTimeMillis(),
+                                isDteIssued = true,
+                                dteGenerationCode = generationCode,
+                                dteControlNumber = controlNumber,
+                                dteType = dteTypeStr,
+                                isCredit = isCredit,
+                                creditDueDateMillis = if (isCredit) dueDateMillis else null,
+                                remainingBalance = total,
+                                creditStatus = CreditStatus.UNPAID
+                            )
+
+                            val dteJson = DteJsonGenerator.generateDteJson(
+                                sale = draftSale,
+                                businessInfo = repository.businessInfo.value,
+                                config = ebConfig
+                            )
+
+                            val signedJws = JwsSigner.signDteJson(
+                                jsonPayload = dteJson,
+                                certificateInputStream = certStream,
+                                password = ebConfig.certificatePassword
+                            ).getOrThrow()
+
+                            _dteStatusMessage.value = "Transmitiendo DTE al MH..."
+                            val receptionResponse = dteApiClient.transmitDte(
+                                environment = ebConfig.environment,
+                                token = token,
+                                signedJwsPayload = signedJws,
+                                dteType = dteTypeStr,
+                                generationCode = generationCode
+                            ).getOrThrow()
+
+                            finalReceptionSeal = receptionResponse.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
+                            _dteStatusMessage.value = "¡DTE Emitido con Éxito!"
+                            delay(800)
+                        }.onFailure {
+                            contingencyMode = true
+                            _dteStatusMessage.value = "Error de red/MH. Guardado en Contingencia."
+                            delay(800)
+                        }
                     }
                 }
 
@@ -868,15 +927,38 @@ class POSViewModel(
                     cashReceived = cashReceived,
                     changeAmount = changeAmount,
                     dateMillis = System.currentTimeMillis(),
-                    isDteIssued = true,
+                    isDteIssued = !contingencyMode,
                     dteGenerationCode = generationCode,
                     dteReceptionSeal = finalReceptionSeal,
                     dteControlNumber = controlNumber,
                     dteType = dteTypeStr,
-                    contingencyMode = contingencyMode
+                    contingencyMode = contingencyMode,
+                    isCredit = isCredit,
+                    creditDueDateMillis = if (isCredit) dueDateMillis else null,
+                    remainingBalance = total,
+                    creditStatus = CreditStatus.UNPAID
                 )
 
-                repository.addSale(sale)
+                if (contingencyMode) {
+                    repository.addToContingencyQueue(sale)
+                    context?.let { ctx ->
+                        Toast.makeText(
+                            ctx,
+                            "No se pudo transmitir DTE en vivo. Guardado en Contingencia (Pendiente de Transmisión)",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                } else {
+                    repository.addSale(sale)
+                    context?.let { ctx ->
+                        Toast.makeText(
+                            ctx,
+                            "¡DTE Emitido con Éxito!",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
                 clearCart()
                 _cashReceivedStr.value = ""
                 _isDteEmitting.value = false
@@ -895,7 +977,11 @@ class POSViewModel(
                 cashReceived = cashReceived,
                 changeAmount = changeAmount,
                 dateMillis = System.currentTimeMillis(),
-                isDteIssued = false
+                isDteIssued = false,
+                isCredit = isCredit,
+                creditDueDateMillis = if (isCredit) dueDateMillis else null,
+                remainingBalance = total,
+                creditStatus = CreditStatus.UNPAID
             )
 
             repository.addSale(sale)
@@ -915,6 +1001,15 @@ class POSViewModel(
 
     fun closeShift(actualCashCounted: Double): CashShift? {
         return repository.closeShift(actualCashCounted)
+    }
+
+    fun addExpense(category: String, description: String, amount: Double) {
+        val expense = Expense(
+            category = category,
+            description = description,
+            amount = amount
+        )
+        repository.addExpense(expense)
     }
 
     fun checkout() {

@@ -55,6 +55,9 @@ data object SettingsBusinessInfoKey : NavKey
 data object SettingsTicketKey : NavKey
 
 @Serializable
+data object SettingsBluetoothPrinterKey : NavKey
+
+@Serializable
 data object SettingsElectronicBillingKey : NavKey
 
 @Serializable
@@ -110,3 +113,12 @@ data class QuotationDetailRoute(val quotationId: String) : NavKey
 
 @Serializable
 data class QuotationEditRoute(val quotationId: String? = null) : NavKey
+
+@Serializable
+data object ExpensesRoute : NavKey
+
+@Serializable
+data object AccountsReceivableRoute : NavKey
+
+@Serializable
+data object BarcodeLabelsRoute : NavKey

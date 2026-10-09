@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -37,8 +38,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +60,7 @@ import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.TicketPaperSize
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
+import com.lopezapp.movilpos.util.EscPosPrinter
 import com.lopezapp.movilpos.util.PdfReportGenerator
 import com.lopezapp.movilpos.util.formatCurrency
 import java.text.SimpleDateFormat
@@ -81,9 +87,36 @@ fun POSTicketReceiptScreen(
     val settingsUiState by settingsViewModel.uiState.collectAsState()
     val businessInfo = settingsUiState.businessInfo
     val ticketConfig = settingsUiState.ticketConfig
+    val bluetoothPrinterConfig = settingsUiState.bluetoothPrinterConfig
     val currencySymbol = settingsUiState.currencySymbol
     val defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces
     val allowExtraDecimals = settingsUiState.allowExtraDecimals
+
+    fun printBluetooth(showToastOnMissing: Boolean = true) {
+        val macAddress = bluetoothPrinterConfig.macAddress
+        if (macAddress.isNullOrBlank()) {
+            if (showToastOnMissing) {
+                Toast.makeText(context, "No hay impresora Bluetooth configurada.", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        if (sale == null) return
+        Toast.makeText(context, "Imprimiendo ticket en impresora Bluetooth...", Toast.LENGTH_SHORT).show()
+        val bytes = EscPosPrinter.formatSaleTicket(sale, businessInfo, ticketConfig)
+        val result = EscPosPrinter.printBytesViaBluetooth(macAddress, bytes)
+        result.onFailure { error ->
+            Toast.makeText(context, "Error al imprimir: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    var hasAutoPrinted by remember(saleId) { mutableStateOf(false) }
+
+    LaunchedEffect(sale, bluetoothPrinterConfig) {
+        if (sale != null && bluetoothPrinterConfig.autoPrintSales && !bluetoothPrinterConfig.macAddress.isNullOrBlank() && !hasAutoPrinted) {
+            hasAutoPrinted = true
+            printBluetooth(showToastOnMissing = false)
+        }
+    }
 
     Scaffold(
         modifier = modifier
@@ -474,54 +507,85 @@ fun POSTicketReceiptScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Button 1: Imprimir Ticket / Ver Ticket PDF
-                        Button(
-                            onClick = {
-                                try {
-                                    val pdfFile = PdfReportGenerator.generateSaleTicketPdf(
-                                        context = context,
-                                        sale = sale,
-                                        businessInfo = businessInfo,
-                                        ticketConfig = ticketConfig
-                                    )
-                                    val uri = FileProvider.getUriForFile(
-                                        context,
-                                        "${context.packageName}.fileprovider",
-                                        pdfFile
-                                    )
-                                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                                        setDataAndType(uri, "application/pdf")
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "Ver / Imprimir Ticket PDF"))
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Error al generar PDF: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Print,
-                                contentDescription = null
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Imprimir Ticket / Ver PDF",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                            // Action Button 1: Imprimir por Bluetooth
+                            Button(
+                                onClick = {
+                                    printBluetooth(showToastOnMissing = true)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Print,
+                                    contentDescription = null
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Imprimir por Bluetooth",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            // Action Button 2: Ver / Imprimir PDF
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val pdfFile = PdfReportGenerator.generateSaleTicketPdf(
+                                            context = context,
+                                            sale = sale,
+                                            businessInfo = businessInfo,
+                                            ticketConfig = ticketConfig
+                                        )
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            pdfFile
+                                        )
+                                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(uri, "application/pdf")
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "Ver / Imprimir Ticket PDF"))
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Error al generar PDF: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Print,
+                                    contentDescription = null
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Ver / Imprimir PDF",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
 
-                        // Button 2: Nueva Venta
-                        OutlinedButton(
+                        // Button 3: Nueva Venta
+                        Button(
                             onClick = {
                                 posViewModel.clearCart()
                                 onStartNewSale()
                             },
                             shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(52.dp)

@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -25,15 +26,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -52,6 +56,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -78,7 +83,11 @@ import com.lopezapp.movilpos.ui.viewmodel.SettingsUiState
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import com.lopezapp.movilpos.util.formatCurrency
 import com.lopezapp.movilpos.util.sanitizeDecimalTextFieldValue
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -93,7 +102,6 @@ fun POSCheckoutScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isDteEmitting by viewModel.isDteEmitting.collectAsState()
     val dteStatusMessage by viewModel.dteStatusMessage.collectAsState()
-    val dteEmissionError by viewModel.dteEmissionError.collectAsState()
     val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
         ?: SettingsUiState()
     val currencySymbol = settingsUiState.currencySymbol
@@ -104,6 +112,7 @@ fun POSCheckoutScreen(
     val scrollState = rememberScrollState()
 
     var customerDropdownExpanded by remember { mutableStateOf(false) }
+    var showCreditDatePicker by remember { mutableStateOf(false) }
 
     // Synchronize local TextFieldValue with viewModel.cashReceivedStr and pre-fill with total
     val cashReceivedStr by viewModel.cashReceivedStr.collectAsState()
@@ -174,10 +183,53 @@ fun POSCheckoutScreen(
         ?: uiState.paymentMethods.find { it.isDefault }
         ?: uiState.paymentMethods.firstOrNull()
 
-    val isCash = (selectedPaymentMethod == null) || selectedPaymentMethod.name.contains("Efectivo", ignoreCase = true)
+    val isCustomerValidForCredit = selectedCustomer != null &&
+            !selectedCustomer.isDefault &&
+            !selectedCustomer.name.trim().equals("Cliente General", ignoreCase = true)
+
+    val isCash = !uiState.isCreditSale && ((selectedPaymentMethod == null) || selectedPaymentMethod.name.contains("Efectivo", ignoreCase = true))
     val cashReceived = cashReceivedStr.toDoubleOrNull() ?: 0.0
     val totalAmount = uiState.total
     val isCashInsufficient = isCash && cashReceivedStr.trim().isNotEmpty() && (cashReceived < totalAmount)
+
+    if (showCreditDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = uiState.creditDueDateMillis ?: (System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000L)
+        )
+        DatePickerDialog(
+            onDismissRequest = { showCreditDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { utcMillis ->
+                            val utcCalendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                                timeInMillis = utcMillis
+                            }
+                            val localCalendar = Calendar.getInstance().apply {
+                                set(
+                                    utcCalendar.get(Calendar.YEAR),
+                                    utcCalendar.get(Calendar.MONTH),
+                                    utcCalendar.get(Calendar.DAY_OF_MONTH),
+                                    12, 0, 0
+                                )
+                            }
+                            viewModel.setCreditDueDateMillis(localCalendar.timeInMillis)
+                        }
+                        showCreditDatePicker = false
+                    }
+                ) {
+                    Text("Aceptar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreditDatePicker = false }) {
+                    Text("Cancelar")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -341,6 +393,34 @@ fun POSCheckoutScreen(
                         }
                     }
                 }
+
+                if (uiState.isCreditSale && !isCustomerValidForCredit) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Las ventas a crédito requieren seleccionar un cliente específico (no se permite Cliente General).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
             }
 
             // Tipo de Comprobante / Factura Section
@@ -438,10 +518,13 @@ fun POSCheckoutScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     uiState.paymentMethods.forEach { pm ->
-                        val isSelected = selectedPaymentMethod?.id == pm.id
+                        val isSelected = !uiState.isCreditSale && selectedPaymentMethod?.id == pm.id
                         FilterChip(
                             selected = isSelected,
-                            onClick = { viewModel.selectPaymentMethod(pm.id) },
+                            onClick = {
+                                viewModel.setIsCreditSale(false)
+                                viewModel.selectPaymentMethod(pm.id)
+                            },
                             label = { Text(pm.name) },
                             leadingIcon = if (isSelected) {
                                 { Icon(Icons.Rounded.Check, contentDescription = null) }
@@ -452,10 +535,100 @@ fun POSCheckoutScreen(
                             )
                         )
                     }
+
+                    val isCreditSelected = uiState.isCreditSale
+                    FilterChip(
+                        selected = isCreditSelected,
+                        onClick = {
+                            viewModel.setIsCreditSale(!isCreditSelected)
+                        },
+                        label = { Text("Crédito / A Cuenta") },
+                        leadingIcon = if (isCreditSelected) {
+                            { Icon(Icons.Rounded.Check, contentDescription = null) }
+                        } else null,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    )
                 }
             }
 
-            // Section "Dinero Rápido" (Visible when Efectivo is selected)
+            // Fecha Límite de Pago Section (Visible when Crédito / A Cuenta is selected)
+            AnimatedVisibility(
+                visible = uiState.isCreditSale,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Event,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Fecha Límite de Pago",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    val currentDueDate = uiState.creditDueDateMillis ?: (System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000L)
+                    val formattedDueDate = remember(currentDueDate) {
+                        SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(currentDueDate))
+                    }
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(15, 30, 60).forEach { days ->
+                            SuggestionChip(
+                                onClick = {
+                                    val targetMillis = System.currentTimeMillis() + days * 24L * 60 * 60 * 1000L
+                                    viewModel.setCreditDueDateMillis(targetMillis)
+                                },
+                                label = {
+                                    Text(
+                                        text = "$days días",
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = formattedDueDate,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Fecha de Vencimiento") },
+                        trailingIcon = {
+                            IconButton(onClick = { showCreditDatePicker = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CalendarToday,
+                                    contentDescription = "Seleccionar Fecha"
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showCreditDatePicker = true }
+                    )
+                }
+            }
+
+            // Section "Dinero Rápido" (Visible when Efectivo is selected and NOT credit sale)
             AnimatedVisibility(
                 visible = isCash,
                 enter = fadeIn(),
@@ -571,11 +744,14 @@ fun POSCheckoutScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Completar Cobro Button
+            val isButtonEnabled = uiState.cartItems.isNotEmpty() &&
+                    if (uiState.isCreditSale) isCustomerValidForCredit else (!isCash || cashReceived >= totalAmount)
+            val buttonText = if (uiState.isCreditSale) "Registrar Venta a Crédito" else "Completar Cobro"
+
+            // Completar Cobro / Registrar Venta a Crédito Button
             Button(
                 onClick = {
-                    val sale = viewModel.processSale { saleId ->
-                        Toast.makeText(context, "DTE Emitido con Éxito", Toast.LENGTH_SHORT).show()
+                    val sale = viewModel.processSale(context = context) { saleId ->
                         onNavigateToReceipt(saleId)
                     }
                     if (sale != null) {
@@ -583,7 +759,7 @@ fun POSCheckoutScreen(
                         onNavigateToReceipt(sale.id)
                     }
                 },
-                enabled = uiState.cartItems.isNotEmpty() && (!isCash || cashReceived >= totalAmount),
+                enabled = isButtonEnabled,
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(16.dp),
                 modifier = Modifier
@@ -591,7 +767,7 @@ fun POSCheckoutScreen(
                     .height(56.dp)
             ) {
                 Text(
-                    text = "Completar Cobro",
+                    text = buttonText,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -638,49 +814,5 @@ fun POSCheckoutScreen(
                 }
             }
         }
-    }
-
-    dteEmissionError?.let { errorMsg ->
-        AlertDialog(
-            onDismissRequest = { viewModel.clearDteEmissionError() },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Text("Error de Emisión DTE")
-                }
-            },
-            text = {
-                Text("$errorMsg\n\n¿Qué desea hacer?")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.selectInvoiceType(InvoiceType.TICKET)
-                        viewModel.clearDteEmissionError()
-                    }
-                ) {
-                    Text("Emitir Ticket Local")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { 
-                        viewModel.clearDteEmissionError()
-                        onNavigateToSettings()
-                    }
-                ) {
-                    Text("Corregir en Ajustes")
-                }
-            },
-            properties = DialogProperties(
-                dismissOnBackPress = false,
-                dismissOnClickOutside = false
-            )
-        )
     }
 }

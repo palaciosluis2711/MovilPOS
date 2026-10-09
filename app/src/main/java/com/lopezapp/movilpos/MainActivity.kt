@@ -19,12 +19,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CreditScore
 import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.Inventory
 import androidx.compose.material.icons.rounded.LocalShipping
+import androidx.compose.material.icons.rounded.MoneyOff
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PointOfSale
+import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.RequestQuote
 import androidx.compose.material.icons.rounded.Settings
@@ -40,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavEntry
@@ -74,6 +79,7 @@ import com.lopezapp.movilpos.ui.SettingsPriceRulesScreen
 import com.lopezapp.movilpos.ui.SettingsScreen
 import com.lopezapp.movilpos.ui.SettingsTaxesScreen
 import com.lopezapp.movilpos.ui.SettingsTicketScreen
+import com.lopezapp.movilpos.ui.SettingsBluetoothPrinterScreen
 import com.lopezapp.movilpos.ui.SettingsUnitsScreen
 import com.lopezapp.movilpos.ui.SettingsUsersScreen
 import com.lopezapp.movilpos.ui.SupplierEditForm
@@ -110,6 +116,7 @@ import com.lopezapp.movilpos.ui.navigation.SettingsPriceRulesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsRoute
 import com.lopezapp.movilpos.ui.navigation.SettingsTaxesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsTicketKey
+import com.lopezapp.movilpos.ui.navigation.SettingsBluetoothPrinterKey
 import com.lopezapp.movilpos.ui.navigation.SettingsUnitsKey
 import com.lopezapp.movilpos.ui.navigation.SettingsUsersKey
 import com.lopezapp.movilpos.ui.navigation.SupplierDetailRoute
@@ -117,9 +124,18 @@ import com.lopezapp.movilpos.ui.navigation.SupplierEditRoute
 import com.lopezapp.movilpos.ui.navigation.SuppliersRoute
 import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
 import com.lopezapp.movilpos.ui.AnalyticsScreen
+import com.lopezapp.movilpos.ui.AccountsReceivableScreen
+import com.lopezapp.movilpos.ui.ExpensesScreen
+import com.lopezapp.movilpos.ui.BarcodeLabelScreen
 import com.lopezapp.movilpos.ui.navigation.AnalyticsRoute
+import com.lopezapp.movilpos.ui.navigation.AccountsReceivableRoute
+import com.lopezapp.movilpos.ui.navigation.ExpensesRoute
+import com.lopezapp.movilpos.ui.navigation.BarcodeLabelsRoute
 import com.lopezapp.movilpos.ui.viewmodel.AnalyticsViewModel
+import com.lopezapp.movilpos.ui.viewmodel.AccountsReceivableViewModel
+import com.lopezapp.movilpos.ui.viewmodel.BarcodeLabelViewModel
 import com.lopezapp.movilpos.ui.viewmodel.CustomerViewModel
+import com.lopezapp.movilpos.ui.viewmodel.ExpensesViewModel
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import com.lopezapp.movilpos.ui.viewmodel.PurchaseViewModel
@@ -163,11 +179,34 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToSales = { backStack.add(SalesRoute) },
                                         onNavigateToQuotations = { backStack.add(QuotationsRoute) },
                                         onNavigateToPurchases = { backStack.add(PurchasesRoute) },
+                                        onNavigateToExpenses = { backStack.add(ExpensesRoute) },
                                         onNavigateToSuppliers = { backStack.add(SuppliersRoute) },
                                         onNavigateToCustomers = { backStack.add(CustomersRoute) },
+                                        onNavigateToAccountsReceivable = { backStack.add(AccountsReceivableRoute) },
+                                        onNavigateToBarcodeLabels = { backStack.add(BarcodeLabelsRoute) },
                                         onNavigateToSettings = { backStack.add(SettingsRoute) },
                                         onNavigateToDteReports = { backStack.add(DteReportsRoute) },
                                         onNavigateToAnalytics = { backStack.add(AnalyticsRoute) }
+                                    )
+                                }
+                                is BarcodeLabelsRoute -> NavEntry(key) {
+                                    val barcodeLabelViewModel: BarcodeLabelViewModel = viewModel(
+                                        factory = BarcodeLabelViewModel.Factory(appRepository)
+                                    )
+                                    BarcodeLabelScreen(
+                                        viewModel = barcodeLabelViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is ExpensesRoute -> NavEntry(key) {
+                                    val expensesViewModel: ExpensesViewModel = viewModel(
+                                        factory = ExpensesViewModel.Factory(appRepository)
+                                    )
+                                    ExpensesScreen(
+                                        viewModel = expensesViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
                                 is InventoryRoute -> NavEntry(key) {
@@ -177,7 +216,8 @@ class MainActivity : ComponentActivity() {
                                     InventoryScreen(
                                         viewModel = inventoryViewModel,
                                         settingsViewModel = settingsViewModel,
-                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                        onNavigateBack = { backStack.removeLastOrNull() },
+                                        onNavigateToBarcodeLabels = { backStack.add(BarcodeLabelsRoute) }
                                     )
                                 }
                                 is AnalyticsRoute -> NavEntry(key) {
@@ -194,7 +234,8 @@ class MainActivity : ComponentActivity() {
                                     POSScreen(
                                         viewModel = posViewModel,
                                         settingsViewModel = settingsViewModel,
-                                        onNavigateToCheckout = { backStack.add(POSCheckoutKey) }
+                                        onNavigateToCheckout = { backStack.add(POSCheckoutKey) },
+                                        onBackClick = { backStack.removeLastOrNull() }
                                     )
                                 }
                                 is POSCheckoutKey -> NavEntry(key) {
@@ -386,6 +427,16 @@ class MainActivity : ComponentActivity() {
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
+                                is AccountsReceivableRoute -> NavEntry(key) {
+                                    val accountsReceivableViewModel: AccountsReceivableViewModel = viewModel(
+                                        factory = AccountsReceivableViewModel.Factory(appRepository)
+                                    )
+                                    AccountsReceivableScreen(
+                                        viewModel = accountsReceivableViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onBackClick = { backStack.removeLastOrNull() }
+                                    )
+                                }
                                 is CustomerDetailRoute -> NavEntry(key) {
                                     val customerViewModel: CustomerViewModel = viewModel(
                                         factory = CustomerViewModel.Factory(appRepository)
@@ -420,6 +471,7 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToPaymentMethods = { backStack.add(SettingsPaymentMethodsKey) },
                                         onNavigateToBusinessInfo = { backStack.add(SettingsBusinessInfoKey) },
                                         onNavigateToTicket = { backStack.add(SettingsTicketKey) },
+                                        onNavigateToBluetoothPrinter = { backStack.add(SettingsBluetoothPrinterKey) },
                                         onNavigateToElectronicBilling = { backStack.add(SettingsElectronicBillingKey) },
                                         onNavigateToUsers = { backStack.add(SettingsUsersKey) },
                                         onNavigateBack = { backStack.removeLastOrNull() }
@@ -439,6 +491,12 @@ class MainActivity : ComponentActivity() {
                                 }
                                 is SettingsTicketKey -> NavEntry(key) {
                                     SettingsTicketScreen(
+                                        viewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsBluetoothPrinterKey -> NavEntry(key) {
+                                    SettingsBluetoothPrinterScreen(
                                         viewModel = settingsViewModel,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
@@ -524,8 +582,11 @@ fun HomeScreen(
     onNavigateToSales: () -> Unit,
     onNavigateToQuotations: () -> Unit,
     onNavigateToPurchases: () -> Unit,
+    onNavigateToExpenses: () -> Unit,
     onNavigateToSuppliers: () -> Unit,
     onNavigateToCustomers: () -> Unit,
+    onNavigateToAccountsReceivable: () -> Unit = {},
+    onNavigateToBarcodeLabels: () -> Unit = {},
     onNavigateToSettings: () -> Unit,
     onNavigateToDteReports: () -> Unit,
     onNavigateToAnalytics: () -> Unit,
@@ -538,6 +599,14 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier.fillMaxSize()
     ) {
+        item {
+            MenuCard(
+                title = "Etiquetas de Productos",
+                subtitle = "Códigos de barras y etiquetas térmicas o carta",
+                icon = Icons.Rounded.Print,
+                onClick = onNavigateToBarcodeLabels
+            )
+        }
         item {
             MenuCard(
                 title = "Estadísticas",
@@ -568,6 +637,14 @@ fun HomeScreen(
         }
         item {
             MenuCard(
+                title = "Cuentas por Cobrar",
+                subtitle = "Saldos deudores, fiados y registro de abonos",
+                icon = Icons.Rounded.CreditScore,
+                onClick = onNavigateToAccountsReceivable
+            )
+        }
+        item {
+            MenuCard(
                 title = "Reportes DTE y MH",
                 icon = Icons.Rounded.CloudDone,
                 onClick = onNavigateToDteReports
@@ -585,6 +662,14 @@ fun HomeScreen(
                 title = "Compras",
                 icon = Icons.Rounded.ShoppingBag,
                 onClick = onNavigateToPurchases
+            )
+        }
+        item {
+            MenuCard(
+                title = "Gastos de Caja",
+                subtitle = "Registrar y consultar egresos o salidas de efectivo",
+                icon = Icons.Rounded.MoneyOff,
+                onClick = onNavigateToExpenses
             )
         }
         item {
@@ -616,7 +701,8 @@ fun MenuCard(
     title: String,
     icon: ImageVector,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subtitle: String? = null
 ) {
     ElevatedCard(
         onClick = onClick,
@@ -627,20 +713,34 @@ fun MenuCard(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = title,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(40.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
             )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

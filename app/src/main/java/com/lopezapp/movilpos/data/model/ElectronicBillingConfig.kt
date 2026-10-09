@@ -15,5 +15,6 @@ data class ElectronicBillingConfig(
     val certificatePassword: String = "",
     val certificateUri: String? = null,
     val certificateFileName: String? = null,
-    val isSimulationMode: Boolean = true
+    val isSimulationMode: Boolean = true,
+    val forceNetworkFailureSimulation: Boolean = false
 )

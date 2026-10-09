@@ -104,8 +104,7 @@ class UserAndShiftTest {
         val updated = shift.copy(
             totalCashSales = shift.totalCashSales + 75.0,
             totalCardSales = shift.totalCardSales + 50.0,
-            totalOtherSales = shift.totalOtherSales + 20.0,
-            expectedCash = shift.initialFloat + (shift.totalCashSales + 75.0)
+            totalOtherSales = shift.totalOtherSales + 20.0
         )
 
         assertEquals(75.0, updated.totalCashSales, 0.001)
@@ -120,15 +119,13 @@ class UserAndShiftTest {
             cashierId = "cashier_1",
             cashierName = "Carlos",
             initialFloat = 100.0,
-            totalCashSales = 100.0,
-            expectedCash = 200.0
+            totalCashSales = 100.0
         )
 
         // Case 1: Surplus (Sobrante)
         val countedSurplus = 215.0
         val shiftSurplus = shift.copy(
             actualCashCounted = countedSurplus,
-            difference = countedSurplus - shift.expectedCash,
             status = ShiftStatus.CLOSED
         )
         assertEquals(15.0, shiftSurplus.difference!!, 0.001) // +15.0 sobrante
@@ -137,7 +134,6 @@ class UserAndShiftTest {
         val countedDeficit = 180.0
         val shiftDeficit = shift.copy(
             actualCashCounted = countedDeficit,
-            difference = countedDeficit - shift.expectedCash,
             status = ShiftStatus.CLOSED
         )
         assertEquals(-20.0, shiftDeficit.difference!!, 0.001) // -20.0 faltante
@@ -146,10 +142,27 @@ class UserAndShiftTest {
         val countedExact = 200.0
         val shiftExact = shift.copy(
             actualCashCounted = countedExact,
-            difference = countedExact - shift.expectedCash,
             status = ShiftStatus.CLOSED
         )
         assertEquals(0.0, shiftExact.difference!!, 0.001)
+    }
+
+    @Test
+    fun cashShiftExpenses_updatesExpectedCash() {
+        val shift = CashShift(
+            cashierId = "cashier_1",
+            cashierName = "Carlos",
+            initialFloat = 100.0,
+            totalCashSales = 100.0,
+            totalExpenses = 30.0
+        )
+
+        // 100.0 + 100.0 - 30.0 = 170.0
+        assertEquals(170.0, shift.expectedCash, 0.001)
+
+        // If expenses exceed initialFloat + cashSales, expectedCash is maxOf(0.0, ...)
+        val highExpensesShift = shift.copy(totalExpenses = 250.0)
+        assertEquals(0.0, highExpensesShift.expectedCash, 0.001)
     }
 
     @Test

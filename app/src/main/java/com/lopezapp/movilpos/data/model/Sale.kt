@@ -40,4 +40,9 @@ data class Sale(
     val voidReason: String? = null,
     val voidedAtMillis: Long? = null,
     val contingencyMode: Boolean = false,
+    val isCredit: Boolean = false,
+    val creditDueDateMillis: Long? = null,
+    val paidAmount: Double = 0.0,
+    val remainingBalance: Double = totalAmount,
+    val creditStatus: CreditStatus = CreditStatus.UNPAID,
 )

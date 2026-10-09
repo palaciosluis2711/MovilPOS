@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.Code
@@ -71,6 +72,7 @@ import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.ui.viewmodel.DteReportsViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import com.lopezapp.movilpos.util.DteJsonGenerator
+import com.lopezapp.movilpos.util.EscPosPrinter
 import com.lopezapp.movilpos.util.PdfReportGenerator
 import com.lopezapp.movilpos.util.formatCurrency
 import java.text.SimpleDateFormat
@@ -136,9 +138,14 @@ fun DteReportsListScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(
                     onClick = {
-                        val result = viewModel.retryContingencyTransmissions()
-                        val count = result.getOrDefault(0)
-                        Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                        val result = viewModel.retryContingencyTransmissions(context)
+                        if (result.isSuccess) {
+                            val count = result.getOrDefault(0)
+                            Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val errorMsg = result.exceptionOrNull()?.message ?: "Error al retransmitir"
+                            Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
@@ -710,12 +717,43 @@ fun DteDetailScreen(
                     }
                 }
 
+                Button(
+                    onClick = {
+                        val macAddress = settingsUiState.bluetoothPrinterConfig.macAddress
+                        if (macAddress.isNullOrBlank()) {
+                            Toast.makeText(context, "No hay impresora Bluetooth configurada.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Imprimiendo ticket en impresora Bluetooth...", Toast.LENGTH_SHORT).show()
+                            val bytes = EscPosPrinter.formatSaleTicket(
+                                sale = sale,
+                                businessInfo = businessInfo,
+                                ticketConfig = settingsUiState.ticketConfig
+                            )
+                            val result = EscPosPrinter.printBytesViaBluetooth(macAddress, bytes)
+                            result.onFailure { error ->
+                                Toast.makeText(context, "Error al imprimir: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Print, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Imprimir por Bluetooth")
+                }
+
                 if (sale.contingencyMode) {
                     Button(
                         onClick = {
-                            val result = viewModel.retryContingencyTransmissions()
-                            val count = result.getOrDefault(0)
-                            Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                            val result = viewModel.retryContingencyTransmissions(context)
+                            if (result.isSuccess) {
+                                val count = result.getOrDefault(0)
+                                Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val errorMsg = result.exceptionOrNull()?.message ?: "Error al retransmitir"
+                                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(

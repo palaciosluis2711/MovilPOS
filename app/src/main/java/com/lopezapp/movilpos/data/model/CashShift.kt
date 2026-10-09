@@ -17,8 +17,10 @@ data class CashShift(
     val totalCashSales: Double = 0.0,
     val totalCardSales: Double = 0.0,
     val totalOtherSales: Double = 0.0,
-    val expectedCash: Double = initialFloat + totalCashSales,
+    val totalExpenses: Double = 0.0,
     val actualCashCounted: Double? = null,
-    val difference: Double? = null,
     val status: ShiftStatus = ShiftStatus.OPEN,
-)
+) {
+    val expectedCash: Double get() = maxOf(0.0, (initialFloat + totalCashSales) - totalExpenses)
+    val difference: Double? get() = actualCashCounted?.let { it - expectedCash }
+}

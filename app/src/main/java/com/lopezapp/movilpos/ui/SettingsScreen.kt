@@ -68,6 +68,7 @@ import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.Store
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Straighten
@@ -165,6 +166,7 @@ fun SettingsScreen(
     onNavigateToPaymentMethods: () -> Unit = {},
     onNavigateToBusinessInfo: () -> Unit = {},
     onNavigateToTicket: () -> Unit = {},
+    onNavigateToBluetoothPrinter: () -> Unit = {},
     onNavigateToElectronicBilling: () -> Unit = {},
     onNavigateToUsers: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
@@ -180,6 +182,7 @@ fun SettingsScreen(
         onNavigateToPaymentMethods = onNavigateToPaymentMethods,
         onNavigateToBusinessInfo = onNavigateToBusinessInfo,
         onNavigateToTicket = onNavigateToTicket,
+        onNavigateToBluetoothPrinter = onNavigateToBluetoothPrinter,
         onNavigateToElectronicBilling = onNavigateToElectronicBilling,
         onNavigateToUsers = onNavigateToUsers,
         onNavigateBack = onNavigateBack,
@@ -200,6 +203,7 @@ fun SettingsHomeScreen(
     onNavigateToPaymentMethods: () -> Unit,
     onNavigateToBusinessInfo: () -> Unit,
     onNavigateToTicket: () -> Unit = {},
+    onNavigateToBluetoothPrinter: () -> Unit = {},
     onNavigateToElectronicBilling: () -> Unit = {},
     onNavigateToUsers: () -> Unit = {},
     onNavigateBack: () -> Unit,
@@ -247,6 +251,13 @@ fun SettingsHomeScreen(
                 subtitle = "Encabezado, mensaje de pie de página, tamaño 57mm/80mm y previsualización",
                 icon = Icons.Rounded.Receipt,
                 onClick = onNavigateToTicket,
+            )
+
+            SettingEntryCard(
+                title = "Impresora Bluetooth",
+                subtitle = "Vincular e imprimir tickets directamente en impresoras térmicas ESC/POS",
+                icon = Icons.Rounded.Print,
+                onClick = onNavigateToBluetoothPrinter,
             )
 
             SettingEntryCard(
@@ -2940,6 +2951,7 @@ fun SettingsElectronicBillingScreen(
     var certificateUri by rememberSaveable { mutableStateOf(config.certificateUri) }
     var certificateFileName by rememberSaveable { mutableStateOf(config.certificateFileName) }
     var isSimulationMode by rememberSaveable { mutableStateOf(config.isSimulationMode) }
+    var forceNetworkFailureSimulation by rememberSaveable { mutableStateOf(config.forceNetworkFailureSimulation) }
 
     var apiTokenVisible by rememberSaveable { mutableStateOf(false) }
     var certPasswordVisible by rememberSaveable { mutableStateOf(false) }
@@ -2965,6 +2977,7 @@ fun SettingsElectronicBillingScreen(
         certificateUri = config.certificateUri
         certificateFileName = config.certificateFileName
         isSimulationMode = config.isSimulationMode
+        forceNetworkFailureSimulation = config.forceNetworkFailureSimulation
     }
 
     val contingencyDtes by viewModel.contingencyDtes.collectAsState()
@@ -3026,9 +3039,14 @@ fun SettingsElectronicBillingScreen(
                         )
                         Button(
                             onClick = {
-                                val result = viewModel.retryContingencyTransmissions()
-                                val count = result.getOrDefault(0)
-                                Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                                val result = viewModel.retryContingencyTransmissions(context)
+                                if (result.isSuccess) {
+                                    val count = result.getOrDefault(0)
+                                    Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val errorMsg = result.exceptionOrNull()?.message ?: "Error al retransmitir"
+                                    Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)),
                             shape = RoundedCornerShape(10.dp),
@@ -3104,6 +3122,35 @@ fun SettingsElectronicBillingScreen(
                         checked = isSimulationMode,
                         onCheckedChange = { isSimulationMode = it },
                     )
+                }
+
+                if (isSimulationMode) {
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Forzar Falla de Red (Contingencia)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            Text(
+                                text = "Solo Desarrollo: Simula un timeout de red para probar Contingencia.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = forceNetworkFailureSimulation,
+                            onCheckedChange = { forceNetworkFailureSimulation = it }
+                        )
+                    }
                 }
             }
 

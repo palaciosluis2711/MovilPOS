@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Percent
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.rounded.QrCode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
@@ -184,6 +185,7 @@ fun InventoryScreen(
     viewModel: InventoryViewModel,
     settingsViewModel: SettingsViewModel = viewModel(),
     onNavigateBack: () -> Unit,
+    onNavigateToBarcodeLabels: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val settingsUiState by settingsViewModel.uiState.collectAsState()
@@ -240,6 +242,7 @@ fun InventoryScreen(
                     viewModel = viewModel,
                     onEditClick = { backStack.add(ProductEditKey(key.productId)) },
                     onNavigateUp = { backStack.removeLastOrNull() },
+                    onNavigateToBarcodeLabels = onNavigateToBarcodeLabels,
                     currencySymbol = currencySymbol,
                     defaultDecimalPlaces = defaultDecimalPlaces,
                     allowExtraDecimals = allowExtraDecimals
@@ -557,6 +560,7 @@ fun ProductDetailScreen(
     viewModel: InventoryViewModel,
     onEditClick: () -> Unit,
     onNavigateUp: () -> Unit,
+    onNavigateToBarcodeLabels: () -> Unit = {},
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true
@@ -577,6 +581,10 @@ fun ProductDetailScreen(
                 onNavigateUp()
             },
             onNavigateUp = onNavigateUp,
+            onPrintLabelsClick = {
+                viewModel.preloadSingleProduct(product)
+                onNavigateToBarcodeLabels()
+            },
             currencySymbol = currencySymbol,
             defaultDecimalPlaces = defaultDecimalPlaces,
             allowExtraDecimals = allowExtraDecimals
@@ -633,6 +641,7 @@ fun ProductReadOnlyView(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onNavigateUp: () -> Unit,
+    onPrintLabelsClick: () -> Unit = {},
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true
@@ -676,6 +685,9 @@ fun ProductReadOnlyView(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onPrintLabelsClick) {
+                        Icon(Icons.Rounded.QrCode, contentDescription = "Imprimir Etiquetas")
+                    }
                     IconButton(onClick = onEditClick) {
                         Icon(Icons.Default.Edit, contentDescription = "Editar Producto")
                     }

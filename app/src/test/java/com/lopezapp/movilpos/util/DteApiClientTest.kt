@@ -354,7 +354,7 @@ class DteApiClientTest {
     }
 
     @Test
-    fun posViewModel_integration_abortsRealDte_whenCredentialsAreTest() = runTest {
+    fun posViewModel_integration_savesToContingency_whenCredentialsAreTest() = runTest {
         val repository = AppRepository()
         val viewModel = POSViewModel(repository = repository)
 
@@ -363,7 +363,7 @@ class DteApiClientTest {
                 isEnabled = true,
                 environment = DteEnvironment.SANDBOX,
                 nit = "06140101901015",
-                apiToken = "test", // test credentials -> should abort
+                apiToken = "test", // test credentials -> should save to contingency
                 isSimulationMode = false
             )
         )
@@ -379,9 +379,13 @@ class DteApiClientTest {
         }
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertNull("La venta debe ser abortada", navigatedSaleId)
-        val sales = repository.sales.value
-        assertEquals("No debe agregarse una nueva venta, solo debe estar la inicial de prueba", 1, sales.size)
+        assertNotNull("Debe navegar al recibo de venta en modo contingencia", navigatedSaleId)
+        val savedSale = repository.sales.value.find { it.id == navigatedSaleId }
+        assertNotNull("La venta debe guardarse en el repositorio", savedSale)
+        assertTrue("Debe estar marcada con contingencyMode = true", savedSale!!.contingencyMode)
+        assertFalse("No debe marcarse como DTE emitido en vivo", savedSale.isDteIssued)
+        assertEquals(InvoiceType.CONSUMIDOR_FINAL, savedSale.invoiceType)
+        assertTrue("Debe estar agregada a la cola de contingencia", repository.contingencyDtes.value.any { it.id == navigatedSaleId })
     }
 
     private fun createMockOkHttpClient(handler: (Request) -> Response): OkHttpClient {

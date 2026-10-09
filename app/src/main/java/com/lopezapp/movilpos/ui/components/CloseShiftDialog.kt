@@ -1,5 +1,6 @@
 package com.lopezapp.movilpos.ui.components
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,8 +23,10 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Money
+import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -36,6 +40,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -54,8 +60,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.lopezapp.movilpos.data.model.BluetoothPrinterConfig
+import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.CashShift
+import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
+import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
+import com.lopezapp.movilpos.util.EscPosPrinter
 import com.lopezapp.movilpos.util.formatCurrency
 import com.lopezapp.movilpos.util.sanitizeDecimalTextFieldValue
 import java.text.SimpleDateFormat
@@ -70,6 +81,7 @@ import kotlin.math.abs
  * @param onCloseShift Callback invoked with the actual cash counted when closing shift
  * @param onDismiss Callback invoked when cancelling the closing process
  * @param errorMessage Optional error message to display
+ * @param settingsViewModel Optional settings view model for Bluetooth printer config
  */
 @Composable
 fun CloseShiftDialog(
@@ -78,7 +90,14 @@ fun CloseShiftDialog(
     onCloseShift: (actualCashCounted: Double) -> Unit,
     onDismiss: () -> Unit,
     errorMessage: String? = null,
+    settingsViewModel: SettingsViewModel? = null,
 ) {
+    val context = LocalContext.current
+    val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
+    val businessInfo = settingsUiState?.businessInfo ?: BusinessInfo()
+    val ticketConfig = settingsUiState?.ticketConfig ?: TicketConfig()
+    val bluetoothPrinterConfig = settingsUiState?.bluetoothPrinterConfig ?: BluetoothPrinterConfig()
+
     val initialExpectedString = remember(cashShift.expectedCash) {
         String.format(Locale.US, "%.2f", cashShift.expectedCash)
     }
@@ -218,6 +237,13 @@ fun CloseShiftDialog(
                             icon = Icons.Default.CreditCard,
                             label = "Ventas con Tarjeta:",
                             value = formatCurrency(cashShift.totalCardSales)
+                        )
+
+                        DetailRow(
+                            icon = Icons.Default.MoneyOff,
+                            label = "Total Gastos / Egresos (-):",
+                            value = if (cashShift.totalExpenses > 0) "-${formatCurrency(cashShift.totalExpenses)}" else formatCurrency(0.0),
+                            valueColor = MaterialTheme.colorScheme.error
                         )
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -383,36 +409,66 @@ fun CloseShiftDialog(
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // Action Buttons Row ("Cerrar Turno y Ver Reporte" / "Cancelar")
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                // Action Buttons Row ("Imprimir por Bluetooth", "Cerrar Turno", "Cancelar")
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val macAddress = bluetoothPrinterConfig.macAddress
+                            if (macAddress.isNullOrBlank()) {
+                                Toast.makeText(context, "No hay impresora Bluetooth configurada.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Imprimiendo reporte de cierre de turno...", Toast.LENGTH_SHORT).show()
+                                val bytes = EscPosPrinter.formatShiftReportTicket(cashShift, businessInfo, ticketConfig)
+                                val result = EscPosPrinter.printBytesViaBluetooth(macAddress, bytes)
+                                if (result.isSuccess) {
+                                    Toast.makeText(context, "Reporte de turno impreso exitosamente", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val err = result.exceptionOrNull()?.message ?: "Error desconocido"
+                                    Toast.makeText(context, "Error al imprimir: $err", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Cancelar")
+                        Icon(imageVector = Icons.Default.Print, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Imprimir por Bluetooth")
                     }
 
-                    Button(
-                        onClick = {
-                            val count = cashCountedValue.text.toDoubleOrNull()
-                            if ((count == null) || (count < 0.0)) {
-                                localError = "Ingrese un monto contado en caja válido"
-                                return@Button
-                            }
-                            onCloseShift(count)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        ),
-                        modifier = Modifier.weight(1.2f),
-                        shape = RoundedCornerShape(12.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Cerrar Turno")
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Cancelar")
+                        }
+
+                        Button(
+                            onClick = {
+                                val count = cashCountedValue.text.toDoubleOrNull()
+                                if ((count == null) || (count < 0.0)) {
+                                    localError = "Ingrese un monto contado en caja válido"
+                                    return@Button
+                                }
+                                onCloseShift(count)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            ),
+                            modifier = Modifier.weight(1.2f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Cerrar Turno")
+                        }
                     }
                 }
             }
@@ -424,7 +480,8 @@ fun CloseShiftDialog(
 private fun DetailRow(
     icon: ImageVector,
     label: String,
-    value: String
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -451,7 +508,7 @@ private fun DetailRow(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = valueColor
         )
     }
 }

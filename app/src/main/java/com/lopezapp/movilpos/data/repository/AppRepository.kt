@@ -2,12 +2,19 @@ package com.lopezapp.movilpos.data.repository
 
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.BluetoothPrinterConfig
+import com.lopezapp.movilpos.data.model.BarcodeLabelConfig
+import com.lopezapp.movilpos.data.model.BatchLabelItem
 import com.lopezapp.movilpos.data.model.CashShift
+import com.lopezapp.movilpos.data.model.CreditStatus
+import com.lopezapp.movilpos.data.model.CustomerPayment
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
+import com.lopezapp.movilpos.data.model.Expense
 import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.DocumentType
 import com.lopezapp.movilpos.data.model.InvoiceType
+import com.lopezapp.movilpos.data.model.LabelSize
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
@@ -25,13 +32,19 @@ import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import com.lopezapp.movilpos.data.model.User
+import android.content.Context
+import android.net.Uri
 import com.lopezapp.movilpos.util.DteApiClient
 import com.lopezapp.movilpos.util.DteJsonGenerator
+import com.lopezapp.movilpos.util.JwsSigner
 import com.lopezapp.movilpos.util.ReceptionResponse
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.InputStream
 import java.util.UUID
 
 class AppRepository(
@@ -85,12 +98,116 @@ class AppRepository(
     private val _electronicBillingConfig = MutableStateFlow(ElectronicBillingConfig())
     val electronicBillingConfig: StateFlow<ElectronicBillingConfig> = _electronicBillingConfig.asStateFlow()
 
+    private val _bluetoothPrinterConfig = MutableStateFlow(BluetoothPrinterConfig())
+    val bluetoothPrinterConfig: StateFlow<BluetoothPrinterConfig> = _bluetoothPrinterConfig.asStateFlow()
+
+    private val _labelSizes = MutableStateFlow<List<LabelSize>>(
+        listOf(
+            LabelSize(id = "std_1", name = "50 x 25 mm", widthMm = 50.0, heightMm = 25.0, isFavorite = false),
+            LabelSize(id = "std_2", name = "40 x 30 mm", widthMm = 40.0, heightMm = 30.0, isFavorite = false),
+            LabelSize(id = "std_3", name = "58 x 40 mm", widthMm = 58.0, heightMm = 40.0, isFavorite = false),
+            LabelSize(id = "std_4", name = "100 x 50 mm", widthMm = 100.0, heightMm = 50.0, isFavorite = false)
+        )
+    )
+    val labelSizes: StateFlow<List<LabelSize>> = _labelSizes.asStateFlow()
+
+    private val _barcodeLabelConfig = MutableStateFlow(BarcodeLabelConfig())
+    val barcodeLabelConfig: StateFlow<BarcodeLabelConfig> = _barcodeLabelConfig.asStateFlow()
+
+    private val _batchItems = MutableStateFlow<List<BatchLabelItem>>(emptyList())
+    val batchItems: StateFlow<List<BatchLabelItem>> = _batchItems.asStateFlow()
+
+    fun preloadSingleProduct(product: Product) {
+        _batchItems.value = listOf(
+            BatchLabelItem(
+                productId = product.id,
+                productName = product.name,
+                barcode = product.barcode ?: product.id,
+                price = product.price,
+                category = product.category,
+                brand = product.brand,
+                quantity = 1
+            )
+        )
+    }
+
+    fun addProductToBatch(product: Product, quantity: Int = 1) {
+        _batchItems.update { currentList ->
+            val existingIndex = currentList.indexOfFirst { it.productId == product.id }
+            if (existingIndex >= 0) {
+                currentList.mapIndexed { index, item ->
+                    if (index == existingIndex) {
+                        item.copy(quantity = item.quantity + quantity)
+                    } else {
+                        item
+                    }
+                }
+            } else {
+                currentList + BatchLabelItem(
+                    productId = product.id,
+                    productName = product.name,
+                    barcode = product.barcode ?: product.id,
+                    price = product.price,
+                    category = product.category,
+                    brand = product.brand,
+                    quantity = quantity
+                )
+            }
+        }
+    }
+
+    fun updateItemQuantity(productId: String, quantity: Int) {
+        if (quantity <= 0) {
+            removeItem(productId)
+            return
+        }
+        _batchItems.update { list ->
+            list.map { if (it.productId == productId) it.copy(quantity = quantity) else it }
+        }
+    }
+
+    fun removeItem(productId: String) {
+        _batchItems.update { list -> list.filter { it.productId != productId } }
+    }
+
+    fun clearBatch() {
+        _batchItems.value = emptyList()
+    }
+
+    fun updateBarcodeLabelConfig(config: BarcodeLabelConfig) {
+        _barcodeLabelConfig.value = config
+    }
+
+    fun addFavoriteSize(name: String, widthMm: Double, heightMm: Double) {
+        val newSize = LabelSize(
+            name = name,
+            widthMm = widthMm,
+            heightMm = heightMm,
+            isFavorite = true
+        )
+        _labelSizes.update { it + newSize }
+    }
+
+    fun removeFavoriteSize(sizeId: String) {
+        _labelSizes.update { list -> list.filter { it.id != sizeId } }
+        val currentConfig = _barcodeLabelConfig.value
+        if (currentConfig.selectedSizeId == sizeId) {
+            _barcodeLabelConfig.value = currentConfig.copy(selectedSizeId = "std_1")
+        }
+    }
+
     private val _users = MutableStateFlow<List<User>>(
         listOf(
             User(id = "admin_1", name = "Administrador", pin = "1234", role = Role.ADMINISTRATOR)
         )
     )
     val users: StateFlow<List<User>> = _users.asStateFlow()
+
+    private val _expenses = MutableStateFlow<List<Expense>>(emptyList())
+    val expenses: StateFlow<List<Expense>> = _expenses.asStateFlow()
+
+    private val _customerPayments = MutableStateFlow<List<CustomerPayment>>(emptyList())
+    val customerPayments: StateFlow<List<CustomerPayment>> = _customerPayments.asStateFlow()
 
     private val _activeShift = MutableStateFlow<CashShift?>(null)
     val activeShift: StateFlow<CashShift?> = _activeShift.asStateFlow()
@@ -213,6 +330,15 @@ class AppRepository(
                     )
                 ),
                 totalAmount = 12.5
+            )
+        )
+        _expenses.value = listOf(
+            Expense(
+                id = "exp_1",
+                category = "Servicios",
+                description = "Pago de insumos de oficina",
+                amount = 12.50,
+                dateMillis = System.currentTimeMillis()
             )
         )
     }
@@ -442,6 +568,10 @@ class AppRepository(
         _electronicBillingConfig.value = config
     }
 
+    fun updateBluetoothPrinterConfig(config: BluetoothPrinterConfig) {
+        _bluetoothPrinterConfig.value = config
+    }
+
     fun addUser(user: User) {
         _users.update { currentList ->
             currentList + user
@@ -500,7 +630,6 @@ class AppRepository(
         val closedShift = currentShift.copy(
             closedAtMillis = System.currentTimeMillis(),
             actualCashCounted = countedCash,
-            difference = countedCash - currentShift.expectedCash,
             status = ShiftStatus.CLOSED
         )
         _shiftHistory.update { history ->
@@ -520,12 +649,10 @@ class AppRepository(
         val newCashSales = shift.totalCashSales + cashAmount
         val newCardSales = shift.totalCardSales + cardAmount
         val newOtherSales = shift.totalOtherSales + otherAmount
-        val newExpectedCash = shift.initialFloat + newCashSales
         val updatedShift = shift.copy(
             totalCashSales = newCashSales,
             totalCardSales = newCardSales,
-            totalOtherSales = newOtherSales,
-            expectedCash = newExpectedCash
+            totalOtherSales = newOtherSales
         )
         _activeShift.value = updatedShift
         _shiftHistory.update { history ->
@@ -550,10 +677,25 @@ class AppRepository(
             sale
         }
 
-        _sales.update { currentList ->
-            currentList + saleToSave
+        val finalSale = if (saleToSave.isCredit) {
+            saleToSave.copy(
+                remainingBalance = saleToSave.totalAmount,
+                paidAmount = 0.0,
+                creditStatus = CreditStatus.UNPAID
+            )
+        } else {
+            saleToSave
         }
-        val quantitySoldMap = saleToSave.items.groupBy { it.productId }
+
+        _sales.update { currentList ->
+            currentList + finalSale
+        }
+
+        if (finalSale.isCredit) {
+            updateCustomerDebt(finalSale.customerId)
+        }
+
+        val quantitySoldMap = finalSale.items.groupBy { it.productId }
             .mapValues { entry -> entry.value.sumOf { it.quantity } }
 
         _products.update { currentProducts ->
@@ -572,20 +714,24 @@ class AppRepository(
         }
 
         if (currentShift != null) {
-            val pmName = saleToSave.paymentMethodName.lowercase()
-            val cash = if (pmName.contains("efectivo")) saleToSave.totalAmount else 0.0
-            val card = if (pmName.contains("tarjeta") || pmName.contains("card")) saleToSave.totalAmount else 0.0
-            val other = if (!pmName.contains("efectivo") && !pmName.contains("tarjeta") && !pmName.contains("card")) saleToSave.totalAmount else 0.0
+            val pmName = finalSale.paymentMethodName.lowercase()
+            val cash = if (pmName.contains("efectivo")) finalSale.totalAmount else 0.0
+            val card = if (pmName.contains("tarjeta") || pmName.contains("card")) finalSale.totalAmount else 0.0
+            val other = if (!pmName.contains("efectivo") && !pmName.contains("tarjeta") && !pmName.contains("card")) finalSale.totalAmount else 0.0
             updateActiveShiftSales(cashAmount = cash, cardAmount = card, otherAmount = other)
         }
     }
 
     fun deleteSale(saleId: String) {
+        val deletedSale = _sales.value.find { it.id == saleId }
         _sales.update { currentList ->
             currentList.filter { it.id != saleId }
         }
         _contingencyDtes.update { currentList ->
             currentList.filter { it.id != saleId }
+        }
+        if (deletedSale != null && deletedSale.isCredit) {
+            updateCustomerDebt(deletedSale.customerId)
         }
     }
 
@@ -598,6 +744,7 @@ class AppRepository(
                 current + contingencySale
             }
         }
+        val isNewSale = !_sales.value.any { it.id == contingencySale.id }
         _sales.update { currentSales ->
             if (currentSales.any { it.id == contingencySale.id }) {
                 currentSales.map { if (it.id == contingencySale.id) contingencySale else it }
@@ -605,15 +752,158 @@ class AppRepository(
                 currentSales + contingencySale
             }
         }
+        if (isNewSale) {
+            val quantitySoldMap = contingencySale.items.groupBy { it.productId }
+                .mapValues { entry -> entry.value.sumOf { it.quantity } }
+
+            _products.update { currentProducts ->
+                currentProducts.map { product ->
+                    if (!product.isService) {
+                        val totalQtySold = quantitySoldMap[product.id] ?: 0
+                        if (totalQtySold > 0) {
+                            product.copy(stock = (product.stock - totalQtySold).coerceAtLeast(0))
+                        } else {
+                            product
+                        }
+                    } else {
+                        product
+                    }
+                }
+            }
+
+            val currentShift = _activeShift.value
+            if (currentShift != null) {
+                val pmName = contingencySale.paymentMethodName.lowercase()
+                val cash = if (pmName.contains("efectivo")) contingencySale.totalAmount else 0.0
+                val card = if (pmName.contains("tarjeta") || pmName.contains("card")) contingencySale.totalAmount else 0.0
+                val other = if (!pmName.contains("efectivo") && !pmName.contains("tarjeta") && !pmName.contains("card")) contingencySale.totalAmount else 0.0
+                updateActiveShiftSales(cashAmount = cash, cardAmount = card, otherAmount = other)
+            }
+        }
     }
 
-    fun retryContingencyTransmissions(): Result<Int> {
-        return runCatching {
-            val pendingList = _contingencyDtes.value
-            if (pendingList.isEmpty()) return@runCatching 0
+    fun retryContingencyTransmissions(
+        context: Context? = null,
+        certificateInputStream: InputStream? = null
+    ): Result<Int> {
+        val config = _electronicBillingConfig.value
+        val pendingList = _contingencyDtes.value
+        if (pendingList.isEmpty()) return Result.success(0)
 
-            val config = _electronicBillingConfig.value
+        if (config.isSimulationMode) {
+            return runCatching {
+                val businessInfo = _businessInfo.value
+                var successCount = 0
+                val remainingContingency = pendingList.toMutableList()
+
+                for (sale in pendingList) {
+                    val dteType = sale.dteType ?: (if (sale.invoiceType == InvoiceType.CREDITO_FISCAL) "03" else "01")
+                    val generationCode = sale.dteGenerationCode ?: UUID.randomUUID().toString().uppercase()
+                    val controlNumber = sale.dteControlNumber ?: "DTE-$dteType-${sale.id.take(8).uppercase()}-000000000000001"
+                    val saleToTransmit = sale.copy(
+                        dteType = dteType,
+                        dteGenerationCode = generationCode,
+                        dteControlNumber = controlNumber
+                    )
+
+                    val dteJson = DteJsonGenerator.generateDteJson(
+                        sale = saleToTransmit,
+                        businessInfo = businessInfo,
+                        config = config
+                    )
+
+                    val signedJwsPayload = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.$dteJson.SIGNATURE"
+
+                    val transmitResult = runCatching {
+                        dteApiClient.transmitDte(
+                            environment = config.environment,
+                            token = "test-token",
+                            signedJwsPayload = signedJwsPayload,
+                            dteType = dteType,
+                            generationCode = generationCode
+                        ).getOrElse {
+                            ReceptionResponse(
+                                estado = "PROCESADO",
+                                selloRecibido = "MH-DTE-" + System.currentTimeMillis(),
+                                codigoGeneracion = generationCode
+                            )
+                        }
+                    }
+
+                    if (transmitResult.isSuccess) {
+                        val receptionResponse = transmitResult.getOrNull()
+                        val seal = receptionResponse?.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
+
+                        val updatedSale = saleToTransmit.copy(
+                            isDteIssued = true,
+                            contingencyMode = false,
+                            dteReceptionSeal = seal
+                        )
+
+                        _sales.update { currentSales ->
+                            if (currentSales.any { it.id == updatedSale.id }) {
+                                currentSales.map { if (it.id == updatedSale.id) updatedSale else it }
+                            } else {
+                                currentSales + updatedSale
+                            }
+                        }
+
+                        remainingContingency.removeAll { it.id == sale.id }
+                        successCount++
+                    }
+                }
+
+                _contingencyDtes.value = remainingContingency
+                successCount
+            }
+        }
+
+        // Real Mode (isSimulationMode == false)
+        val hasCredentials = !config.certificateUri.isNullOrBlank() &&
+                config.apiToken.isNotBlank() &&
+                config.nit.isNotBlank()
+
+        if (!hasCredentials) {
+            return Result.failure(Exception("Faltan credenciales DTE o certificado .p12 para retransmitir"))
+        }
+
+        val certStream: InputStream? = certificateInputStream ?: context?.let { ctx ->
+            config.certificateUri?.let { uriStr ->
+                runCatching {
+                    ctx.contentResolver.openInputStream(Uri.parse(uriStr))
+                }.getOrNull() ?: runCatching {
+                    File(uriStr).takeIf { it.exists() }?.inputStream()
+                }.getOrNull()
+            }
+        } ?: config.certificateUri?.let { uriStr ->
+            runCatching { File(uriStr).takeIf { it.exists() }?.inputStream() }.getOrNull()
+        }
+
+        val certBytes = runCatching {
+            certStream?.use { it.readBytes() }
+        }.getOrNull()
+
+        if (certBytes == null || certBytes.isEmpty()) {
+            return Result.failure(Exception("Faltan credenciales DTE o certificado .p12 para retransmitir"))
+        }
+
+        val certValidation = JwsSigner.validateCertificate(
+            certificateInputStream = ByteArrayInputStream(certBytes),
+            password = config.certificatePassword
+        )
+        if (certValidation.isFailure) {
+            return Result.failure(Exception("Faltan credenciales DTE o certificado .p12 para retransmitir"))
+        }
+
+        return runCatching {
             val businessInfo = _businessInfo.value
+
+            val authResult = dteApiClient.authenticate(
+                environment = config.environment,
+                nit = config.nit,
+                apiKey = config.apiToken
+            )
+            val authToken = authResult.getOrNull()
 
             var successCount = 0
             val remainingContingency = pendingList.toMutableList()
@@ -634,60 +924,43 @@ class AppRepository(
                     config = config
                 )
 
-                val signedJwsPayload = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.$dteJson.SIGNATURE"
+                val signedJwsResult = JwsSigner.signDteJson(
+                    jsonPayload = dteJson,
+                    certificateInputStream = ByteArrayInputStream(certBytes),
+                    password = config.certificatePassword
+                )
 
-                val transmitResult = if (config.isEnabled && config.nit.isNotBlank() && config.apiToken.isNotBlank() && !config.apiToken.equals("test", ignoreCase = true)) {
-                    val authResult = dteApiClient.authenticate(
+                if (signedJwsResult.isSuccess) {
+                    val signedJwsPayload = signedJwsResult.getOrThrow()
+                    val transmitResult = dteApiClient.transmitDte(
                         environment = config.environment,
-                        nit = config.nit,
-                        apiKey = config.apiToken
-                    )
-                    val authToken = authResult.getOrDefault("test-token")
-                    dteApiClient.transmitDte(
-                        environment = config.environment,
-                        token = authToken,
+                        token = authToken ?: "test-token",
                         signedJwsPayload = signedJwsPayload,
                         dteType = dteType,
                         generationCode = generationCode
                     )
-                } else {
-                    runCatching {
-                        dteApiClient.transmitDte(
-                            environment = config.environment,
-                            token = "test-token",
-                            signedJwsPayload = signedJwsPayload,
-                            dteType = dteType,
-                            generationCode = generationCode
-                        ).getOrElse {
-                            ReceptionResponse(
-                                estado = "PROCESADO",
-                                selloRecibido = "MH-DTE-" + System.currentTimeMillis(),
-                                codigoGeneracion = generationCode
-                            )
+
+                    if (transmitResult.isSuccess) {
+                        val receptionResponse = transmitResult.getOrNull()
+                        val seal = receptionResponse?.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
+
+                        val updatedSale = saleToTransmit.copy(
+                            isDteIssued = true,
+                            contingencyMode = false,
+                            dteReceptionSeal = seal
+                        )
+
+                        _sales.update { currentSales ->
+                            if (currentSales.any { it.id == updatedSale.id }) {
+                                currentSales.map { if (it.id == updatedSale.id) updatedSale else it }
+                            } else {
+                                currentSales + updatedSale
+                            }
                         }
+
+                        remainingContingency.removeAll { it.id == sale.id }
+                        successCount++
                     }
-                }
-
-                if (transmitResult.isSuccess) {
-                    val receptionResponse = transmitResult.getOrNull()
-                    val seal = receptionResponse?.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
-
-                    val updatedSale = saleToTransmit.copy(
-                        isDteIssued = true,
-                        contingencyMode = false,
-                        dteReceptionSeal = seal
-                    )
-
-                    _sales.update { currentSales ->
-                        if (currentSales.any { it.id == updatedSale.id }) {
-                            currentSales.map { if (it.id == updatedSale.id) updatedSale else it }
-                        } else {
-                            currentSales + updatedSale
-                        }
-                    }
-
-                    remainingContingency.removeAll { it.id == sale.id }
-                    successCount++
                 }
             }
 
@@ -737,6 +1010,10 @@ class AppRepository(
             currentSales.map { if (it.id == saleId) updatedSale else it }
         }
 
+        if (sale.isCredit) {
+            updateCustomerDebt(sale.customerId)
+        }
+
         return Result.success(Unit)
     }
 
@@ -755,6 +1032,125 @@ class AppRepository(
     fun deleteQuotation(quotationId: String) {
         _quotations.update { currentList ->
             currentList.filter { it.id != quotationId }
+        }
+    }
+
+    fun addExpense(expense: Expense) {
+        val currentShift = _activeShift.value
+        val expenseToSave = if (currentShift != null) {
+            expense.copy(
+                shiftId = expense.shiftId ?: currentShift.id,
+                cashierId = if (expense.cashierId.isBlank()) currentShift.cashierId else expense.cashierId,
+                cashierName = if (expense.cashierName.isBlank()) currentShift.cashierName else expense.cashierName
+            )
+        } else {
+            expense
+        }
+
+        _expenses.update { currentList ->
+            currentList + expenseToSave
+        }
+
+        if (currentShift != null) {
+            val updatedShift = currentShift.copy(
+                totalExpenses = currentShift.totalExpenses + expenseToSave.amount
+            )
+            _activeShift.value = updatedShift
+            _shiftHistory.update { history ->
+                val index = history.indexOfFirst { it.id == updatedShift.id }
+                if (index >= 0) {
+                    history.map { if (it.id == updatedShift.id) updatedShift else it }
+                } else {
+                    history + updatedShift
+                }
+            }
+        }
+    }
+
+    fun deleteExpense(expenseId: String) {
+        _expenses.update { currentList ->
+            currentList.filter { it.id != expenseId }
+        }
+    }
+
+    fun addCustomerPayment(payment: CustomerPayment) {
+        _customerPayments.update { currentList ->
+            currentList + payment
+        }
+
+        if (payment.saleId != null) {
+            _sales.update { currentSales ->
+                currentSales.map { sale ->
+                    if (sale.id == payment.saleId) {
+                        val newPaidAmount = sale.paidAmount + payment.amount
+                        val newRemainingBalance = maxOf(0.0, sale.totalAmount - newPaidAmount)
+                        val newCreditStatus = when {
+                            newRemainingBalance <= 0.0 -> CreditStatus.PAID
+                            newPaidAmount > 0.0 -> CreditStatus.PARTIALLY_PAID
+                            else -> sale.creditStatus
+                        }
+                        sale.copy(
+                            paidAmount = newPaidAmount,
+                            remainingBalance = newRemainingBalance,
+                            creditStatus = newCreditStatus
+                        )
+                    } else {
+                        sale
+                    }
+                }
+            }
+        } else {
+            var remainingPayment = payment.amount
+            if (remainingPayment > 0.0) {
+                _sales.update { currentSales ->
+                    val updatedList = currentSales.toMutableList()
+                    val pendingIndices = updatedList.indices.filter { idx ->
+                        val s = updatedList[idx]
+                        s.customerId == payment.customerId && s.isCredit && !s.isVoided && s.remainingBalance > 0.0
+                    }.sortedBy { updatedList[it].dateMillis }
+
+                    for (idx in pendingIndices) {
+                        if (remainingPayment <= 0.0) break
+                        val sale = updatedList[idx]
+                        val applyAmount = minOf(remainingPayment, sale.remainingBalance)
+                        val newPaidAmount = sale.paidAmount + applyAmount
+                        val newRemainingBalance = maxOf(0.0, sale.totalAmount - newPaidAmount)
+                        val newCreditStatus = when {
+                            newRemainingBalance <= 0.0 -> CreditStatus.PAID
+                            newPaidAmount > 0.0 -> CreditStatus.PARTIALLY_PAID
+                            else -> sale.creditStatus
+                        }
+                        updatedList[idx] = sale.copy(
+                            paidAmount = newPaidAmount,
+                            remainingBalance = newRemainingBalance,
+                            creditStatus = newCreditStatus
+                        )
+                        remainingPayment -= applyAmount
+                    }
+                    updatedList
+                }
+            }
+        }
+
+        updateCustomerDebt(payment.customerId)
+    }
+
+    private fun updateCustomerDebt(customerId: String) {
+        if (customerId.isBlank()) return
+        val creditSales = _sales.value.filter { it.customerId == customerId && it.isCredit && !it.isVoided }
+        val payments = _customerPayments.value.filter { it.customerId == customerId }
+        val totalCredit = creditSales.sumOf { it.totalAmount }
+        val totalPaid = payments.sumOf { it.amount }
+        val debt = maxOf(0.0, totalCredit - totalPaid)
+
+        _customers.update { currentCustomers ->
+            currentCustomers.map { customer ->
+                if (customer.id == customerId) {
+                    customer.copy(currentDebt = debt)
+                } else {
+                    customer
+                }
+            }
         }
     }
 }

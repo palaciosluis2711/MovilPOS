@@ -2,7 +2,16 @@ package com.lopezapp.movilpos.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.view.KeyEvent
 import android.widget.Toast
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -44,6 +53,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Check
@@ -52,6 +62,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockClock
+import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Remove
@@ -70,6 +81,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -106,6 +118,7 @@ import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
 import com.lopezapp.movilpos.ui.components.CloseShiftDialog
 import com.lopezapp.movilpos.ui.components.CompactSearchBar
 import com.lopezapp.movilpos.ui.components.OpenShiftDialog
+import com.lopezapp.movilpos.ui.components.RegisterExpenseDialog
 import com.lopezapp.movilpos.ui.theme.PriceRuleColors
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsUiState
@@ -119,6 +132,7 @@ fun POSScreen(
     viewModel: POSViewModel,
     settingsViewModel: SettingsViewModel? = null,
     onNavigateToCheckout: (() -> Unit)? = null,
+    onBackClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -137,6 +151,7 @@ fun POSScreen(
     var showOpenShiftDialog by remember { mutableStateOf(false) }
     var openShiftErrorMessage by remember { mutableStateOf<String?>(null) }
     var showCloseShiftDialog by remember { mutableStateOf(false) }
+    var showRegisterExpenseDialog by remember { mutableStateOf(false) }
     var showScannerDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(activeShift) {
@@ -151,6 +166,23 @@ fun POSScreen(
             Toast.makeText(context, "Debe abrir un turno antes de realizar ventas", Toast.LENGTH_SHORT).show()
         } else {
             viewModel.addToCart(product)
+        }
+    }
+
+    val handleBarcodeSubmit = { query: String ->
+        if (activeShift == null) {
+            showOpenShiftDialog = true
+            Toast.makeText(context, "Debe abrir un turno antes de realizar ventas", Toast.LENGTH_SHORT).show()
+        } else if (query.isNotBlank()) {
+            val success = viewModel.scanAndAddToCart(query)
+            if (success) {
+                val product = allProducts.find { it.barcode?.trim() == query.trim() }
+                val productName = product?.name ?: query
+                Toast.makeText(context, "Agregado: $productName", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Producto no encontrado", Toast.LENGTH_SHORT).show()
+            }
+            viewModel.setSearchQuery("")
         }
     }
 
@@ -198,6 +230,7 @@ fun POSScreen(
     if (showCloseShiftDialog && activeShift != null) {
         CloseShiftDialog(
             cashShift = activeShift!!,
+            settingsViewModel = settingsViewModel,
             onCloseShift = { actualCashCounted ->
                 val closedShift = viewModel.closeShift(actualCashCounted)
                 showCloseShiftDialog = false
@@ -257,28 +290,58 @@ fun POSScreen(
         )
     }
 
+    if (showRegisterExpenseDialog) {
+        RegisterExpenseDialog(
+            onDismissRequest = { showRegisterExpenseDialog = false },
+            onRegisterExpense = { category, description, amount ->
+                viewModel.addExpense(category, description, amount)
+                Toast.makeText(context, "Gasto registrado con éxito", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
-            Column {
-                TopAppBar(
-                    title = { Text("Punto de Venta") },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
+            Column(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
                 ActiveShiftHeaderBar(
                     activeShift = activeShift,
                     users = users,
                     onOpenShiftClick = { showOpenShiftDialog = true },
                     onCloseShiftClick = { showCloseShiftDialog = true },
+                    onRegisterExpenseClick = { showRegisterExpenseDialog = true },
+                    onBackClick = onBackClick,
                     currencySymbol = currencySymbol,
                     defaultDecimalPlaces = defaultDecimalPlaces,
                     allowExtraDecimals = allowExtraDecimals
                 )
+                ProductSearchBar(
+                    searchQuery = uiState.searchQuery,
+                    onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                    onScanBarcodeClick = { showScannerDialog = true },
+                    onSearch = { handleBarcodeSubmit(uiState.searchQuery) }
+                )
             }
         },
-        modifier = modifier
+        modifier = modifier.onKeyEvent { keyEvent ->
+            if (keyEvent.type == KeyEventType.KeyDown) {
+                if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
+                    keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+                    keyEvent.key == Key.Enter ||
+                    keyEvent.key == Key.NumPadEnter
+                ) {
+                    if (uiState.searchQuery.isNotBlank()) {
+                        handleBarcodeSubmit(uiState.searchQuery)
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
     ) { innerPadding ->
         BoxWithConstraints(
             modifier = Modifier
@@ -291,11 +354,6 @@ fun POSScreen(
                 // Wide layout (tablet/landscape)
                 Row(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.weight(1.5f).fillMaxHeight()) {
-                        ProductSearchBar(
-                            searchQuery = uiState.searchQuery,
-                            onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                            onScanBarcodeClick = { showScannerDialog = true }
-                        )
                         ProductGrid(
                             products = uiState.products,
                             onAddClick = handleAddToCart,
@@ -330,11 +388,6 @@ fun POSScreen(
                 // Narrow layout (phone portrait) with Collapsible Bottom Cart Sheet
                 Box(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.fillMaxSize().padding(bottom = 72.dp)) {
-                        ProductSearchBar(
-                            searchQuery = uiState.searchQuery,
-                            onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                            onScanBarcodeClick = { showScannerDialog = true }
-                        )
                         ProductGrid(
                             products = uiState.products,
                             onAddClick = handleAddToCart,
@@ -377,6 +430,8 @@ fun ActiveShiftHeaderBar(
     users: List<User> = emptyList(),
     onOpenShiftClick: () -> Unit,
     onCloseShiftClick: () -> Unit,
+    onRegisterExpenseClick: (() -> Unit)? = null,
+    onBackClick: (() -> Unit)? = null,
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true,
@@ -392,102 +447,154 @@ fun ActiveShiftHeaderBar(
             val primaryTitle = currentCashierUser?.name ?: activeShift.cashierName
             val displayRole = currentCashierUser?.role?.toSpanishLabel() ?: Role.CASHIER.toSpanishLabel()
 
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // Row 1: Back navigation button, Cashier Name & Role Badge, and "Cerrar Turno" button
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f, fill = false)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = primaryTitle.ifBlank { "Cajero" },
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Surface(
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                shape = RoundedCornerShape(6.dp)
+                        if (onBackClick != null) {
+                            IconButton(
+                                onClick = onBackClick,
+                                modifier = Modifier.size(36.dp)
                             ) {
-                                Text(
-                                    text = displayRole,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Regresar",
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        Text(
+                            text = primaryTitle.ifBlank { "Cajero" },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "Fondo: ${formatCurrency(activeShift.initialFloat, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "En Caja: ${formatCurrency(activeShift.expectedCash, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
+                                text = displayRole,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                maxLines = 1
                             )
                         }
                     }
+
+                    Button(
+                        onClick = onCloseShiftClick,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LockClock,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Cerrar Turno",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
                 }
 
-                Button(
-                    onClick = onCloseShiftClick,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                // Row 2: Cash balance summary ("Fondo: $XX" • "En Caja: $XX") and "Registrar Gasto" button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.LockClock,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Cerrar Turno",
-                        style = MaterialTheme.typography.labelMedium
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Text(
+                            text = "Fondo: ${formatCurrency(activeShift.initialFloat, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "•",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "En Caja: ${formatCurrency(activeShift.expectedCash, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    if (onRegisterExpenseClick != null) {
+                        OutlinedButton(
+                            onClick = onRegisterExpenseClick,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoneyOff,
+                                contentDescription = "Registrar Gasto",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Registrar Gasto",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
                 }
             }
         } else {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -495,6 +602,18 @@ fun ActiveShiftHeaderBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    if (onBackClick != null) {
+                        IconButton(
+                            onClick = onBackClick,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Regresar",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                     Icon(
                         imageVector = Icons.Default.Lock,
                         contentDescription = null,
@@ -531,6 +650,7 @@ fun ProductSearchBar(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onScanBarcodeClick: (() -> Unit)? = null,
+    onSearch: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     CompactSearchBar(
@@ -538,6 +658,8 @@ fun ProductSearchBar(
         onQueryChange = onSearchQueryChange,
         placeholder = "Buscar producto por nombre o código...",
         onScanBarcodeClick = onScanBarcodeClick,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch?.invoke() }),
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)

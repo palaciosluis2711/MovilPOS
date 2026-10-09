@@ -2,6 +2,7 @@ package com.lopezapp.movilpos
 
 import com.lopezapp.movilpos.data.model.ArithmeticOperator
 import com.lopezapp.movilpos.data.model.BaseVariable
+import com.lopezapp.movilpos.data.model.BluetoothPrinterConfig
 import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.DteEnvironment
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
@@ -586,6 +587,49 @@ class SettingsViewModelTest {
         val updatedRepo = repository.electronicBillingConfig.value
         assertTrue(updatedRepo.isEnabled)
         assertEquals(DteEnvironment.PRODUCTION, updatedRepo.environment)
+    }
+
+    @Test
+    fun updateBluetoothPrinterConfig_updatesConfigInViewModelAndRepository() = runTest {
+        val defaultConfig = viewModel.bluetoothPrinterConfig.value
+        assertNull(defaultConfig.macAddress)
+        assertNull(defaultConfig.deviceName)
+        assertFalse(defaultConfig.isConnected)
+        assertTrue(defaultConfig.autoPrintSales)
+
+        val newConfig = BluetoothPrinterConfig(
+            macAddress = "00:11:22:33:44:55",
+            deviceName = "Printer 1",
+            isConnected = true,
+            autoPrintSales = false
+        )
+        viewModel.updateBluetoothPrinterConfig(newConfig)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updatedState = viewModel.uiState.value.bluetoothPrinterConfig
+        assertEquals("00:11:22:33:44:55", updatedState.macAddress)
+        assertEquals("Printer 1", updatedState.deviceName)
+        assertTrue(updatedState.isConnected)
+        assertFalse(updatedState.autoPrintSales)
+
+        val updatedRepo = repository.bluetoothPrinterConfig.value
+        assertEquals("00:11:22:33:44:55", updatedRepo.macAddress)
+
+        val updatedProperty = viewModel.bluetoothPrinterConfig.value
+        assertEquals("00:11:22:33:44:55", updatedProperty.macAddress)
+    }
+
+    @Test
+    fun sendTestPrint_withBlankMacAddress_returnsFailureResult() {
+        val result = viewModel.sendTestPrint("", TicketPaperSize.SIZE_80MM)
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun sendTestPrint_withInvalidMacAddress_returnsFailureResult() {
+        val result = viewModel.sendTestPrint("00:11:22:33:44:55", TicketPaperSize.SIZE_57MM)
+        assertTrue(result.isFailure)
     }
 
     @Test
