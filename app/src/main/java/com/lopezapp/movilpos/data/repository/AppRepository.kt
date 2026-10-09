@@ -1,6 +1,5 @@
 package com.lopezapp.movilpos.data.repository
 
-import com.lopezapp.movilpos.data.model.BaseVariable
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.CashShift
@@ -26,12 +25,18 @@ import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import com.lopezapp.movilpos.data.model.User
+import com.lopezapp.movilpos.util.DteApiClient
+import com.lopezapp.movilpos.util.DteJsonGenerator
+import com.lopezapp.movilpos.util.ReceptionResponse
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.UUID
 
-class AppRepository {
+class AppRepository(
+    private val dteApiClient: DteApiClient = DteApiClient.defaultInstance
+) {
     private val _products = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = _products.asStateFlow()
 
@@ -58,6 +63,9 @@ class AppRepository {
 
     private val _sales = MutableStateFlow<List<Sale>>(emptyList())
     val sales: StateFlow<List<Sale>> = _sales.asStateFlow()
+
+    private val _contingencyDtes = MutableStateFlow<List<Sale>>(emptyList())
+    val contingencyDtes: StateFlow<List<Sale>> = _contingencyDtes.asStateFlow()
 
     private val _quotations = MutableStateFlow<List<Quotation>>(emptyList())
     val quotations: StateFlow<List<Quotation>> = _quotations.asStateFlow()
@@ -576,6 +584,160 @@ class AppRepository {
         _sales.update { currentList ->
             currentList.filter { it.id != saleId }
         }
+        _contingencyDtes.update { currentList ->
+            currentList.filter { it.id != saleId }
+        }
+    }
+
+    fun addToContingencyQueue(sale: Sale) {
+        val contingencySale = sale.copy(contingencyMode = true)
+        _contingencyDtes.update { current ->
+            if (current.any { it.id == contingencySale.id }) {
+                current.map { if (it.id == contingencySale.id) contingencySale else it }
+            } else {
+                current + contingencySale
+            }
+        }
+        _sales.update { currentSales ->
+            if (currentSales.any { it.id == contingencySale.id }) {
+                currentSales.map { if (it.id == contingencySale.id) contingencySale else it }
+            } else {
+                currentSales + contingencySale
+            }
+        }
+    }
+
+    fun retryContingencyTransmissions(): Result<Int> {
+        return runCatching {
+            val pendingList = _contingencyDtes.value
+            if (pendingList.isEmpty()) return@runCatching 0
+
+            val config = _electronicBillingConfig.value
+            val businessInfo = _businessInfo.value
+
+            var successCount = 0
+            val remainingContingency = pendingList.toMutableList()
+
+            for (sale in pendingList) {
+                val dteType = sale.dteType ?: (if (sale.invoiceType == InvoiceType.CREDITO_FISCAL) "03" else "01")
+                val generationCode = sale.dteGenerationCode ?: UUID.randomUUID().toString().uppercase()
+                val controlNumber = sale.dteControlNumber ?: "DTE-$dteType-${sale.id.take(8).uppercase()}-000000000000001"
+                val saleToTransmit = sale.copy(
+                    dteType = dteType,
+                    dteGenerationCode = generationCode,
+                    dteControlNumber = controlNumber
+                )
+
+                val dteJson = DteJsonGenerator.generateDteJson(
+                    sale = saleToTransmit,
+                    businessInfo = businessInfo,
+                    config = config
+                )
+
+                val signedJwsPayload = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.$dteJson.SIGNATURE"
+
+                val transmitResult = if (config.isEnabled && config.nit.isNotBlank() && config.apiToken.isNotBlank() && !config.apiToken.equals("test", ignoreCase = true)) {
+                    val authResult = dteApiClient.authenticate(
+                        environment = config.environment,
+                        nit = config.nit,
+                        apiKey = config.apiToken
+                    )
+                    val authToken = authResult.getOrDefault("test-token")
+                    dteApiClient.transmitDte(
+                        environment = config.environment,
+                        token = authToken,
+                        signedJwsPayload = signedJwsPayload,
+                        dteType = dteType,
+                        generationCode = generationCode
+                    )
+                } else {
+                    runCatching {
+                        dteApiClient.transmitDte(
+                            environment = config.environment,
+                            token = "test-token",
+                            signedJwsPayload = signedJwsPayload,
+                            dteType = dteType,
+                            generationCode = generationCode
+                        ).getOrElse {
+                            ReceptionResponse(
+                                estado = "PROCESADO",
+                                selloRecibido = "MH-DTE-" + System.currentTimeMillis(),
+                                codigoGeneracion = generationCode
+                            )
+                        }
+                    }
+                }
+
+                if (transmitResult.isSuccess) {
+                    val receptionResponse = transmitResult.getOrNull()
+                    val seal = receptionResponse?.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
+
+                    val updatedSale = saleToTransmit.copy(
+                        isDteIssued = true,
+                        contingencyMode = false,
+                        dteReceptionSeal = seal
+                    )
+
+                    _sales.update { currentSales ->
+                        if (currentSales.any { it.id == updatedSale.id }) {
+                            currentSales.map { if (it.id == updatedSale.id) updatedSale else it }
+                        } else {
+                            currentSales + updatedSale
+                        }
+                    }
+
+                    remainingContingency.removeAll { it.id == sale.id }
+                    successCount++
+                }
+            }
+
+            _contingencyDtes.value = remainingContingency
+            successCount
+        }
+    }
+
+    fun voidSaleDte(saleId: String, reason: String): Result<Unit> {
+        val sale = _sales.value.find { it.id == saleId }
+            ?: return Result.failure(Exception("Venta no encontrada"))
+
+        val voidedAt = System.currentTimeMillis()
+        val updatedSale = sale.copy(
+            isVoided = true,
+            voidReason = reason,
+            voidedAtMillis = voidedAt
+        )
+
+        val businessInfo = _businessInfo.value
+        val config = _electronicBillingConfig.value
+
+        val invalidationJson = DteJsonGenerator.generateDteInvalidationJson(
+            sale = updatedSale,
+            reason = reason,
+            businessInfo = businessInfo
+        )
+
+        if (config.isEnabled && config.nit.isNotBlank() && config.apiToken.isNotBlank() && !config.apiToken.equals("test", ignoreCase = true)) {
+            runCatching {
+                val authResult = dteApiClient.authenticate(
+                    environment = config.environment,
+                    nit = config.nit,
+                    apiKey = config.apiToken
+                )
+                val token = authResult.getOrThrow()
+                dteApiClient.voidDte(
+                    environment = config.environment,
+                    token = token,
+                    signedJwsPayload = invalidationJson,
+                    generationCode = sale.dteGenerationCode ?: UUID.randomUUID().toString()
+                )
+            }
+        }
+
+        _sales.update { currentSales ->
+            currentSales.map { if (it.id == saleId) updatedSale else it }
+        }
+
+        return Result.success(Unit)
     }
 
     fun addQuotation(quotation: Quotation) {

@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -2938,6 +2939,7 @@ fun SettingsElectronicBillingScreen(
     var certificatePassword by rememberSaveable { mutableStateOf(config.certificatePassword) }
     var certificateUri by rememberSaveable { mutableStateOf(config.certificateUri) }
     var certificateFileName by rememberSaveable { mutableStateOf(config.certificateFileName) }
+    var isSimulationMode by rememberSaveable { mutableStateOf(config.isSimulationMode) }
 
     var apiTokenVisible by rememberSaveable { mutableStateOf(false) }
     var certPasswordVisible by rememberSaveable { mutableStateOf(false) }
@@ -2962,7 +2964,10 @@ fun SettingsElectronicBillingScreen(
         certificatePassword = config.certificatePassword
         certificateUri = config.certificateUri
         certificateFileName = config.certificateFileName
+        isSimulationMode = config.isSimulationMode
     }
+
+    val contingencyDtes by viewModel.contingencyDtes.collectAsState()
 
     Scaffold(
         topBar = {
@@ -2994,6 +2999,49 @@ fun SettingsElectronicBillingScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (contingencyDtes.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFFFF3E0)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "DTEs de Contingencia Pendientes",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFE65100)
+                        )
+                        Text(
+                            text = "Existen ${contingencyDtes.size} factura(s) pendiente(s) de transmisión al Ministerio de Hacienda.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFFBF360C)
+                        )
+                        Button(
+                            onClick = {
+                                val result = viewModel.retryContingencyTransmissions()
+                                val count = result.getOrDefault(0)
+                                Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(imageVector = Icons.Default.Sync, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Retransmitir DTEs de Contingencia")
+                        }
+                    }
+                }
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -3022,6 +3070,39 @@ fun SettingsElectronicBillingScreen(
                     Switch(
                         checked = isEnabled,
                         onCheckedChange = { isEnabled = it },
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Modo Simulación DTE",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "Solo Desarrollo: Simula la emisión sin transmitir al MH",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = isSimulationMode,
+                        onCheckedChange = { isSimulationMode = it },
                     )
                 }
             }
@@ -3260,6 +3341,7 @@ fun SettingsElectronicBillingScreen(
                         certificatePassword = certificatePassword,
                         certificateUri = certificateUri,
                         certificateFileName = certificateFileName,
+                        isSimulationMode = isSimulationMode,
                     )
                     viewModel.updateElectronicBillingConfig(updatedConfig)
                     Toast.makeText(

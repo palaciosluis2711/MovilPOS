@@ -7,6 +7,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 
 object DteJsonGenerator {
     fun generateDteJson(
@@ -118,6 +119,69 @@ object DteJsonGenerator {
         ]
     },
     "selloRecibido": "$selloRecibido"
+}"""
+    }
+
+    fun generateDteInvalidationJson(
+        sale: Sale,
+        reason: String,
+        businessInfo: BusinessInfo
+    ): String {
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("America/El_Salvador") }
+        val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getTimeZone("America/El_Salvador") }
+        val now = Date(sale.voidedAtMillis ?: System.currentTimeMillis())
+        val saleDate = Date(sale.dateMillis)
+
+        val codigoGeneracionEvento = UUID.randomUUID().toString().uppercase()
+        val codigoGeneracionAnulado = sale.dteGenerationCode ?: "01234567-89AB-CDEF-0123-456789ABCDEF"
+        val selloAnulado = sale.dteReceptionSeal ?: "MH-DTE-2025-00000000000001"
+        val tipoDte = sale.dteType ?: "01"
+        val numeroControl = sale.dteControlNumber ?: "DTE-$tipoDte-${sale.id.take(8).uppercase()}-000000000000001"
+
+        val nitEmisor = businessInfo.nit.ifBlank { "0614-010190-101-5" }
+        val nrcEmisor = businessInfo.nrc.ifBlank { "123456-7" }
+        val nombreEmisor = businessInfo.name.ifBlank { "Empresa S.A. de C.V." }
+        val telefonoEmisor = businessInfo.phone.ifBlank { "2222-2222" }
+        val correoEmisor = businessInfo.email.ifBlank { "contacto@negocio.com" }
+        val nombreResponsable = sale.cashierName.ifBlank { "Administrador" }
+
+        return """{
+    "identificacion": {
+        "version": 2,
+        "ambiente": "00",
+        "codigoGeneracion": "$codigoGeneracionEvento",
+        "fecAnula": "${dateFormat.format(now)}",
+        "horAnula": "${timeFormat.format(now)}"
+    },
+    "emisor": {
+        "nit": "$nitEmisor",
+        "nrc": "$nrcEmisor",
+        "nombre": "$nombreEmisor",
+        "tipoEstablecimiento": "01",
+        "nomEstablecimiento": "$nombreEmisor",
+        "telefono": "$telefonoEmisor",
+        "correo": "$correoEmisor"
+    },
+    "documentoAnulado": {
+        "tipoDte": "$tipoDte",
+        "codigoGeneracion": "$codigoGeneracionAnulado",
+        "codigoGeneracionAnulado": "$codigoGeneracionAnulado",
+        "selloAnulado": "$selloAnulado",
+        "selloRecibido": "$selloAnulado",
+        "numeroControl": "$numeroControl",
+        "fecEmi": "${dateFormat.format(saleDate)}",
+        "montoTotal": ${sale.totalAmount},
+        "nombreReceptor": "${sale.customerName}"
+    },
+    "motivo": {
+        "motivoInvalidez": "$reason",
+        "nombreResponsable": "$nombreResponsable",
+        "tipoDocResponsable": "36",
+        "numDocResponsable": "$nitEmisor",
+        "nombreSolicita": "${sale.customerName}",
+        "tipoDocSolicita": "36",
+        "numDocSolicita": "0210-010190-102-1"
+    }
 }"""
     }
 }

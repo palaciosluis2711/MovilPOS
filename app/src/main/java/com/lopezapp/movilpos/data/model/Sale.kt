@@ -36,4 +36,8 @@ data class Sale(
     val shiftId: String? = null,
     val cashierId: String = "",
     val cashierName: String = "",
+    val isVoided: Boolean = false,
+    val voidReason: String? = null,
+    val voidedAtMillis: Long? = null,
+    val contingencyMode: Boolean = false,
 )

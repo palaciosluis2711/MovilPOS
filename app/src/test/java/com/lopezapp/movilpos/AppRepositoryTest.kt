@@ -175,4 +175,80 @@ class AppRepositoryTest {
         assertEquals(25.0, finalShift?.totalCardSales ?: 0.0, 0.001)
         assertEquals(60.0, finalShift?.expectedCash ?: 0.0, 0.001)
     }
+
+    @Test
+    fun voidSaleDte_voidsSaleCorrectly() {
+        val sale = Sale(
+            id = "sale_123",
+            customerId = "c1",
+            customerName = "Cliente",
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 50.0,
+            isDteIssued = true,
+            dteGenerationCode = "GEN-123"
+        )
+        repository.addSale(sale)
+
+        val result = repository.voidSaleDte("sale_123", "Error en cobro")
+        assertTrue(result.isSuccess)
+
+        val voidedSale = repository.sales.value.find { it.id == "sale_123" }
+        assertNotNull(voidedSale)
+        assertTrue(voidedSale!!.isVoided)
+        assertEquals("Error en cobro", voidedSale.voidReason)
+        assertNotNull(voidedSale.voidedAtMillis)
+    }
+
+    @Test
+    fun addToContingencyQueue_setsContingencyModeTrueAndAddsToQueue() {
+        val sale = Sale(
+            id = "sale_contingency_1",
+            customerId = "c1",
+            customerName = "Cliente Contingencia",
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 30.0,
+            isDteIssued = false
+        )
+        repository.addToContingencyQueue(sale)
+
+        val contingencyList = repository.contingencyDtes.value
+        assertEquals(1, contingencyList.size)
+        assertTrue(contingencyList.first().contingencyMode)
+
+        val savedSale = repository.sales.value.find { it.id == "sale_contingency_1" }
+        assertNotNull(savedSale)
+        assertTrue(savedSale!!.contingencyMode)
+    }
+
+    @Test
+    fun retryContingencyTransmissions_retransmitsAndClearsQueue() {
+        val sale = Sale(
+            id = "sale_contingency_2",
+            customerId = "c1",
+            customerName = "Cliente Retry",
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 45.0,
+            isDteIssued = false
+        )
+        repository.addToContingencyQueue(sale)
+        assertEquals(1, repository.contingencyDtes.value.size)
+
+        val result = repository.retryContingencyTransmissions()
+        assertTrue(result.isSuccess)
+        val count = result.getOrNull()
+        assertEquals(1, count)
+
+        assertTrue(repository.contingencyDtes.value.isEmpty())
+        val updatedSale = repository.sales.value.find { it.id == "sale_contingency_2" }
+        assertNotNull(updatedSale)
+        assertTrue(updatedSale!!.isDteIssued)
+        assertFalse(updatedSale.contingencyMode)
+        assertNotNull(updatedSale.dteReceptionSeal)
+    }
 }

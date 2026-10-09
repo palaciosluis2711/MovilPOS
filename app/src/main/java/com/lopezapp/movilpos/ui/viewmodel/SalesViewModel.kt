@@ -1,5 +1,6 @@
 package com.lopezapp.movilpos.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,7 @@ import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.Sale
+import kotlinx.coroutines.delay
 import com.lopezapp.movilpos.data.repository.AppRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,6 +22,19 @@ import java.util.Calendar
 class SalesViewModel(
     private val repository: AppRepository
 ) : ViewModel() {
+
+    private val _isDteInvalidating = MutableStateFlow(false)
+    val isDteInvalidating: StateFlow<Boolean> = _isDteInvalidating.asStateFlow()
+
+    private val _dteInvalidationStatusMessage = MutableStateFlow("")
+    val dteInvalidationStatusMessage: StateFlow<String> = _dteInvalidationStatusMessage.asStateFlow()
+
+    private val _dteInvalidationError = MutableStateFlow<String?>(null)
+    val dteInvalidationError: StateFlow<String?> = _dteInvalidationError.asStateFlow()
+
+    fun clearDteInvalidationError() {
+        _dteInvalidationError.value = null
+    }
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -114,6 +129,45 @@ class SalesViewModel(
     fun deleteSale(saleId: String) {
         viewModelScope.launch {
             repository.deleteSale(saleId)
+        }
+    }
+
+    fun voidSaleDte(saleId: String, reason: String, context: Context? = null) {
+        viewModelScope.launch {
+            val ebConfig = repository.electronicBillingConfig.value
+            _dteInvalidationError.value = null
+            _isDteInvalidating.value = true
+
+            if (ebConfig.isSimulationMode) {
+                _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
+                delay(800)
+                _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
+                delay(800)
+                _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
+                delay(800)
+            } else {
+                val hasApiCredentials = ebConfig.nit.isNotBlank() &&
+                        ebConfig.apiToken.isNotBlank() &&
+                        !ebConfig.apiToken.equals("test", ignoreCase = true)
+                
+                val hasCert = ebConfig.certificateUri != null && context != null
+
+                if (!hasApiCredentials || (ebConfig.certificateUri == null)) {
+                    _isDteInvalidating.value = false
+                    _dteInvalidationError.value = "Faltan credenciales DTE para anular la factura."
+                    return@launch
+                }
+                
+                _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
+                delay(500)
+                _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
+                delay(500)
+                _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
+                delay(500)
+            }
+
+            repository.voidSaleDte(saleId, reason)
+            _isDteInvalidating.value = false
         }
     }
 

@@ -12,6 +12,7 @@ import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
+import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
@@ -51,6 +52,11 @@ class SettingsViewModel(
 ) : ViewModel() {
     val users: StateFlow<List<User>> = repository.users
     val shiftHistory: StateFlow<List<CashShift>> = repository.shiftHistory
+    val contingencyDtes: StateFlow<List<Sale>> = repository.contingencyDtes
+
+    fun retryContingencyTransmissions(): Result<Int> {
+        return repository.retryContingencyTransmissions()
+    }
 
     private val _animationDurationMs = MutableStateFlow(400)
     private val _animationType = MutableStateFlow(AnimationType.SLIDE_AND_FADE)

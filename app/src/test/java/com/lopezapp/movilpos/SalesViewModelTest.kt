@@ -281,4 +281,29 @@ class SalesViewModelTest {
         assertTrue(newIndex != -1 && oldIndex != -1)
         assertTrue(newIndex < oldIndex)
     }
+
+    @Test
+    fun voidSaleDte_voidsSaleInViewModel() = runTest {
+        val sale = Sale(
+            id = "SALE-VOID-TEST",
+            customerId = "c1",
+            customerName = "Test Client",
+            invoiceType = InvoiceType.CONSUMIDOR_FINAL,
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 20.0,
+            isDteIssued = true
+        )
+        repository.addSale(sale)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.voidSaleDte("SALE-VOID-TEST", "Anulación por error de digitación")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updated = viewModel.getSaleById("SALE-VOID-TEST")
+        assertNotNull(updated)
+        assertTrue(updated!!.isVoided)
+        assertEquals("Anulación por error de digitación", updated.voidReason)
+    }
 }

@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -100,5 +101,125 @@ class DteReportsViewModelTest {
         assertTrue(jsonString.contains("MH-DTE-2025-00000000000001"))
         assertTrue(jsonString.contains("Juan Perez"))
         assertTrue(jsonString.contains("Coffee"))
+    }
+
+    @Test
+    fun generateDteInvalidationJson_generatesValidPayload() {
+        val sale = Sale(
+            id = "test-sale-void",
+            customerId = "c1",
+            customerName = "Juan Perez",
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = listOf(
+                SaleItem(productId = "p1", productName = "Coffee", quantity = 1, unitPrice = 2.5, subtotal = 2.5)
+            ),
+            totalAmount = 2.5,
+            isDteIssued = true,
+            dteGenerationCode = "01234567-89AB-CDEF-0123-456789ABCDEF",
+            dteReceptionSeal = "MH-DTE-2025-00000000000001",
+            dteControlNumber = "DTE-01-00000001-000000000000001",
+            dteType = "01",
+            cashierName = "Carlos Cajero"
+        )
+        val businessInfo = BusinessInfo(name = "Mi Tienda", nit = "0614-010190-101-5", nrc = "123456-7")
+
+        val invalidationJson = DteJsonGenerator.generateDteInvalidationJson(
+            sale = sale,
+            reason = "Error en precio digitado",
+            businessInfo = businessInfo
+        )
+
+        assertNotNull(invalidationJson)
+        assertTrue(invalidationJson.contains("identificacion"))
+        assertTrue(invalidationJson.contains("emisor"))
+        assertTrue(invalidationJson.contains("documentoAnulado"))
+        assertTrue(invalidationJson.contains("motivo"))
+        assertTrue(invalidationJson.contains("01234567-89AB-CDEF-0123-456789ABCDEF"))
+        assertTrue(invalidationJson.contains("MH-DTE-2025-00000000000001"))
+        assertTrue(invalidationJson.contains("Error en precio digitado"))
+        assertTrue(invalidationJson.contains("Carlos Cajero"))
+    }
+
+    @Test
+    fun voidSaleDte_updatesSaleStateInRepositoryAndViewModel() = runTest {
+        val dteSale = Sale(
+            id = "sale-to-void-1",
+            customerId = "c1",
+            customerName = "Cliente Test",
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 15.0,
+            isDteIssued = true,
+            dteGenerationCode = "GEN-123",
+            dteReceptionSeal = "SEAL-123"
+        )
+        repository.addSale(dteSale)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.voidSaleDte("sale-to-void-1", "Devolución de cliente")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updatedSale = viewModel.getSaleById("sale-to-void-1")
+        assertNotNull(updatedSale)
+        assertTrue(updatedSale!!.isVoided)
+        assertEquals("Devolución de cliente", updatedSale.voidReason)
+        assertNotNull(updatedSale.voidedAtMillis)
+    }
+
+    @Test
+    fun issuedDtes_includesContingencySalesAndExposesContingencyDtes() = runTest {
+        val contingencySale = Sale(
+            id = "contingency-sale-1",
+            customerId = "c1",
+            customerName = "Cliente Contingencia",
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 50.0,
+            isDteIssued = false,
+            contingencyMode = true
+        )
+        repository.addToContingencyQueue(contingencySale)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val contingencyList = viewModel.contingencyDtes.value
+        assertEquals(1, contingencyList.size)
+        assertEquals("contingency-sale-1", contingencyList.first().id)
+
+        val issuedList = viewModel.issuedDtes.value
+        assertEquals(1, issuedList.size)
+        assertTrue(issuedList.first().contingencyMode)
+    }
+
+    @Test
+    fun retryContingencyTransmissions_retransmitsAndUpdatesViewModelFlows() = runTest {
+        val contingencySale = Sale(
+            id = "contingency-sale-retry",
+            customerId = "c1",
+            customerName = "Cliente Contingencia Retry",
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 75.0,
+            isDteIssued = false
+        )
+        repository.addToContingencyQueue(contingencySale)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, viewModel.contingencyDtes.value.size)
+
+        val result = viewModel.retryContingencyTransmissions()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, result.getOrNull())
+        assertTrue(viewModel.contingencyDtes.value.isEmpty())
+
+        val updatedSale = viewModel.getSaleById("contingency-sale-retry")
+        assertNotNull(updatedSale)
+        assertTrue(updatedSale!!.isDteIssued)
+        Assert.assertFalse(updatedSale.contingencyMode)
     }
 }

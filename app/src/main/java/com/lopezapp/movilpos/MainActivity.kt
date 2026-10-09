@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.Inventory
 import androidx.compose.material.icons.rounded.LocalShipping
@@ -115,6 +116,9 @@ import com.lopezapp.movilpos.ui.navigation.SupplierDetailRoute
 import com.lopezapp.movilpos.ui.navigation.SupplierEditRoute
 import com.lopezapp.movilpos.ui.navigation.SuppliersRoute
 import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
+import com.lopezapp.movilpos.ui.AnalyticsScreen
+import com.lopezapp.movilpos.ui.navigation.AnalyticsRoute
+import com.lopezapp.movilpos.ui.viewmodel.AnalyticsViewModel
 import com.lopezapp.movilpos.ui.viewmodel.CustomerViewModel
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
@@ -162,7 +166,8 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToSuppliers = { backStack.add(SuppliersRoute) },
                                         onNavigateToCustomers = { backStack.add(CustomersRoute) },
                                         onNavigateToSettings = { backStack.add(SettingsRoute) },
-                                        onNavigateToDteReports = { backStack.add(DteReportsRoute) }
+                                        onNavigateToDteReports = { backStack.add(DteReportsRoute) },
+                                        onNavigateToAnalytics = { backStack.add(AnalyticsRoute) }
                                     )
                                 }
                                 is InventoryRoute -> NavEntry(key) {
@@ -171,6 +176,16 @@ class MainActivity : ComponentActivity() {
                                     )
                                     InventoryScreen(
                                         viewModel = inventoryViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is AnalyticsRoute -> NavEntry(key) {
+                                    val analyticsViewModel: AnalyticsViewModel = viewModel(
+                                        factory = AnalyticsViewModel.Factory(appRepository)
+                                    )
+                                    AnalyticsScreen(
+                                        viewModel = analyticsViewModel,
                                         settingsViewModel = settingsViewModel,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
@@ -190,6 +205,10 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToReceipt = { saleId ->
                                             backStack.removeLastOrNull()
                                             backStack.add(POSTicketReceiptKey(saleId))
+                                        },
+                                        onNavigateToSettings = {
+                                            backStack.removeLastOrNull()
+                                            backStack.add(SettingsElectronicBillingKey)
                                         }
                                     )
                                 }
@@ -252,7 +271,8 @@ class MainActivity : ComponentActivity() {
                                         saleId = key.saleId,
                                         salesViewModel = salesViewModel,
                                         settingsViewModel = settingsViewModel,
-                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                        onNavigateUp = { backStack.removeLastOrNull() },
+                                        onNavigateToDteDetail = { saleId -> backStack.add(DteDetailRoute(saleId)) }
                                     )
                                 }
                                 is QuotationsRoute -> NavEntry(key) {
@@ -508,6 +528,7 @@ fun HomeScreen(
     onNavigateToCustomers: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToDteReports: () -> Unit,
+    onNavigateToAnalytics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyVerticalGrid(
@@ -517,6 +538,13 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier.fillMaxSize()
     ) {
+        item {
+            MenuCard(
+                title = "Estadísticas",
+                icon = Icons.Rounded.Analytics,
+                onClick = onNavigateToAnalytics
+            )
+        }
         item {
             MenuCard(
                 title = "Inventory",

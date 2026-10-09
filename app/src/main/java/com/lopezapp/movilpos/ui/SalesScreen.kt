@@ -27,16 +27,21 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.FilterAltOff
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -48,11 +53,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
@@ -69,6 +77,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.Sale
@@ -404,7 +413,22 @@ fun SaleCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                InvoiceTypeBadge(invoiceType = sale.invoiceType)
+                if (sale.isVoided) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "DTE Invalidado",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                } else {
+                    InvoiceTypeBadge(invoiceType = sale.invoiceType)
+                }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -539,10 +563,12 @@ fun SaleReadOnlyView(
     salesViewModel: SalesViewModel,
     settingsViewModel: SettingsViewModel,
     onNavigateUp: () -> Unit,
+    onNavigateToDteDetail: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val sale = salesViewModel.getSaleById(saleId)
+    val allSales by salesViewModel.allSales.collectAsState()
+    val sale = allSales.find { it.id == saleId } ?: salesViewModel.getSaleById(saleId)
 
     val allCustomers by salesViewModel.allCustomers.collectAsState()
     val customer = remember(sale, allCustomers) { allCustomers.find { it.id == sale?.customerId } }
@@ -553,6 +579,10 @@ fun SaleReadOnlyView(
     val currencySymbol = settingsUiState.currencySymbol
     val defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces
     val allowExtraDecimals = settingsUiState.allowExtraDecimals
+
+    val isDteInvalidating by salesViewModel.isDteInvalidating.collectAsState()
+    val invalidationMessage by salesViewModel.dteInvalidationStatusMessage.collectAsState()
+    val invalidationError by salesViewModel.dteInvalidationError.collectAsState()
 
     fun printOrViewTicketPdf() {
         if (sale == null) return
@@ -602,6 +632,70 @@ fun SaleReadOnlyView(
             e.printStackTrace()
             Toast.makeText(context, "Error al generar Factura PDF: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    if (isDteInvalidating) {
+        Dialog(onDismissRequest = { }) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(invalidationMessage, textAlign = TextAlign.Center)
+                }
+            }
+        }
+    }
+
+    if (invalidationError != null) {
+        AlertDialog(
+            onDismissRequest = { salesViewModel.clearDteInvalidationError() },
+            title = { Text("Error al Anular") },
+            text = { Text(invalidationError ?: "") },
+            confirmButton = {
+                TextButton(onClick = { salesViewModel.clearDteInvalidationError() }) {
+                    Text("Aceptar")
+                }
+            }
+        )
+    }
+
+    if (isDteInvalidating) {
+        Dialog(onDismissRequest = { }) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(invalidationMessage, textAlign = TextAlign.Center)
+                }
+            }
+        }
+    }
+
+    if (invalidationError != null) {
+        AlertDialog(
+            onDismissRequest = { salesViewModel.clearDteInvalidationError() },
+            title = { Text("Error al Anular") },
+            text = { Text(invalidationError ?: "") },
+            confirmButton = {
+                TextButton(onClick = { salesViewModel.clearDteInvalidationError() }) {
+                    Text("Aceptar")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -684,7 +778,12 @@ fun SaleReadOnlyView(
                 }
 
                 // Facturación Electrónica (DTE - MH)
-                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = if (sale.isVoided) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface
+                    )
+                ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -693,7 +792,7 @@ fun SaleReadOnlyView(
                             text = "Facturación Electrónica (DTE - MH)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = if (sale.isVoided) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.primary
                         )
                         HorizontalDivider()
 
@@ -703,45 +802,50 @@ fun SaleReadOnlyView(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = "Estado MH:",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Surface(
-                                    color = Color(0xFFE8F5E9),
-                                    contentColor = Color(0xFF2E7D32),
-                                    shape = RoundedCornerShape(8.dp)
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Procesado (Aprobado)",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        text = "Estado MH:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (sale.isVoided) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    val statusText = when {
+                                        sale.isVoided -> "Invalidado"
+                                        sale.contingencyMode -> "Contingencia"
+                                        else -> "Procesado (Aprobado)"
+                                    }
+                                    val statusColor = when {
+                                        sale.isVoided -> MaterialTheme.colorScheme.error
+                                        sale.contingencyMode -> Color(0xFFFFA000)
+                                        else -> Color(0xFFE8F5E9)
+                                    }
+                                    val contentColor = when {
+                                        sale.isVoided -> MaterialTheme.colorScheme.onError
+                                        sale.contingencyMode -> Color.White
+                                        else -> Color(0xFF2E7D32)
+                                    }
+                                    Surface(
+                                        color = statusColor,
+                                        contentColor = contentColor,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = statusText,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { onNavigateToDteDetail(sale.id) }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                        contentDescription = "Ver Detalles del DTE"
                                     )
                                 }
                             }
-
-                            val dteTypeDesc = when (sale.dteType) {
-                                "01" -> "01 (Consumidor Final)"
-                                "03" -> "03 (Crédito Fiscal)"
-                                else -> sale.dteType ?: (if (sale.invoiceType == InvoiceType.CREDITO_FISCAL) "03 (Crédito Fiscal)" else "01 (Consumidor Final)")
-                            }
-                            Text(
-                                text = "Tipo de DTE: $dteTypeDesc",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = "Código de Generación: ${sale.dteGenerationCode ?: "N/A"}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = "Sello de Recepción: ${sale.dteReceptionSeal ?: "N/A"}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = "Número de Control: ${sale.dteControlNumber ?: "N/A"}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
                         } else {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),

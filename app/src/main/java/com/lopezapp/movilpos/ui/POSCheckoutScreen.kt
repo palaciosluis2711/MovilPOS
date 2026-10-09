@@ -28,6 +28,8 @@ import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,6 +49,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -84,11 +87,13 @@ fun POSCheckoutScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
     settingsViewModel: SettingsViewModel? = null,
-    onNavigateToReceipt: (String) -> Unit = {}
+    onNavigateToReceipt: (String) -> Unit = {},
+    onNavigateToSettings: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isDteEmitting by viewModel.isDteEmitting.collectAsState()
     val dteStatusMessage by viewModel.dteStatusMessage.collectAsState()
+    val dteEmissionError by viewModel.dteEmissionError.collectAsState()
     val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
         ?: SettingsUiState()
     val currencySymbol = settingsUiState.currencySymbol
@@ -633,5 +638,49 @@ fun POSCheckoutScreen(
                 }
             }
         }
+    }
+
+    dteEmissionError?.let { errorMsg ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearDteEmissionError() },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("Error de Emisión DTE")
+                }
+            },
+            text = {
+                Text("$errorMsg\n\n¿Qué desea hacer?")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.selectInvoiceType(InvoiceType.TICKET)
+                        viewModel.clearDteEmissionError()
+                    }
+                ) {
+                    Text("Emitir Ticket Local")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        viewModel.clearDteEmissionError()
+                        onNavigateToSettings()
+                    }
+                ) {
+                    Text("Corregir en Ajustes")
+                }
+            },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            )
+        )
     }
 }

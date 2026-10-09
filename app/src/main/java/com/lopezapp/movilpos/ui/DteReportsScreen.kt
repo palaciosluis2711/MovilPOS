@@ -25,15 +25,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -59,6 +64,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.Sale
@@ -82,6 +88,8 @@ fun DteReportsListScreen(
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     val issuedDtes by viewModel.issuedDtes.collectAsState()
+    val contingencyDtes by viewModel.contingencyDtes.collectAsState()
+    val context = LocalContext.current
 
     val settingsUiState by settingsViewModel.uiState.collectAsState()
     val currencySymbol = settingsUiState.currencySymbol
@@ -123,6 +131,27 @@ fun DteReportsListScreen(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             )
+
+            if (contingencyDtes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        val result = viewModel.retryContingencyTransmissions()
+                        val count = result.getOrDefault(0)
+                        Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE65100),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Sync, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Retransmitir DTEs de Contingencia (${contingencyDtes.size})")
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -198,17 +227,45 @@ fun DteReportItemCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Surface(
-                    color = Color(0xFFE8F5E9),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = "Procesado (Aprobado)",
-                        color = Color(0xFF2E7D32),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                if (sale.contingencyMode) {
+                    Surface(
+                        color = Color(0xFFFFF3E0),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Contingencia (Pendiente de Transmisión)",
+                            color = Color(0xFFE65100),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                } else if (sale.isVoided) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "DTE Invalidado",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                } else {
+                    Surface(
+                        color = Color(0xFFE8F5E9),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Procesado (Aprobado)",
+                            color = Color(0xFF2E7D32),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
 
@@ -259,10 +316,15 @@ fun DteDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val sale = remember(saleId) { viewModel.getSaleById(saleId) }
+    val issuedDtes by viewModel.issuedDtes.collectAsState()
+    val sale = issuedDtes.find { it.id == saleId }
     val businessInfo by viewModel.businessInfo.collectAsState()
     val electronicBillingConfig by viewModel.electronicBillingConfig.collectAsState()
     val customers by viewModel.customers.collectAsState()
+
+    val isDteInvalidating by viewModel.isDteInvalidating.collectAsState()
+    val invalidationMessage by viewModel.dteInvalidationStatusMessage.collectAsState()
+    val invalidationError by viewModel.dteInvalidationError.collectAsState()
     val customer = remember(sale, customers) { customers.find { it.id == sale?.customerId } }
 
     val settingsUiState by settingsViewModel.uiState.collectAsState()
@@ -274,6 +336,88 @@ fun DteDetailScreen(
 
     var showJsonDialog by remember { mutableStateOf(false) }
     var generatedJsonText by remember { mutableStateOf("") }
+    var showVoidDialog by remember { mutableStateOf(false) }
+    var voidReasonInput by remember { mutableStateOf("") }
+
+    if (showVoidDialog) {
+        AlertDialog(
+            onDismissRequest = { showVoidDialog = false },
+            title = {
+                Text(
+                    text = "Anular DTE ante Ministerio de Hacienda",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Escriba el motivo de la anulación del DTE:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedTextField(
+                        value = voidReasonInput,
+                        onValueChange = { voidReasonInput = it },
+                        label = { Text("Motivo de anulación") },
+                        placeholder = { Text("Ej. Error en datos del cliente / Devolución") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (voidReasonInput.isNotBlank()) {
+                            viewModel.voidSaleDte(saleId, voidReasonInput.trim(), context)
+                            showVoidDialog = false
+                        } else {
+                            Toast.makeText(context, "Por favor ingrese el motivo", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Confirmar Anulación")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showVoidDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (isDteInvalidating) {
+        Dialog(onDismissRequest = { }) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(invalidationMessage, textAlign = TextAlign.Center)
+                }
+            }
+        }
+    }
+
+    if (invalidationError != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearDteInvalidationError() },
+            title = { Text("Error al Anular") },
+            text = { Text(invalidationError ?: "") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearDteInvalidationError() }) {
+                    Text("Aceptar")
+                }
+            }
+        )
+    }
 
     if (showJsonDialog) {
         AlertDialog(
@@ -407,7 +551,9 @@ fun DteDetailScreen(
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = if (sale.isVoided) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
+                    )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
@@ -418,27 +564,72 @@ fun DteDetailScreen(
                             Text(
                                 text = "Estado MH",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (sale.isVoided) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Surface(
-                                color = Color(0xFFE8F5E9),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = "Procesado (Aprobado)",
-                                    color = Color(0xFF2E7D32),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
+                            if (sale.contingencyMode) {
+                                Surface(
+                                    color = Color(0xFFFFF3E0),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = "Contingencia (Pendiente de Transmisión)",
+                                        color = Color(0xFFE65100),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            } else if (sale.isVoided) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.error,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = "DTE Invalidado",
+                                        color = MaterialTheme.colorScheme.onError,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            } else {
+                                Surface(
+                                    color = Color(0xFFE8F5E9),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = "Procesado (Aprobado)",
+                                        color = Color(0xFF2E7D32),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = sale.dteControlNumber ?: "N/A",
                             style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = if (sale.isVoided) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
                         )
+                        if (sale.isVoided) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Motivo: ${sale.voidReason ?: "N/A"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            sale.voidedAtMillis?.let { timestamp ->
+                                Text(
+                                    text = "Fecha de anulación: ${dateFormat.format(Date(timestamp))}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -516,6 +707,39 @@ fun DteDetailScreen(
                         Icon(imageVector = Icons.Rounded.Code, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Ver JSON")
+                    }
+                }
+
+                if (sale.contingencyMode) {
+                    Button(
+                        onClick = {
+                            val result = viewModel.retryContingencyTransmissions()
+                            val count = result.getOrDefault(0)
+                            Toast.makeText(context, "Retransmitidas $count facturas de contingencia", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE65100),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Sync, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Retransmitir DTEs de Contingencia")
+                    }
+                }
+
+                if (sale.isDteIssued && !sale.isVoided) {
+                    Button(
+                        onClick = { showVoidDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Cancel, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Anular DTE")
                     }
                 }
             }
