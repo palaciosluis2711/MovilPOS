@@ -1030,7 +1030,7 @@ class POSViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         val updatedService = repository.products.value.first { it.id == serviceProduct.id }
-        assertEquals(0, updatedService.stock)
+        assertEquals(9999, updatedService.stock)
     }
 
     @Test

@@ -39,6 +39,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 data class POSState(
     val products: List<Product> = emptyList(),
@@ -470,13 +471,19 @@ class POSViewModel(
 
                 _cartItems.update { currentCart ->
                     var updatedCart = currentCart
+                    val existingItem = currentCart.find { 
+                        it.product.id == product.id && it.parentProductId == product.id && it.linkedGroupId != null && arePricesEqual(it.unitPriceOverride, serviceRemainderPrice)
+                    }
+                    val groupId = existingItem?.linkedGroupId ?: UUID.randomUUID().toString()
                     for ((bundleItem, itemProduct) in itemsWithProducts) {
                         updatedCart = addCartItemToCart(
                             cart = updatedCart,
                             product = itemProduct,
                             quantityToAdd = bundleItem.quantity,
                             unitPriceOverride = null,
-                            isBundleDiscounted = false
+                            isBundleDiscounted = false,
+                            linkedGroupId = groupId,
+                            parentProductId = product.id
                         )
                     }
                     updatedCart = addCartItemToCart(
@@ -484,7 +491,9 @@ class POSViewModel(
                         product = product,
                         quantityToAdd = 1,
                         unitPriceOverride = serviceRemainderPrice,
-                        isBundleDiscounted = false
+                        isBundleDiscounted = false,
+                        linkedGroupId = groupId,
+                        parentProductId = product.id
                     )
                     updatedCart
                 }
@@ -515,13 +524,17 @@ class POSViewModel(
                 val ratio = product.price / originalTotal
                 _cartItems.update { currentCart ->
                     var updatedCart = currentCart
+                    val existingBundleItems = currentCart.filter { it.parentProductId == product.id && it.linkedGroupId != null }
+                    val groupId = existingBundleItems.firstOrNull()?.linkedGroupId ?: UUID.randomUUID().toString()
                     for ((bundleItem, itemProduct) in itemsWithProducts) {
                         updatedCart = addCartItemToCart(
                             cart = updatedCart,
                             product = itemProduct,
                             quantityToAdd = bundleItem.quantity,
                             unitPriceOverride = (itemProduct.price * ratio).roundToTwoDecimals(),
-                            isBundleDiscounted = true
+                            isBundleDiscounted = true,
+                            linkedGroupId = groupId,
+                            parentProductId = product.id
                         )
                     }
                     updatedCart
@@ -529,13 +542,17 @@ class POSViewModel(
             } else {
                 _cartItems.update { currentCart ->
                     var updatedCart = currentCart
+                    val existingBundleItems = currentCart.filter { it.parentProductId == product.id && it.linkedGroupId != null }
+                    val groupId = existingBundleItems.firstOrNull()?.linkedGroupId ?: UUID.randomUUID().toString()
                     for ((bundleItem, itemProduct) in itemsWithProducts) {
                         updatedCart = addCartItemToCart(
                             cart = updatedCart,
                             product = itemProduct,
                             quantityToAdd = bundleItem.quantity,
                             unitPriceOverride = null,
-                            isBundleDiscounted = false
+                            isBundleDiscounted = false,
+                            linkedGroupId = groupId,
+                            parentProductId = product.id
                         )
                     }
                     updatedCart
@@ -560,8 +577,22 @@ class POSViewModel(
         _cartItems.update { currentCart ->
             val index = findMatchingIndex(currentCart, cartItem)
             if (index != -1) {
-                currentCart.mapIndexed { i, item ->
-                    if (i == index) item.copy(quantity = item.quantity + 1) else item
+                val matchedItem = currentCart[index]
+                if (matchedItem.linkedGroupId != null) {
+                    // It's part of a linked group. We need to increment the whole group proportionally.
+                    val oldQty = matchedItem.quantity
+                    currentCart.map { item ->
+                        if (item.linkedGroupId == matchedItem.linkedGroupId) {
+                            val baseQtyToAdd = maxOf(1, item.quantity / oldQty)
+                            item.copy(quantity = item.quantity + baseQtyToAdd)
+                        } else {
+                            item
+                        }
+                    }
+                } else {
+                    currentCart.mapIndexed { i, item ->
+                        if (i == index) item.copy(quantity = item.quantity + 1) else item
+                    }
                 }
             } else {
                 addCartItemToCart(
@@ -571,11 +602,50 @@ class POSViewModel(
                     unitPriceOverride = if (cartItem.isRuleDiscounted) cartItem.unitPriceOverride else cartItem.unitPriceOverride,
                     isBundleDiscounted = cartItem.isBundleDiscounted,
                     appliedRuleId = cartItem.appliedRuleId,
-                    appliedRuleName = cartItem.appliedRuleName
+                    appliedRuleName = cartItem.appliedRuleName,
+                    linkedGroupId = cartItem.linkedGroupId,
+                    parentProductId = cartItem.parentProductId
                 )
             }
         }
     }
+
+    fun updateCartItemQuantity(cartItem: CartItem, newQuantity: Int) {
+        if (newQuantity <= 0) {
+            deleteFromCart(cartItem)
+            return
+        }
+
+        _cartItems.update { currentCart ->
+            val index = findMatchingIndex(currentCart, cartItem)
+            if (index != -1) {
+                val matchedItem = currentCart[index]
+                if (matchedItem.linkedGroupId != null) {
+                    val oldQty = matchedItem.quantity
+                    if (oldQty == newQuantity) return@update currentCart
+                    
+                    currentCart.map { item ->
+                        if (item.linkedGroupId == matchedItem.linkedGroupId) {
+                            val baseQtyPerUnit = item.quantity.toDouble() / oldQty.toDouble()
+                            val newGroupItemQty = maxOf(1, (baseQtyPerUnit * newQuantity).roundToInt())
+                            item.copy(quantity = newGroupItemQty)
+                        } else {
+                            item
+                        }
+                    }
+                } else {
+                    currentCart.mapIndexed { i, item ->
+                        if (i == index) item.copy(quantity = newQuantity) else item
+                    }
+                }
+            } else {
+                currentCart
+            }
+        }
+        checkAndDeactivatePriceRule()
+        pruneCartSelection()
+    }
+
 
     fun pruneCartSelection() {
         val validIds = _cartItems.value.map { it.id }.toSet()
@@ -588,13 +658,30 @@ class POSViewModel(
         _cartItems.update { currentCart ->
             val index = findMatchingIndex(currentCart, cartItem)
             if (index != -1) {
-                val item = currentCart[index]
-                if (item.quantity > 1) {
-                    currentCart.mapIndexed { i, current ->
-                        if (i == index) current.copy(quantity = current.quantity - 1) else current
+                val matchedItem = currentCart[index]
+                if (matchedItem.linkedGroupId != null) {
+                    val oldQty = matchedItem.quantity
+                    if (oldQty > 1) {
+                        currentCart.map { item ->
+                            if (item.linkedGroupId == matchedItem.linkedGroupId) {
+                                val baseQtyToSubtract = maxOf(1, item.quantity / oldQty)
+                                val newQty = item.quantity - baseQtyToSubtract
+                                if (newQty > 0) item.copy(quantity = newQty) else null
+                            } else {
+                                item
+                            }
+                        }.filterNotNull()
+                    } else {
+                        currentCart.filter { it.linkedGroupId != matchedItem.linkedGroupId }
                     }
                 } else {
-                    currentCart.filterIndexed { i, _ -> i != index }
+                    if (matchedItem.quantity > 1) {
+                        currentCart.mapIndexed { i, current ->
+                            if (i == index) current.copy(quantity = current.quantity - 1) else current
+                        }
+                    } else {
+                        currentCart.filterIndexed { i, _ -> i != index }
+                    }
                 }
             } else {
                 currentCart
@@ -608,7 +695,12 @@ class POSViewModel(
         _cartItems.update { currentCart ->
             val index = findMatchingIndex(currentCart, cartItem)
             if (index != -1) {
-                currentCart.filterIndexed { i, _ -> i != index }
+                val matchedItem = currentCart[index]
+                if (matchedItem.linkedGroupId != null) {
+                    currentCart.filter { it.linkedGroupId != matchedItem.linkedGroupId }
+                } else {
+                    currentCart.filterIndexed { i, _ -> i != index }
+                }
             } else {
                 currentCart.filterNot { it.product.id == cartItem.product.id }
             }
@@ -621,16 +713,33 @@ class POSViewModel(
         _cartItems.update { currentCart ->
             val existingItem = currentCart.find { it.product.id == product.id }
             if (existingItem != null) {
-                if (existingItem.quantity > 1) {
-                    currentCart.map {
-                        if (it.product.id == product.id) {
-                            it.copy(quantity = it.quantity - 1)
-                        } else {
-                            it
-                        }
+                if (existingItem.linkedGroupId != null) {
+                    val oldQty = existingItem.quantity
+                    if (oldQty > 1) {
+                        currentCart.map { item ->
+                            if (item.linkedGroupId == existingItem.linkedGroupId) {
+                                val baseQtyToSubtract = maxOf(1, item.quantity / oldQty)
+                                val newQty = item.quantity - baseQtyToSubtract
+                                if (newQty > 0) item.copy(quantity = newQty) else null
+                            } else {
+                                item
+                            }
+                        }.filterNotNull()
+                    } else {
+                        currentCart.filter { it.linkedGroupId != existingItem.linkedGroupId }
                     }
                 } else {
-                    currentCart.filter { it.product.id != product.id }
+                    if (existingItem.quantity > 1) {
+                        currentCart.map {
+                            if (it.product.id == product.id) {
+                                it.copy(quantity = it.quantity - 1)
+                            } else {
+                                it
+                            }
+                        }
+                    } else {
+                        currentCart.filter { it.product.id != product.id }
+                    }
                 }
             } else {
                 currentCart
@@ -642,7 +751,12 @@ class POSViewModel(
 
     fun deleteFromCart(product: Product) {
         _cartItems.update { currentCart ->
-            currentCart.filterNot { it.product.id == product.id }
+            val existingItem = currentCart.find { it.product.id == product.id }
+            if (existingItem != null && existingItem.linkedGroupId != null) {
+                currentCart.filter { it.linkedGroupId != existingItem.linkedGroupId }
+            } else {
+                currentCart.filterNot { it.product.id == product.id }
+            }
         }
         checkAndDeactivatePriceRule()
         pruneCartSelection()
@@ -661,6 +775,7 @@ class POSViewModel(
                 it.product.id == cartItem.product.id &&
                 it.isBundleDiscounted == cartItem.isBundleDiscounted &&
                 it.appliedRuleId == cartItem.appliedRuleId &&
+                it.linkedGroupId == cartItem.linkedGroupId &&
                 (cartItem.isRuleDiscounted || arePricesEqual(it.unitPriceOverride, cartItem.unitPriceOverride))
             )
         }
@@ -673,13 +788,17 @@ class POSViewModel(
         unitPriceOverride: Double?,
         isBundleDiscounted: Boolean,
         appliedRuleId: String? = null,
-        appliedRuleName: String? = null
+        appliedRuleName: String? = null,
+        linkedGroupId: String? = null,
+        parentProductId: String? = null
     ): List<CartItem> {
         val isRuleDiscounted = appliedRuleId != null
         val existingIndex = cart.indexOfFirst { item ->
             item.product.id == product.id &&
             item.isBundleDiscounted == isBundleDiscounted &&
             item.appliedRuleId == appliedRuleId &&
+            item.linkedGroupId == linkedGroupId &&
+            item.parentProductId == parentProductId &&
             arePricesEqual(item.unitPriceOverride, unitPriceOverride)
         }
 
@@ -702,7 +821,9 @@ class POSViewModel(
                 isBundleDiscounted = isBundleDiscounted,
                 isRuleDiscounted = isRuleDiscounted,
                 appliedRuleId = appliedRuleId,
-                appliedRuleName = appliedRuleName
+                appliedRuleName = appliedRuleName,
+                linkedGroupId = linkedGroupId,
+                parentProductId = parentProductId
             )
         }
     }

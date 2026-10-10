@@ -536,7 +536,7 @@ fun ProductListScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(text = product.name, style = MaterialTheme.typography.titleMedium)
                                     Text(
-                                        text = if (product.isService) "Servicio" else "Stock: ${product.stock}",
+                                        text = if (product.isService && product.bundleItems.isEmpty()) "Stock: Ilimitado" else "Stock: ${product.stock}",
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
@@ -1218,19 +1218,25 @@ fun ProductReadOnlyView(
                         valueColor = profitColor
                     )
 
-                    if (!product.isService) {
+                    if (!product.isService || product.bundleItems.isNotEmpty()) {
                         InfoRow(
                             icon = Icons.Default.Warning,
                             label = "Cantidad alerta",
                             value = product.alertQuantity.toString()
                         )
-
-                        InfoRow(
-                            icon = Icons.Default.Inventory2,
-                            label = "Cantidad en inventario",
-                            value = product.stock.toString()
-                        )
                     }
+
+                    val stockDisplayValue = if (product.isService && product.bundleItems.isEmpty()) {
+                        "Ilimitado"
+                    } else {
+                        product.stock.toString()
+                    }
+
+                    InfoRow(
+                        icon = Icons.Default.Inventory2,
+                        label = if (product.isBundle) "Stock calculado (Bundle)" else if (product.isService) "Stock calculado (Servicio)" else "Cantidad en inventario",
+                        value = stockDisplayValue
+                    )
 
                     if (!product.isBundle) {
                         val appliedTaxes = taxes.filter { product.appliedTaxIds.contains(it.id) }
@@ -2141,33 +2147,63 @@ fun ProductEditForm(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            if (productId != null && !isService) {
-                OutlinedTextField(
-                    value = stockStr,
-                    onValueChange = { stockStr = it },
-                    label = { Text("Cantidad en Inventario") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            if (!isBundle && !isService) {
+                if (productId != null) {
+                    OutlinedTextField(
+                        value = stockStr,
+                        onValueChange = { stockStr = it },
+                        label = { Text("Cantidad en Inventario") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Nota: Modificar el stock manualmente directamente aquí no es lo ideal. Se recomienda registrar una Compra en el menú de Compras para reabastecer el inventario.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Nota: Modificar el stock manualmente directamente aquí no es lo ideal. Se recomienda registrar una Compra en el menú de Compras para reabastecer el inventario.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "El stock de bundles y servicios se calcula automáticamente en base a sus insumos.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -2300,7 +2336,7 @@ fun ProductEditForm(
                                     cost = cost,
                                     price = price,
                                     alertQuantity = finalAlertQuantity,
-                                    stock = if (isService) 0 else (stockStr.toIntOrNull() ?: product.stock),
+                                    stock = if (isService && bundleItems.isEmpty()) 9999 else if (isBundle || isService) 0 else (stockStr.toIntOrNull() ?: product.stock),
                                     imageUri = imageUri,
                                     appliedTaxIds = selectedTaxIds.toList(),
                                     isTaxIncludedInPrice = isTaxIncludedInPrice,

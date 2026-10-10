@@ -106,9 +106,11 @@ import com.lopezapp.movilpos.util.DuiVisualTransformation
 import com.lopezapp.movilpos.util.ElSalvadorCommercialActivities
 import com.lopezapp.movilpos.util.ElSalvadorGeography
 import com.lopezapp.movilpos.util.NitVisualTransformation
+import com.lopezapp.movilpos.util.NrcVisualTransformation
 import com.lopezapp.movilpos.util.PhoneVisualTransformation
 import com.lopezapp.movilpos.util.formatDui
 import com.lopezapp.movilpos.util.formatNit
+import com.lopezapp.movilpos.util.formatNrc
 import com.lopezapp.movilpos.util.formatPhone
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
@@ -666,7 +668,9 @@ fun CustomerEditForm(
     var documentNumber by remember(existingCustomer) {
         mutableStateOf(existingCustomer?.documentNumber?.filter { it.isDigit() }?.take(if (documentType == DocumentType.NIT) 14 else 9) ?: "")
     }
-    var nrc by remember(existingCustomer) { mutableStateOf(existingCustomer?.nrc ?: "") }
+    var nrc by remember(existingCustomer) {
+        mutableStateOf(existingCustomer?.nrc?.filter { it.isDigit() }?.take(7) ?: "")
+    }
     var phone by remember(existingCustomer) {
         mutableStateOf(existingCustomer?.phone?.filter { it.isDigit() }?.take(8) ?: "")
     }
@@ -717,7 +721,7 @@ fun CustomerEditForm(
                     name = trimmedName,
                     documentType = documentType,
                     documentNumber = formattedDocNum,
-                    nrc = if (documentType == DocumentType.NIT) nrc.ifBlank { null } else null,
+                    nrc = if (documentType == DocumentType.NIT) formatNrc(nrc).ifBlank { null } else null,
                     phone = formattedPhone.ifBlank { null },
                     email = email.ifBlank { null },
                     country = country.ifBlank { "El Salvador" },
@@ -736,7 +740,7 @@ fun CustomerEditForm(
                     name = trimmedName,
                     documentType = documentType,
                     documentNumber = formattedDocNum,
-                    nrc = if (documentType == DocumentType.NIT) nrc.ifBlank { null } else null,
+                    nrc = if (documentType == DocumentType.NIT) formatNrc(nrc).ifBlank { null } else null,
                     phone = formattedPhone.ifBlank { null },
                     email = email.ifBlank { null },
                     country = country.ifBlank { "El Salvador" },
@@ -883,12 +887,16 @@ fun CustomerEditForm(
                     // NRC
                     OutlinedTextField(
                         value = nrc,
-                        onValueChange = { nrc = it },
+                        onValueChange = { input ->
+                            nrc = input.filter { it.isDigit() }.take(7)
+                        },
+                        visualTransformation = NrcVisualTransformation(),
                         label = { Text("NRC (Número de Registro de Contribuyente)") },
                         placeholder = { Text("Ej. 123456-7") },
                         leadingIcon = {
                             Icon(imageVector = Icons.Default.Business, contentDescription = null)
                         },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )

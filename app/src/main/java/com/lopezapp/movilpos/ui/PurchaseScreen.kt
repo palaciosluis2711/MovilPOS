@@ -700,10 +700,11 @@ fun PurchaseEditForm(
     var productDropdownExpanded by remember { mutableStateOf(false) }
 
     val filteredProducts = remember(allProducts, productSearchText) {
+        val nonServiceProducts = allProducts.filter { !it.isService }
         if (productSearchText.isBlank()) {
-            allProducts
+            nonServiceProducts
         } else {
-            allProducts.filter { it.name.contains(productSearchText, ignoreCase = true) }
+            nonServiceProducts.filter { it.name.contains(productSearchText, ignoreCase = true) }
         }
     }
 

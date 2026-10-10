@@ -3,6 +3,8 @@ package com.lopezapp.movilpos.ui
 import com.lopezapp.movilpos.ui.components.CompactSearchBar
 
 import android.net.Uri
+import com.lopezapp.movilpos.util.PhoneVisualTransformation
+import com.lopezapp.movilpos.util.formatPhone
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -530,7 +532,9 @@ fun SupplierEditForm(
     var logoUri by remember(existingSupplier) { mutableStateOf(existingSupplier?.logoUri ?: "") }
     var address by remember(existingSupplier) { mutableStateOf(existingSupplier?.address ?: "") }
     var email by remember(existingSupplier) { mutableStateOf(existingSupplier?.email ?: "") }
-    var phone by remember(existingSupplier) { mutableStateOf(existingSupplier?.phone ?: "") }
+    var phone by remember(existingSupplier) {
+        mutableStateOf(existingSupplier?.phone?.filter { it.isDigit() }?.take(8) ?: "")
+    }
 
     var isNameError by remember { mutableStateOf(false) }
 
@@ -563,13 +567,14 @@ fun SupplierEditForm(
                             if (trimmedName.isEmpty()) {
                                 isNameError = true
                             } else {
+                                val formattedPhone = formatPhone(phone)
                                 if (existingSupplier == null) {
                                     viewModel.addSupplier(
                                         name = trimmedName,
                                         logoUri = logoUri.ifBlank { null },
                                         address = address.ifBlank { null },
                                         email = email.ifBlank { null },
-                                        phone = phone.ifBlank { null }
+                                        phone = formattedPhone.ifBlank { null }
                                     )
                                 } else {
                                     val updated = existingSupplier.copy(
@@ -577,7 +582,7 @@ fun SupplierEditForm(
                                         logoUri = logoUri.ifBlank { null },
                                         address = address.ifBlank { null },
                                         email = email.ifBlank { null },
-                                        phone = phone.ifBlank { null }
+                                        phone = formattedPhone.ifBlank { null }
                                     )
                                     viewModel.updateSupplier(updated)
                                 }
@@ -726,13 +731,16 @@ fun SupplierEditForm(
             // Optional Phone Field
             OutlinedTextField(
                 value = phone,
-                onValueChange = { phone = it },
+                onValueChange = { input ->
+                    phone = input.filter { it.isDigit() }.take(8)
+                },
+                visualTransformation = PhoneVisualTransformation(),
                 label = { Text("Teléfono (opcional)") },
-                placeholder = { Text("+1 800 555 0199") },
+                placeholder = { Text("0000-0000") },
                 leadingIcon = {
                     Icon(imageVector = Icons.Default.Phone, contentDescription = null)
                 },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -745,13 +753,14 @@ fun SupplierEditForm(
                     if (trimmedName.isEmpty()) {
                         isNameError = true
                     } else {
+                        val formattedPhone = formatPhone(phone)
                         if (existingSupplier == null) {
                             viewModel.addSupplier(
                                 name = trimmedName,
                                 logoUri = logoUri.ifBlank { null },
                                 address = address.ifBlank { null },
                                 email = email.ifBlank { null },
-                                phone = phone.ifBlank { null }
+                                phone = formattedPhone.ifBlank { null }
                             )
                         } else {
                             val updated = existingSupplier.copy(
@@ -759,7 +768,7 @@ fun SupplierEditForm(
                                 logoUri = logoUri.ifBlank { null },
                                 address = address.ifBlank { null },
                                 email = email.ifBlank { null },
-                                phone = phone.ifBlank { null }
+                                phone = formattedPhone.ifBlank { null }
                             )
                             viewModel.updateSupplier(updated)
                         }

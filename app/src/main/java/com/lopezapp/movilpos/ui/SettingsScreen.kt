@@ -138,9 +138,11 @@ import com.lopezapp.movilpos.ui.model.AnimationType
 import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import com.lopezapp.movilpos.util.NitVisualTransformation
+import com.lopezapp.movilpos.util.NrcVisualTransformation
 import com.lopezapp.movilpos.util.PhoneVisualTransformation
 import com.lopezapp.movilpos.util.formatCurrency
 import com.lopezapp.movilpos.util.formatNit
+import com.lopezapp.movilpos.util.formatNrc
 import com.lopezapp.movilpos.util.formatPhone
 import com.lopezapp.movilpos.util.sanitizeDecimalTextFieldValue
 import androidx.compose.foundation.BorderStroke
@@ -2194,7 +2196,9 @@ fun SettingsBusinessInfoScreen(
     var nit by remember(uiState.businessInfo) {
         mutableStateOf(uiState.businessInfo.nit.filter { it.isDigit() }.take(14))
     }
-    var nrc by rememberSaveable { mutableStateOf(uiState.businessInfo.nrc) }
+    var nrc by remember(uiState.businessInfo) {
+        mutableStateOf(uiState.businessInfo.nrc.filter { it.isDigit() }.take(7))
+    }
     var address by rememberSaveable { mutableStateOf(uiState.businessInfo.address) }
     var phone by rememberSaveable { mutableStateOf(uiState.businessInfo.phone) }
     var email by rememberSaveable { mutableStateOf(uiState.businessInfo.email) }
@@ -2370,12 +2374,16 @@ fun SettingsBusinessInfoScreen(
 
             OutlinedTextField(
                 value = nrc,
-                onValueChange = { nrc = it },
+                onValueChange = { input ->
+                    nrc = input.filter { it.isDigit() }.take(7)
+                },
+                visualTransformation = NrcVisualTransformation(),
                 label = { Text("NRC") },
                 placeholder = { Text("Ej. 123456-7") },
                 leadingIcon = {
                     Icon(imageVector = Icons.Default.Business, contentDescription = null)
                 },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -2441,7 +2449,7 @@ fun SettingsBusinessInfoScreen(
                         val updatedInfo = BusinessInfo(
                             name = name.trim(),
                             nit = formatNit(nit),
-                            nrc = nrc.trim(),
+                            nrc = formatNrc(nrc),
                             address = address.trim(),
                             phone = phone,
                             email = email.trim(),

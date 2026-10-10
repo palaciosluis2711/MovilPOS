@@ -12,6 +12,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -43,6 +47,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -378,6 +383,7 @@ fun POSScreen(
                         onSelectAll = { viewModel.selectAll() },
                         onClearSelection = { viewModel.clearSelection() },
                         onCheckout = handleCheckout,
+                        onQuantityManuallyChanged = { item, newQty -> viewModel.updateCartItemQuantity(item, newQty) },
                         currencySymbol = currencySymbol,
                         defaultDecimalPlaces = defaultDecimalPlaces,
                         allowExtraDecimals = allowExtraDecimals,
@@ -413,6 +419,7 @@ fun POSScreen(
                         onSelectAll = { viewModel.selectAll() },
                         onClearSelection = { viewModel.clearSelection() },
                         onCheckout = handleCheckout,
+                        onQuantityManuallyChanged = { item, newQty -> viewModel.updateCartItemQuantity(item, newQty) },
                         currencySymbol = currencySymbol,
                         defaultDecimalPlaces = defaultDecimalPlaces,
                         allowExtraDecimals = allowExtraDecimals,
@@ -845,6 +852,7 @@ fun BottomCartSheet(
     onSelectAll: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     onCheckout: () -> Unit,
+    onQuantityManuallyChanged: (CartItem, Int) -> Unit = { _, _ -> },
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true,
@@ -1056,6 +1064,7 @@ fun BottomCartSheet(
                                     onAddClick = { onAddClick(item) },
                                     onRemoveClick = { onRemoveClick(item) },
                                     onDeleteClick = { onDeleteClick(item) },
+                                    onQuantityManuallyChanged = { newQty -> onQuantityManuallyChanged(item, newQty) },
                                     currencySymbol = currencySymbol,
                                     defaultDecimalPlaces = defaultDecimalPlaces,
                                     allowExtraDecimals = allowExtraDecimals
@@ -1120,6 +1129,7 @@ fun CartSection(
     onSelectAll: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     onCheckout: () -> Unit,
+    onQuantityManuallyChanged: (CartItem, Int) -> Unit = { _, _ -> },
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true,
@@ -1221,6 +1231,7 @@ fun CartSection(
                         onAddClick = { onAddClick(item) },
                         onRemoveClick = { onRemoveClick(item) },
                         onDeleteClick = { onDeleteClick(item) },
+                        onQuantityManuallyChanged = { newQty -> onQuantityManuallyChanged(item, newQty) },
                         currencySymbol = currencySymbol,
                         defaultDecimalPlaces = defaultDecimalPlaces,
                         allowExtraDecimals = allowExtraDecimals
@@ -1272,6 +1283,7 @@ fun CartItemRow(
     onAddClick: () -> Unit,
     onRemoveClick: () -> Unit,
     onDeleteClick: () -> Unit = {},
+    onQuantityManuallyChanged: (Int) -> Unit = {},
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true
@@ -1359,12 +1371,37 @@ fun CartItemRow(
                 ) {
                     Icon(Icons.Default.Remove, contentDescription = "Disminuir", modifier = Modifier.size(16.dp))
                 }
-                Text(
-                    text = "${item.quantity}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 4.dp)
+                
+                var textValue by remember(item.quantity) { mutableStateOf(item.quantity.toString()) }
+
+                BasicTextField(
+                    value = textValue,
+                    onValueChange = { newValue ->
+                        val digits = newValue.filter { it.isDigit() }
+                        textValue = digits
+                        val newQty = digits.toIntOrNull()
+                        if (newQty != null && newQty > 0) {
+                            onQuantityManuallyChanged(newQty)
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    textStyle = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    ),
+                    modifier = Modifier
+                        .widthIn(min = 32.dp, max = 64.dp)
+                        .padding(horizontal = 4.dp)
+                        .onFocusChanged { focusState ->
+                            if (!focusState.isFocused && textValue.isBlank()) {
+                                textValue = "1"
+                                onQuantityManuallyChanged(1)
+                            }
+                        },
+                    singleLine = true
                 )
+                
                 FilledTonalIconButton(
                     onClick = onAddClick,
                     modifier = Modifier.size(32.dp)

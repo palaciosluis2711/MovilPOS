@@ -7,6 +7,10 @@ import com.lopezapp.movilpos.data.model.CustomerPayment
 import com.lopezapp.movilpos.data.model.DocumentType
 import com.lopezapp.movilpos.data.model.Expense
 import com.lopezapp.movilpos.data.model.InvoiceType
+import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.BundleItem
+import com.lopezapp.movilpos.data.model.Purchase
+import com.lopezapp.movilpos.data.model.PurchaseItem
 import com.lopezapp.movilpos.data.model.Role
 import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.SaleItem
@@ -577,5 +581,69 @@ class AppRepositoryTest {
         assertEquals("POS Printer", updated.deviceName)
         assertTrue(updated.isConnected)
         assertFalse(updated.autoPrintSales)
+    }
+
+
+
+    @Test
+    fun bundleDynamicStock_calculatesMinOfComponentStockOverRequiredQuantity() {
+        val comp1 = Product(id = "c1", name = "Ingrediente A", stock = 10, price = 1.0)
+        val comp2 = Product(id = "c2", name = "Ingrediente B", stock = 15, price = 1.0)
+        val bundle = Product(
+            id = "b1",
+            name = "Combo Express",
+            price = 20.0,
+            stock = 0,
+            isBundle = true,
+            bundleItems = listOf(
+                BundleItem("c1", 2), // 10 / 2 = 5
+                BundleItem("c2", 3)  // 15 / 3 = 5
+            )
+        )
+        repository.addProduct(comp1)
+        repository.addProduct(comp2)
+        repository.addProduct(bundle)
+
+        var currentBundle = repository.products.value.find { it.id == "b1" }
+        assertEquals(5, currentBundle?.stock)
+
+        // Reduce stock of comp1 so it becomes the limiting factor (4 / 2 = 2)
+        repository.updateProduct(comp1.copy(stock = 4))
+        currentBundle = repository.products.value.find { it.id == "b1" }
+        assertEquals(2, currentBundle?.stock)
+    }
+
+    @Test
+    fun serviceDynamicStock_unlimitedStockWhenNoComponents() {
+        val service = Product(
+            id = "s1",
+            name = "Consulta General",
+            price = 30.0,
+            stock = 0,
+            isService = true,
+            bundleItems = emptyList()
+        )
+        repository.addProduct(service)
+
+        val currentService = repository.products.value.find { it.id == "s1" }
+        assertEquals(9999, currentService?.stock)
+    }
+
+    @Test
+    fun serviceDynamicStock_calculatedStockWhenComponentsPresent() {
+        val comp = Product(id = "sc1", name = "Insumo Médico", stock = 20, price = 2.0)
+        val service = Product(
+            id = "s2",
+            name = "Curación",
+            price = 40.0,
+            stock = 0,
+            isService = true,
+            bundleItems = listOf(BundleItem("sc1", 4)) // 20 / 4 = 5
+        )
+        repository.addProduct(comp)
+        repository.addProduct(service)
+
+        val currentService = repository.products.value.find { it.id == "s2" }
+        assertEquals(5, currentService?.stock)
     }
 }

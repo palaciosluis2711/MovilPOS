@@ -11,6 +11,8 @@ data class CartItem(
     val isRuleDiscounted: Boolean = false,
     val appliedRuleId: String? = null,
     val appliedRuleName: String? = null,
+    val linkedGroupId: String? = null,
+    val parentProductId: String? = null,
     val id: String = UUID.randomUUID().toString(),
 ) {
     val effectiveUnitPrice: Double

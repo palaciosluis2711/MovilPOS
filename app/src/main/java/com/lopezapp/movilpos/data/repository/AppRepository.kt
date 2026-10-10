@@ -38,6 +38,7 @@ import com.lopezapp.movilpos.util.DteApiClient
 import com.lopezapp.movilpos.util.DteJsonGenerator
 import com.lopezapp.movilpos.util.JwsSigner
 import com.lopezapp.movilpos.util.ReceptionResponse
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,7 +52,17 @@ class AppRepository(
     private val dteApiClient: DteApiClient = DteApiClient.defaultInstance
 ) {
     private val _products = MutableStateFlow<List<Product>>(emptyList())
-    val products: StateFlow<List<Product>> = _products.asStateFlow()
+    val products: StateFlow<List<Product>> = object : StateFlow<List<Product>> {
+        override val replayCache: List<List<Product>>
+            get() = listOf(value)
+        override val value: List<Product>
+            get() = calculateDynamicStocks(_products.value)
+        override suspend fun collect(collector: FlowCollector<List<Product>>): Nothing {
+            _products.collect { list ->
+                collector.emit(calculateDynamicStocks(list))
+            }
+        }
+    }
 
     private val _categories = MutableStateFlow<List<Category>>(emptyList())
     val categories: StateFlow<List<Category>> = _categories.asStateFlow()
@@ -489,13 +500,35 @@ class AppRepository(
         _purchases.update { currentList ->
             currentList + purchase
         }
+        
+        val stockIncrements = mutableMapOf<String, Int>()
+        val costUpdates = mutableMapOf<String, Double>()
+        
+        purchase.items.forEach { purchaseItem ->
+            val purchasedProduct = _products.value.find { it.id == purchaseItem.productId }
+            if (purchasedProduct != null) {
+                if (purchasedProduct.isBundle) {
+                    purchasedProduct.bundleItems.forEach { bundleItem ->
+                        val currentInc = stockIncrements[bundleItem.productId] ?: 0
+                        stockIncrements[bundleItem.productId] = currentInc + (purchaseItem.quantity * bundleItem.quantity)
+                    }
+                    costUpdates[purchasedProduct.id] = purchaseItem.unitCost
+                } else {
+                    val currentInc = stockIncrements[purchasedProduct.id] ?: 0
+                    stockIncrements[purchasedProduct.id] = currentInc + purchaseItem.quantity
+                    costUpdates[purchasedProduct.id] = purchaseItem.unitCost
+                }
+            }
+        }
+
         _products.update { currentProducts ->
             currentProducts.map { product ->
-                val matchingItem = purchase.items.find { it.productId == product.id }
-                if (matchingItem != null) {
+                val inc = stockIncrements[product.id] ?: 0
+                val newCost = costUpdates[product.id] ?: product.cost
+                if (inc > 0 || costUpdates.containsKey(product.id)) {
                     product.copy(
-                        stock = product.stock + matchingItem.quantity,
-                        cost = matchingItem.unitCost
+                        stock = product.stock + inc,
+                        cost = newCost
                     )
                 } else {
                     product
@@ -1151,6 +1184,36 @@ class AppRepository(
                     customer
                 }
             }
+        }
+    }
+
+    private fun calculateDynamicStocks(products: List<Product>): List<Product> {
+        val stockMap = products.associate { it.id to it.stock }.toMutableMap()
+
+        repeat(5) {
+            val newMap = stockMap.toMutableMap()
+            for (p in products) {
+                if (p.isBundle || p.isService) {
+                    val calculated = if (p.bundleItems.isEmpty()) {
+                        if (p.isService) 9999 else 0
+                    } else {
+                        p.bundleItems.minOfOrNull { item ->
+                            val compStock = stockMap[item.productId] ?: 0
+                            val reqQty = item.quantity.coerceAtLeast(1)
+                            compStock / reqQty
+                        } ?: 0
+                    }
+                    newMap[p.id] = calculated
+                } else {
+                    newMap[p.id] = p.stock
+                }
+            }
+            stockMap.clear()
+            stockMap.putAll(newMap)
+        }
+
+        return products.map { p ->
+            p.copy(stock = stockMap[p.id] ?: p.stock)
         }
     }
 }
