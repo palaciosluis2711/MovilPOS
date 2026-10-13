@@ -18,7 +18,6 @@ import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.InventoryOutflow
 import com.lopezapp.movilpos.data.model.OutflowReason
 import com.lopezapp.movilpos.data.model.ProductReturn
-import com.lopezapp.movilpos.data.model.ReturnReason
 import com.lopezapp.movilpos.data.model.toSpanishLabel
 import com.lopezapp.movilpos.data.model.LabelSize
 import com.lopezapp.movilpos.data.model.PaymentMethod
@@ -48,11 +47,15 @@ import com.lopezapp.movilpos.util.DteApiClient
 import com.lopezapp.movilpos.util.DteJsonGenerator
 import com.lopezapp.movilpos.util.JwsSigner
 import com.lopezapp.movilpos.util.ReceptionResponse
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
@@ -61,8 +64,99 @@ import java.util.UUID
 class AppRepository(
     private val dteApiClient: DteApiClient = DteApiClient.defaultInstance
 ) {
+    private var appContext: Context? = null
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     init {
         FirebaseSyncService.startBackgroundSync(this)
+    }
+
+    fun initializeLocalDiskPersistence(context: Context) {
+        val ctx = context.applicationContext
+        this.appContext = ctx
+        if (LocalDiskPersistence.hasSavedDatabase(ctx)) {
+            val loadedState = LocalDiskPersistence.loadFromDiskSync(ctx)
+            if (loadedState != null) {
+                restoreState(loadedState)
+            }
+        } else {
+            saveToDisk(ctx)
+        }
+    }
+
+    fun getCurrentState(): LocalDatabaseState {
+        return LocalDatabaseState(
+            products = _products.value,
+            categories = _categories.value,
+            brands = _brands.value,
+            unitsOfMeasure = _unitsOfMeasure.value,
+            taxes = _taxes.value,
+            suppliers = _suppliers.value,
+            customers = _customers.value,
+            purchases = _purchases.value,
+            sales = _sales.value,
+            contingencyDtes = _contingencyDtes.value,
+            quotations = _quotations.value,
+            priceRules = _priceRules.value,
+            paymentMethods = _paymentMethods.value,
+            businessInfo = _businessInfo.value,
+            ticketConfig = _ticketConfig.value,
+            electronicBillingConfig = _electronicBillingConfig.value,
+            bluetoothPrinterConfig = _bluetoothPrinterConfig.value,
+            labelSizes = _labelSizes.value,
+            barcodeLabelConfig = _barcodeLabelConfig.value,
+            batchItems = _batchItems.value,
+            users = _users.value,
+            authSession = _authSession.value,
+            rememberMe = _rememberMe.value,
+            expenses = _expenses.value,
+            inventoryOutflows = _inventoryOutflows.value,
+            productReturns = _productReturns.value,
+            customerPayments = _customerPayments.value,
+            activeShift = _activeShift.value,
+            shiftHistory = _shiftHistory.value
+        )
+    }
+
+    fun saveToDisk(context: Context? = appContext) {
+        val targetContext = context?.applicationContext ?: appContext ?: return
+        repositoryScope.launch {
+            LocalDiskPersistence.saveToDisk(targetContext, getCurrentState())
+        }
+    }
+
+    private fun restoreState(state: LocalDatabaseState) {
+        _products.value = state.products
+        _categories.value = state.categories
+        _brands.value = state.brands
+        _unitsOfMeasure.value = state.unitsOfMeasure
+        _taxes.value = state.taxes
+        _suppliers.value = state.suppliers
+        _customers.value = state.customers
+        _purchases.value = state.purchases
+        _sales.value = state.sales
+        _contingencyDtes.value = state.contingencyDtes
+        _quotations.value = state.quotations
+        _priceRules.value = state.priceRules
+        _paymentMethods.value = state.paymentMethods
+        _businessInfo.value = state.businessInfo
+        _ticketConfig.value = state.ticketConfig
+        _electronicBillingConfig.value = state.electronicBillingConfig
+        _bluetoothPrinterConfig.value = state.bluetoothPrinterConfig
+        _labelSizes.value = state.labelSizes
+        _barcodeLabelConfig.value = state.barcodeLabelConfig
+        _batchItems.value = state.batchItems
+        _users.value = state.users.ifEmpty {
+            listOf(User(id = "admin_1", name = "Administrador", username = "admin", email = "admin@minegocio.com", pin = "1234", passwordHash = "Admin123!", role = Role.ADMINISTRATOR))
+        }
+        _authSession.value = state.authSession
+        _rememberMe.value = state.rememberMe
+        _expenses.value = state.expenses
+        _inventoryOutflows.value = state.inventoryOutflows
+        _productReturns.value = state.productReturns
+        _customerPayments.value = state.customerPayments
+        _activeShift.value = state.activeShift
+        _shiftHistory.value = state.shiftHistory
     }
 
     private val _firebaseSyncConfig = MutableStateFlow(FirebaseSyncConfig())
@@ -71,12 +165,15 @@ class AppRepository(
     fun setAutoSyncEnabled(enabled: Boolean) {
         _firebaseSyncConfig.update { it.copy(isAutoSyncEnabled = enabled) }
         FirebaseSyncService.setAutoSyncEnabled(enabled)
+        saveToDisk()
     }
 
     fun setSyncIntervalMinutes(minutes: Int) {
         _firebaseSyncConfig.update { it.copy(intervalMinutes = minutes) }
         FirebaseSyncService.setSyncIntervalMinutes(minutes)
+        saveToDisk()
     }
+
     private val _products = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = object : StateFlow<List<Product>> {
         override val replayCache: List<List<Product>>
@@ -166,6 +263,7 @@ class AppRepository(
                 quantity = 1
             )
         )
+        saveToDisk()
     }
 
     fun addProductToBatch(product: Product, quantity: Int = 1) {
@@ -191,6 +289,7 @@ class AppRepository(
                 )
             }
         }
+        saveToDisk()
     }
 
     fun updateItemQuantity(productId: String, quantity: Int) {
@@ -201,18 +300,22 @@ class AppRepository(
         _batchItems.update { list ->
             list.map { if (it.productId == productId) it.copy(quantity = quantity) else it }
         }
+        saveToDisk()
     }
 
     fun removeItem(productId: String) {
         _batchItems.update { list -> list.filter { it.productId != productId } }
+        saveToDisk()
     }
 
     fun clearBatch() {
         _batchItems.value = emptyList()
+        saveToDisk()
     }
 
     fun updateBarcodeLabelConfig(config: BarcodeLabelConfig) {
         _barcodeLabelConfig.value = config
+        saveToDisk()
     }
 
     fun addFavoriteSize(name: String, widthMm: Double, heightMm: Double) {
@@ -223,6 +326,7 @@ class AppRepository(
             isFavorite = true
         )
         _labelSizes.update { it + newSize }
+        saveToDisk()
     }
 
     fun removeFavoriteSize(sizeId: String) {
@@ -231,6 +335,7 @@ class AppRepository(
         if (currentConfig.selectedSizeId == sizeId) {
             _barcodeLabelConfig.value = currentConfig.copy(selectedSizeId = "std_1")
         }
+        saveToDisk()
     }
 
     private val _users = MutableStateFlow<List<User>>(
@@ -408,108 +513,126 @@ class AppRepository(
         _products.update { currentList ->
             currentList + product
         }
+        saveToDisk()
     }
 
     fun updateProduct(product: Product) {
         _products.update { currentList ->
             currentList.map { if (it.id == product.id) product else it }
         }
+        saveToDisk()
     }
 
     fun deleteProduct(productId: String) {
         _products.update { currentList ->
             currentList.filter { it.id != productId }
         }
+        saveToDisk()
     }
 
     fun addCategory(category: Category) {
         _categories.update { currentList ->
             currentList + category
         }
+        saveToDisk()
     }
 
     fun updateCategory(category: Category) {
         _categories.update { currentList ->
             currentList.map { if (it.id == category.id) category else it }
         }
+        saveToDisk()
     }
 
     fun deleteCategory(categoryId: String) {
         _categories.update { currentList ->
             currentList.filter { it.id != categoryId }
         }
+        saveToDisk()
     }
 
     fun addBrand(brand: Brand) {
         _brands.update { currentList ->
             currentList + brand
         }
+        saveToDisk()
     }
 
     fun updateBrand(brand: Brand) {
         _brands.update { currentList ->
             currentList.map { if (it.id == brand.id) brand else it }
         }
+        saveToDisk()
     }
 
     fun deleteBrand(brandId: String) {
         _brands.update { currentList ->
             currentList.filter { it.id != brandId }
         }
+        saveToDisk()
     }
 
     fun addUnitOfMeasure(unitOfMeasure: UnitOfMeasure) {
         _unitsOfMeasure.update { currentList ->
             currentList + unitOfMeasure
         }
+        saveToDisk()
     }
 
     fun updateUnitOfMeasure(unitOfMeasure: UnitOfMeasure) {
         _unitsOfMeasure.update { currentList ->
             currentList.map { if (it.id == unitOfMeasure.id) unitOfMeasure else it }
         }
+        saveToDisk()
     }
 
     fun deleteUnitOfMeasure(unitId: String) {
         _unitsOfMeasure.update { currentList ->
             currentList.filter { it.id != unitId }
         }
+        saveToDisk()
     }
 
     fun addTax(tax: Tax) {
         _taxes.update { currentList ->
             currentList + tax
         }
+        saveToDisk()
     }
 
     fun updateTax(tax: Tax) {
         _taxes.update { currentList ->
             currentList.map { if (it.id == tax.id) tax else it }
         }
+        saveToDisk()
     }
 
     fun deleteTax(taxId: String) {
         _taxes.update { currentList ->
             currentList.filter { it.id != taxId }
         }
+        saveToDisk()
     }
 
     fun addSupplier(supplier: Supplier) {
         _suppliers.update { currentList ->
             currentList + supplier
         }
+        saveToDisk()
     }
 
     fun updateSupplier(supplier: Supplier) {
         _suppliers.update { currentList ->
             currentList.map { if (it.id == supplier.id) supplier else it }
         }
+        saveToDisk()
     }
 
     fun deleteSupplier(supplierId: String) {
         _suppliers.update { currentList ->
             currentList.filter { it.id != supplierId }
         }
+        saveToDisk()
     }
 
     fun addCustomer(customer: Customer) {
@@ -521,6 +644,7 @@ class AppRepository(
             }
             updatedList + customer
         }
+        saveToDisk()
     }
 
     fun updateCustomer(customer: Customer) {
@@ -532,18 +656,21 @@ class AppRepository(
             }
             updatedList
         }
+        saveToDisk()
     }
 
     fun deleteCustomer(customerId: String) {
         _customers.update { currentList ->
             currentList.filter { it.id != customerId }
         }
+        saveToDisk()
     }
 
     fun setDefaultCustomer(customerId: String) {
         _customers.update { currentList ->
             currentList.map { it.copy(isDefault = (it.id == customerId)) }
         }
+        saveToDisk()
     }
 
     fun addPurchase(purchase: Purchase) {
@@ -585,30 +712,35 @@ class AppRepository(
                 }
             }
         }
+        saveToDisk()
     }
 
     fun deletePurchase(purchaseId: String) {
         _purchases.update { currentList ->
             currentList.filter { it.id != purchaseId }
         }
+        saveToDisk()
     }
 
     fun addPriceRule(priceRule: PriceRule) {
         _priceRules.update { currentList ->
             currentList + priceRule
         }
+        saveToDisk()
     }
 
     fun updatePriceRule(priceRule: PriceRule) {
         _priceRules.update { currentList ->
             currentList.map { if (it.id == priceRule.id) priceRule else it }
         }
+        saveToDisk()
     }
 
     fun deletePriceRule(ruleId: String) {
         _priceRules.update { currentList ->
             currentList.filter { it.id != ruleId }
         }
+        saveToDisk()
     }
 
     fun addPaymentMethod(paymentMethod: PaymentMethod) {
@@ -620,6 +752,7 @@ class AppRepository(
             }
             updatedList + paymentMethod
         }
+        saveToDisk()
     }
 
     fun updatePaymentMethod(paymentMethod: PaymentMethod) {
@@ -631,6 +764,7 @@ class AppRepository(
             }
             updatedList
         }
+        saveToDisk()
     }
 
     fun deletePaymentMethod(paymentMethodId: String) {
@@ -643,22 +777,27 @@ class AppRepository(
                 }
             }
         }
+        saveToDisk()
     }
 
     fun updateBusinessInfo(businessInfo: BusinessInfo) {
         _businessInfo.value = businessInfo
+        saveToDisk()
     }
 
     fun updateTicketConfig(config: TicketConfig) {
         _ticketConfig.value = config
+        saveToDisk()
     }
     
     fun updateElectronicBillingConfig(config: ElectronicBillingConfig) {
         _electronicBillingConfig.value = config
+        saveToDisk()
     }
 
     fun updateBluetoothPrinterConfig(config: BluetoothPrinterConfig) {
         _bluetoothPrinterConfig.value = config
+        saveToDisk()
     }
 
     fun addUser(user: User) {
@@ -669,9 +808,10 @@ class AppRepository(
             try {
                 FirebaseAuth.getInstance().createUserWithEmailAndPassword(user.email, user.passwordHash)
             } catch (e: Throwable) {
-                // Handle gracefully (catch exceptions if offline or email already exists)
+                // Handle gracefully
             }
         }
+        saveToDisk()
     }
 
     fun updateUser(user: User) {
@@ -691,12 +831,14 @@ class AppRepository(
                 }
             }
         }
+        saveToDisk()
     }
 
     fun deleteUser(userId: String) {
         _users.update { currentList ->
             currentList.filter { it.id != userId }
         }
+        saveToDisk()
     }
 
     fun validateAdminPin(pin: String): Boolean {
@@ -709,6 +851,7 @@ class AppRepository(
 
     fun setRememberMe(remember: Boolean) {
         _rememberMe.value = remember
+        saveToDisk()
     }
 
     fun validateCredentials(usernameOrEmail: String, passwordOrPin: String): Result<User> {
@@ -793,12 +936,13 @@ class AppRepository(
                 }
             }
         }
-
+        saveToDisk()
         return Result.success(finalUser)
     }
 
     fun logout() {
         _authSession.value = null
+        saveToDisk()
     }
 
     fun openShift(cashier: User, initialFloat: Double): CashShift {
@@ -812,6 +956,7 @@ class AppRepository(
         _shiftHistory.update { history ->
             history + shift
         }
+        saveToDisk()
         return shift
     }
 
@@ -831,6 +976,7 @@ class AppRepository(
             }
         }
         _activeShift.value = null
+        saveToDisk()
         return closedShift
     }
 
@@ -853,6 +999,7 @@ class AppRepository(
                 history + updatedShift
             }
         }
+        saveToDisk()
     }
 
     fun addSale(sale: Sale) {
@@ -910,6 +1057,7 @@ class AppRepository(
             val other = if (!pmName.contains("efectivo") && !pmName.contains("tarjeta") && !pmName.contains("card")) finalSale.totalAmount else 0.0
             updateActiveShiftSales(cashAmount = cash, cardAmount = card, otherAmount = other)
         }
+        saveToDisk()
     }
 
     fun deleteSale(saleId: String) {
@@ -923,6 +1071,7 @@ class AppRepository(
         if (deletedSale != null && deletedSale.isCredit) {
             updateCustomerDebt(deletedSale.customerId)
         }
+        saveToDisk()
     }
 
     fun upgradeSaleToDte(saleId: String, customer: Customer, invoiceType: InvoiceType) {
@@ -952,6 +1101,7 @@ class AppRepository(
                 }
             }
         }
+        saveToDisk()
     }
 
     fun addToContingencyQueue(sale: Sale) {
@@ -999,6 +1149,7 @@ class AppRepository(
                 updateActiveShiftSales(cashAmount = cash, cardAmount = card, otherAmount = other)
             }
         }
+        saveToDisk()
     }
 
     fun retryContingencyTransmissions(
@@ -1115,6 +1266,7 @@ class AppRepository(
             }
 
             _contingencyDtes.value = remainingContingency
+            saveToDisk()
             successCount
         }
     }
@@ -1164,6 +1316,7 @@ class AppRepository(
             updateCustomerDebt(sale.customerId)
         }
 
+        saveToDisk()
         return Result.success(Unit)
     }
 
@@ -1171,18 +1324,21 @@ class AppRepository(
         _quotations.update { currentList ->
             currentList + quotation
         }
+        saveToDisk()
     }
 
     fun updateQuotation(quotation: Quotation) {
         _quotations.update { currentList ->
             currentList.map { if (it.id == quotation.id) quotation else it }
         }
+        saveToDisk()
     }
 
     fun deleteQuotation(quotationId: String) {
         _quotations.update { currentList ->
             currentList.filter { it.id != quotationId }
         }
+        saveToDisk()
     }
 
     fun addExpense(expense: Expense) {
@@ -1215,12 +1371,14 @@ class AppRepository(
                 }
             }
         }
+        saveToDisk()
     }
 
     fun deleteExpense(expenseId: String) {
         _expenses.update { currentList ->
             currentList.filter { it.id != expenseId }
         }
+        saveToDisk()
     }
 
     fun addInventoryOutflow(outflow: InventoryOutflow) {
@@ -1264,12 +1422,14 @@ class AppRepository(
         _expenses.update { currentList ->
             currentList + expense
         }
+        saveToDisk()
     }
 
     fun deleteInventoryOutflow(outflowId: String) {
         _inventoryOutflows.update { currentList ->
             currentList.filter { it.id != outflowId }
         }
+        saveToDisk()
     }
 
     fun processProductReturn(productReturn: ProductReturn) {
@@ -1305,6 +1465,8 @@ class AppRepository(
                 dateMillis = productReturn.dateMillis
             )
             addExpense(expense)
+        } else {
+            saveToDisk()
         }
     }
 
@@ -1338,6 +1500,7 @@ class AppRepository(
                 }
             }
         }
+        saveToDisk()
     }
 
     fun addCustomerPayment(payment: CustomerPayment) {
@@ -1400,6 +1563,7 @@ class AppRepository(
         }
 
         updateCustomerDebt(payment.customerId)
+        saveToDisk()
     }
 
     private fun updateCustomerDebt(customerId: String) {
@@ -1419,6 +1583,7 @@ class AppRepository(
                 }
             }
         }
+        saveToDisk()
     }
 
     private fun calculateDynamicStocks(products: List<Product>): List<Product> {

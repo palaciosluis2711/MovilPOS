@@ -574,7 +574,8 @@ fun SaleReadOnlyView(
     settingsViewModel: SettingsViewModel,
     onNavigateUp: () -> Unit,
     onNavigateToDteDetail: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateToElectronicBilling: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val allSales by salesViewModel.allSales.collectAsState()
@@ -603,7 +604,7 @@ fun SaleReadOnlyView(
             onDismissRequest = { showDisabledDteDialog = false },
             title = { Text("Facturación Electrónica Deshabilitada") },
             text = {
-                Text("La Facturación Electrónica está deshabilitada. Habilítela en Configuración > Facturación Electrónica.")
+                Text("La Facturación Electrónica está deshabilitada en Ajustes.")
             },
             confirmButton = {
                 TextButton(onClick = { showDisabledDteDialog = false }) {
@@ -618,11 +619,21 @@ fun SaleReadOnlyView(
             onDismissRequest = { showIncompleteDteConfigDialog = false },
             title = { Text("Configuración DTE Incompleta") },
             text = {
-                Text("Para emitir DTEs en modo real, debe completar la configuración de Facturación Electrónica (NIT, Token API y Certificado .p12) en Configuración > Facturación Electrónica.")
+                Text("Faltan credenciales DTE o certificado .p12 para la emisión real. Complete la configuración en Ajustes > Facturación Electrónica.")
             },
             confirmButton = {
+                TextButton(
+                    onClick = {
+                        showIncompleteDteConfigDialog = false
+                        onNavigateToElectronicBilling?.invoke()
+                    }
+                ) {
+                    Text("Corregir en Ajustes")
+                }
+            },
+            dismissButton = {
                 TextButton(onClick = { showIncompleteDteConfigDialog = false }) {
-                    Text("Aceptar")
+                    Text("Cancelar")
                 }
             }
         )
@@ -698,15 +709,31 @@ fun SaleReadOnlyView(
     }
 
     if (invalidationError != null) {
+        val isConfigError = invalidationError?.contains("Ajustes") == true ||
+                invalidationError?.contains("configuración") == true
         AlertDialog(
             onDismissRequest = { salesViewModel.clearDteInvalidationError() },
-            title = { Text("Error al Anular") },
+            title = { Text("Facturación Electrónica") },
             text = { Text(invalidationError ?: "") },
             confirmButton = {
-                TextButton(onClick = { salesViewModel.clearDteInvalidationError() }) {
-                    Text("Aceptar")
+                TextButton(
+                    onClick = {
+                        salesViewModel.clearDteInvalidationError()
+                        if (isConfigError && onNavigateToElectronicBilling != null) {
+                            onNavigateToElectronicBilling()
+                        }
+                    }
+                ) {
+                    Text(if (isConfigError && onNavigateToElectronicBilling != null) "Corregir en Ajustes" else "Aceptar")
                 }
-            }
+            },
+            dismissButton = if (isConfigError && onNavigateToElectronicBilling != null) {
+                {
+                    TextButton(onClick = { salesViewModel.clearDteInvalidationError() }) {
+                        Text("Cancelar")
+                    }
+                }
+            } else null
         )
     }
 
@@ -1102,22 +1129,13 @@ fun SaleReadOnlyView(
                                         onClick = {
                                             val ebConfig = settingsUiState.electronicBillingConfig
                                             val isEbEnabled = ebConfig.isEnabled
-                                            val isSimMode = ebConfig.isSimulationMode ||
-                                                    ebConfig.environment == DteEnvironment.SANDBOX ||
-                                                    ebConfig.apiToken.equals("test", ignoreCase = true)
                                             val hasCredentials = ebConfig.nit.isNotBlank() &&
                                                     ebConfig.apiToken.isNotBlank() &&
-                                                    !ebConfig.apiToken.equals("test", ignoreCase = true)
-                                            val hasCertificate = !ebConfig.certificateUri.isNullOrBlank()
+                                                    !ebConfig.certificateUri.isNullOrBlank()
 
                                             if (!isEbEnabled) {
                                                 showDisabledDteDialog = true
-                                                Toast.makeText(
-                                                    context,
-                                                    "La Facturación Electrónica está deshabilitada. Habilítela en Configuración > Facturación Electrónica.",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                            } else if (!isSimMode && (!hasCredentials || !hasCertificate)) {
+                                            } else if (!hasCredentials) {
                                                 showIncompleteDteConfigDialog = true
                                             } else {
                                                 showEmitDteDialog = true

@@ -136,19 +136,15 @@ class SalesViewModel(
         viewModelScope.launch {
             val ebConfig = repository.electronicBillingConfig.value
             if (!ebConfig.isEnabled) {
-                _dteInvalidationError.value = "La Facturación Electrónica está deshabilitada. Habilítela en Configuración > Facturación Electrónica."
+                _dteInvalidationError.value = "La Facturación Electrónica está deshabilitada en Ajustes."
                 return@launch
             }
-            val isSimMode = ebConfig.isSimulationMode ||
-                    ebConfig.environment == com.lopezapp.movilpos.data.model.DteEnvironment.SANDBOX ||
-                    ebConfig.apiToken.equals("test", ignoreCase = true)
-            val hasApiCredentials = ebConfig.nit.isNotBlank() &&
+            val hasCredentials = ebConfig.nit.isNotBlank() &&
                     ebConfig.apiToken.isNotBlank() &&
-                    !ebConfig.apiToken.equals("test", ignoreCase = true)
-            val hasCertificate = !ebConfig.certificateUri.isNullOrBlank()
+                    !ebConfig.certificateUri.isNullOrBlank()
 
-            if (!isSimMode && (!hasApiCredentials || !hasCertificate)) {
-                _dteInvalidationError.value = "Para emitir DTEs en modo real, debe completar la configuración de Facturación Electrónica (NIT, Token API y Certificado .p12) en Configuración > Facturación Electrónica."
+            if (!hasCredentials) {
+                _dteInvalidationError.value = "Faltan credenciales DTE o certificado .p12 para la emisión real. Complete la configuración en Ajustes > Facturación Electrónica."
                 return@launch
             }
 

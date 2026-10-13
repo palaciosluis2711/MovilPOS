@@ -91,6 +91,7 @@ fun DteReportsListScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val issuedDtes by viewModel.issuedDtes.collectAsState()
     val contingencyDtes by viewModel.contingencyDtes.collectAsState()
+    val electronicBillingConfig by viewModel.electronicBillingConfig.collectAsState()
     val context = LocalContext.current
 
     val settingsUiState by settingsViewModel.uiState.collectAsState()
@@ -162,26 +163,40 @@ fun DteReportsListScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (issuedDtes.isEmpty()) {
+            if (!electronicBillingConfig.isEnabled || issuedDtes.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Rounded.CloudDone,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                    ElevatedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.elevatedCardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "No hay DTEs emitidos encontrados",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudDone,
+                                contentDescription = null,
+                                modifier = Modifier.size(56.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "No se ha configurado la sección de Facturación Electrónica o no hay DTEs emitidos. Configure sus credenciales DTE en Ajustes > Facturación Electrónica para comenzar a emitir facturas tributarias.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             } else {

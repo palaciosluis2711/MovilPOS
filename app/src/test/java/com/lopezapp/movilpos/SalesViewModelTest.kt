@@ -317,6 +317,14 @@ class SalesViewModelTest {
 
     @Test
     fun upgradeSaleToDte_upgradesSaleInRepository() = runTest {
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                isEnabled = true,
+                nit = "06140101901015",
+                apiToken = "valid_token",
+                certificateUri = "content://cert.p12"
+            )
+        )
         val sale = Sale(
             id = "SALE-UPGRADE-TEST",
             customerId = "c1",
@@ -389,7 +397,7 @@ class SalesViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertNotNull(viewModel.dteInvalidationError.value)
-        assertTrue(viewModel.dteInvalidationError.value!!.contains("deshabilitada"))
+        assertTrue(viewModel.dteInvalidationError.value!!.contains("deshabilitada en Ajustes"))
 
         val unupdated = viewModel.getSaleById("SALE-BLOCKED-TEST")
         assertNotNull(unupdated)
@@ -398,7 +406,7 @@ class SalesViewModelTest {
     }
 
     @Test
-    fun upgradeSaleToDte_whenRealModeAndMissingCredentials_blocksEmission() = runTest {
+    fun upgradeSaleToDte_whenMissingCredentials_blocksEmission() = runTest {
         repository.updateElectronicBillingConfig(
             ElectronicBillingConfig(
                 isEnabled = true,
@@ -410,7 +418,7 @@ class SalesViewModelTest {
             )
         )
         val sale = Sale(
-            id = "SALE-REALMODE-BLOCKED",
+            id = "SALE-MISSING-CREDS-BLOCKED",
             customerId = "c1",
             customerName = "Test Client",
             invoiceType = InvoiceType.TICKET,
@@ -433,13 +441,13 @@ class SalesViewModelTest {
             district = "San Salvador Centro"
         )
 
-        viewModel.upgradeSaleToDte("SALE-REALMODE-BLOCKED", customer, InvoiceType.CONSUMIDOR_FINAL)
+        viewModel.upgradeSaleToDte("SALE-MISSING-CREDS-BLOCKED", customer, InvoiceType.CONSUMIDOR_FINAL)
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertNotNull(viewModel.dteInvalidationError.value)
-        assertTrue(viewModel.dteInvalidationError.value!!.contains("debe completar la configuración"))
+        assertTrue(viewModel.dteInvalidationError.value!!.contains("Faltan credenciales DTE o certificado .p12"))
 
-        val unupdated = viewModel.getSaleById("SALE-REALMODE-BLOCKED")
+        val unupdated = viewModel.getSaleById("SALE-MISSING-CREDS-BLOCKED")
         assertNotNull(unupdated)
         assertEquals(InvoiceType.TICKET, unupdated!!.invoiceType)
         assertTrue(!unupdated.isDteIssued)

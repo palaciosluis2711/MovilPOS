@@ -207,6 +207,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appRepository.initializeLocalDiskPersistence(applicationContext)
         enableEdgeToEdge()
         setContent {
             MovilPOSTheme {
@@ -414,7 +415,8 @@ class MainActivity : ComponentActivity() {
                                         salesViewModel = salesViewModel,
                                         settingsViewModel = settingsViewModel,
                                         onNavigateUp = { backStack.removeLastOrNull() },
-                                        onNavigateToDteDetail = { saleId -> backStack.add(DteDetailRoute(saleId)) }
+                                        onNavigateToDteDetail = { saleId -> backStack.add(DteDetailRoute(saleId)) },
+                                        onNavigateToElectronicBilling = { backStack.add(SettingsElectronicBillingKey) }
                                     )
                                 }
                                 is QuotationsRoute -> NavEntry(key) {
