@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "137635036453",
+    "project_id": "movilpos",
+    "storage_bucket": "movilpos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:137635036453:android:fcc3dfe74ce011b1222ecc",
+        "android_client_info": {
+          "package_name": "com.lopezapp.movilpos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA15dm5JZLUBAGO0kPKIJzE9WPTMCERrn0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

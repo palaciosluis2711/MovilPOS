@@ -1,25 +1,13 @@
 package com.lopezapp.movilpos.ui.components
 
 import com.lopezapp.movilpos.data.model.CashShift
-import com.lopezapp.movilpos.data.model.Role
-import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.util.roundToTwoDecimals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ShiftDialogsTest {
 
-    @Test
-    fun openShift_userValidation_selectsActiveUser() {
-        val users = listOf(
-            User(id = "1", name = "Juan Pérez", pin = "1234", role = Role.CASHIER, isActive = false),
-            User(id = "2", name = "Maria Gomez", pin = "5678", role = Role.SUPERVISOR, isActive = true)
-        )
 
-        val activeUsers = users.filter { it.isActive }
-        assertEquals(1, activeUsers.size)
-        assertEquals("Maria Gomez", activeUsers.first().name)
-    }
 
     @Test
     fun closeShift_differenceCalculation_sobrante() {

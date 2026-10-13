@@ -170,6 +170,7 @@ fun SettingsScreen(
     onNavigateToTicket: () -> Unit = {},
     onNavigateToBluetoothPrinter: () -> Unit = {},
     onNavigateToElectronicBilling: () -> Unit = {},
+    onNavigateToFirebase: () -> Unit = {},
     onNavigateToUsers: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
@@ -186,6 +187,7 @@ fun SettingsScreen(
         onNavigateToTicket = onNavigateToTicket,
         onNavigateToBluetoothPrinter = onNavigateToBluetoothPrinter,
         onNavigateToElectronicBilling = onNavigateToElectronicBilling,
+        onNavigateToFirebase = onNavigateToFirebase,
         onNavigateToUsers = onNavigateToUsers,
         onNavigateBack = onNavigateBack,
         modifier = modifier,
@@ -207,6 +209,7 @@ fun SettingsHomeScreen(
     onNavigateToTicket: () -> Unit = {},
     onNavigateToBluetoothPrinter: () -> Unit = {},
     onNavigateToElectronicBilling: () -> Unit = {},
+    onNavigateToFirebase: () -> Unit = {},
     onNavigateToUsers: () -> Unit = {},
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -330,6 +333,13 @@ fun SettingsHomeScreen(
                 subtitle = "Configuración DTE Ministerio de Hacienda de El Salvador",
                 icon = Icons.Rounded.CloudSync,
                 onClick = onNavigateToElectronicBilling,
+            )
+
+            SettingEntryCard(
+                title = "Sincronización en la Nube",
+                subtitle = "Configuración de respaldo y sincronización con Google Firebase",
+                icon = Icons.Rounded.CloudSync,
+                onClick = onNavigateToFirebase,
             )
         }
     }
@@ -2059,11 +2069,37 @@ fun SettingsPaymentMethodsScreen(
                         Column(
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text(
-                                text = method.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = method.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                if (method.isSystemDefault) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape = RoundedCornerShape(4.dp),
+                                    ) {
+                                        Text(
+                                            text = "Sistema",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            if (method.isSystemDefault) {
+                                Text(
+                                    text = "Método requerido por el sistema para Ventas a Crédito y Cuentas por Cobrar",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
                         }
                         IconButton(
                             onClick = {
@@ -2079,16 +2115,18 @@ fun SettingsPaymentMethodsScreen(
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
-                        IconButton(
-                            onClick = {
-                                methodToDelete = method
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Eliminar método de pago ${method.name}",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
+                        if (!method.isSystemDefault) {
+                            IconButton(
+                                onClick = {
+                                    methodToDelete = method
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Eliminar método de pago ${method.name}",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
@@ -2463,6 +2501,7 @@ fun SettingsBusinessInfoScreen(
                             "Información del negocio actualizada exitosamente",
                             Toast.LENGTH_SHORT,
                         ).show()
+                        onNavigateBack()
                     }
                 },
                 modifier = Modifier
@@ -2895,6 +2934,7 @@ fun SettingsTicketScreen(
                         "Configuración de ticket guardada exitosamente",
                         Toast.LENGTH_SHORT,
                     ).show()
+                    onNavigateBack()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2958,8 +2998,6 @@ fun SettingsElectronicBillingScreen(
     var certificatePassword by rememberSaveable { mutableStateOf(config.certificatePassword) }
     var certificateUri by rememberSaveable { mutableStateOf(config.certificateUri) }
     var certificateFileName by rememberSaveable { mutableStateOf(config.certificateFileName) }
-    var isSimulationMode by rememberSaveable { mutableStateOf(config.isSimulationMode) }
-    var forceNetworkFailureSimulation by rememberSaveable { mutableStateOf(config.forceNetworkFailureSimulation) }
 
     var apiTokenVisible by rememberSaveable { mutableStateOf(false) }
     var certPasswordVisible by rememberSaveable { mutableStateOf(false) }
@@ -2984,8 +3022,6 @@ fun SettingsElectronicBillingScreen(
         certificatePassword = config.certificatePassword
         certificateUri = config.certificateUri
         certificateFileName = config.certificateFileName
-        isSimulationMode = config.isSimulationMode
-        forceNetworkFailureSimulation = config.forceNetworkFailureSimulation
     }
 
     val contingencyDtes by viewModel.contingencyDtes.collectAsState()
@@ -3100,67 +3136,7 @@ fun SettingsElectronicBillingScreen(
                 }
             }
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                ),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Modo Simulación DTE",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            text = "Solo Desarrollo: Simula la emisión sin transmitir al MH",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = isSimulationMode,
-                        onCheckedChange = { isSimulationMode = it },
-                    )
-                }
 
-                if (isSimulationMode) {
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Forzar Falla de Red (Contingencia)",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                            Text(
-                                text = "Solo Desarrollo: Simula un timeout de red para probar Contingencia.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = forceNetworkFailureSimulation,
-                            onCheckedChange = { forceNetworkFailureSimulation = it }
-                        )
-                    }
-                }
-            }
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -3396,7 +3372,6 @@ fun SettingsElectronicBillingScreen(
                         certificatePassword = certificatePassword,
                         certificateUri = certificateUri,
                         certificateFileName = certificateFileName,
-                        isSimulationMode = isSimulationMode,
                     )
                     viewModel.updateElectronicBillingConfig(updatedConfig)
                     Toast.makeText(
@@ -3404,6 +3379,7 @@ fun SettingsElectronicBillingScreen(
                         "Configuración de facturación electrónica guardada exitosamente",
                         Toast.LENGTH_SHORT,
                     ).show()
+                    onNavigateBack()
                 },
                 modifier = Modifier
                     .fillMaxWidth()

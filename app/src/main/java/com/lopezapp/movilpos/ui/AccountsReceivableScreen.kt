@@ -112,25 +112,14 @@ fun AccountsReceivableScreen(
     viewModel: AccountsReceivableViewModel,
     settingsViewModel: SettingsViewModel,
     onBackClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    initialCustomerId: String? = null
+    onCustomerClick: (String) -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     val totalAccountsReceivable by viewModel.totalAccountsReceivable.collectAsState()
     val debtorCustomers by viewModel.debtorCustomers.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val allSales by viewModel.sales.collectAsState()
-    val customerPayments by viewModel.customerPayments.collectAsState()
     val settingsUiState by settingsViewModel.uiState.collectAsState()
-
-    var selectedCustomer by remember(initialCustomerId, debtorCustomers) {
-        mutableStateOf(
-            if (!initialCustomerId.isNullOrBlank()) {
-                viewModel.getCustomerById(initialCustomerId)
-            } else {
-                null
-            }
-        )
-    }
 
     var showRegisterPaymentDialog by remember { mutableStateOf(false) }
     var dialogCustomer by remember { mutableStateOf<Customer?>(null) }
@@ -141,25 +130,13 @@ fun AccountsReceivableScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (selectedCustomer != null) {
-                            "Detalle de Cuenta"
-                        } else {
-                            "Cuentas por Cobrar"
-                        },
+                        text = "Cuentas por Cobrar",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            if (selectedCustomer != null) {
-                                selectedCustomer = null
-                            } else {
-                                onBackClick()
-                            }
-                        }
-                    ) {
+                    IconButton(onClick = onBackClick) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver"
@@ -173,128 +150,100 @@ fun AccountsReceivableScreen(
         },
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            val currentSelectedCustomer = selectedCustomer
-            if (currentSelectedCustomer != null) {
-                // Customer Debt Details View
-                CustomerDebtDetailsView(
-                    customer = currentSelectedCustomer,
-                    allSales = allSales,
-                    customerPayments = customerPayments,
-                    businessInfo = settingsUiState.businessInfo,
-                    ticketConfig = settingsUiState.ticketConfig,
-                    bluetoothPrinterConfig = settingsUiState.bluetoothPrinterConfig,
-                    currencySymbol = settingsUiState.currencySymbol,
-                    defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces,
-                    allowExtraDecimals = settingsUiState.allowExtraDecimals,
-                    onBackToList = { selectedCustomer = null },
-                    onRegisterAbonoClick = { saleId ->
-                        dialogCustomer = currentSelectedCustomer
-                        dialogPreselectedSaleId = saleId
-                        showRegisterPaymentDialog = true
-                    }
-                )
-            } else {
-                // Main Debtor List View
-                Column(
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Summary Card: Cartera Deudora Total ($)
+            AccountsReceivableSummaryCard(
+                totalAmount = totalAccountsReceivable,
+                debtorCount = debtorCustomers.size,
+                currencySymbol = settingsUiState.currencySymbol,
+                defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces,
+                allowExtraDecimals = settingsUiState.allowExtraDecimals
+            )
+
+            // Search Bar
+            CompactSearchBar(
+                query = searchQuery,
+                onQueryChange = viewModel::onSearchQueryChanged,
+                placeholder = "Buscar deudor por nombre o documento..."
+            )
+
+            // List of Debtor Customers
+            if (debtorCustomers.isEmpty()) {
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Spacer(modifier = Modifier.height(2.dp))
-
-                    // Summary Card: Cartera Deudora Total ($)
-                    AccountsReceivableSummaryCard(
-                        totalAmount = totalAccountsReceivable,
-                        debtorCount = debtorCustomers.size,
-                        currencySymbol = settingsUiState.currencySymbol,
-                        defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces,
-                        allowExtraDecimals = settingsUiState.allowExtraDecimals
-                    )
-
-                    // Search Bar
-                    CompactSearchBar(
-                        query = searchQuery,
-                        onQueryChange = viewModel::onSearchQueryChanged,
-                        placeholder = "Buscar deudor por nombre o documento..."
-                    )
-
-                    // List of Debtor Customers
-                    if (debtorCustomers.isEmpty()) {
-                        Box(
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .weight(1f),
-                            contentAlignment = Alignment.Center
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CheckCircleOutline,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(56.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = if (searchQuery.isBlank()) {
-                                            "No hay clientes con saldo deudor pendiente."
-                                        } else {
-                                            "No se encontraron clientes deudores para \"$searchQuery\"."
-                                        },
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircleOutline,
+                                contentDescription = null,
+                                modifier = Modifier.size(56.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = if (searchQuery.isBlank()) {
+                                    "No hay clientes con saldo deudor pendiente."
+                                } else {
+                                    "No se encontraron clientes deudores para \"$searchQuery\"."
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(debtorCustomers, key = { it.id }) { customer ->
-                                val pendingSalesCount = allSales.count {
-                                    it.customerId == customer.id && it.isCredit && !it.isVoided && it.remainingBalance > 0.0
-                                }
-                                DebtorCustomerCard(
-                                    customer = customer,
-                                    pendingSalesCount = pendingSalesCount,
-                                    currencySymbol = settingsUiState.currencySymbol,
-                                    defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces,
-                                    allowExtraDecimals = settingsUiState.allowExtraDecimals,
-                                    onSelectCustomer = { selectedCustomer = customer },
-                                    onRegisterAbono = {
-                                        dialogCustomer = customer
-                                        dialogPreselectedSaleId = null
-                                        showRegisterPaymentDialog = true
-                                    }
-                                )
-                            }
-                            item {
-                                Spacer(modifier = Modifier.height(16.dp))
-                            }
+                    }
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(debtorCustomers, key = { it.id }) { customer ->
+                        val pendingSalesCount = allSales.count {
+                            it.customerId == customer.id && it.isCredit && !it.isVoided && it.remainingBalance > 0.0
                         }
+                        DebtorCustomerCard(
+                            customer = customer,
+                            pendingSalesCount = pendingSalesCount,
+                            currencySymbol = settingsUiState.currencySymbol,
+                            defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces,
+                            allowExtraDecimals = settingsUiState.allowExtraDecimals,
+                            onSelectCustomer = { onCustomerClick(customer.id) },
+                            onRegisterAbono = {
+                                dialogCustomer = customer
+                                dialogPreselectedSaleId = null
+                                showRegisterPaymentDialog = true
+                            }
+                        )
+                    }
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
             }
@@ -334,6 +283,117 @@ fun AccountsReceivableScreen(
                     dialogPreselectedSaleId = null
                 }
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccountsReceivableDetailScreen(
+    customerId: String,
+    viewModel: AccountsReceivableViewModel,
+    settingsViewModel: SettingsViewModel,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val debtorCustomers by viewModel.debtorCustomers.collectAsState()
+    val allSales by viewModel.sales.collectAsState()
+    val customerPayments by viewModel.customerPayments.collectAsState()
+    val settingsUiState by settingsViewModel.uiState.collectAsState()
+
+    val customer = remember(customerId, debtorCustomers) {
+        viewModel.getCustomerById(customerId)
+    }
+
+    var showRegisterPaymentDialog by remember { mutableStateOf(false) }
+    var dialogPreselectedSaleId by remember { mutableStateOf<String?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Detalle de Cuenta",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Volver"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        modifier = modifier.fillMaxSize()
+    ) { innerPadding ->
+        if (customer != null) {
+            CustomerDebtDetailsView(
+                customer = customer,
+                allSales = allSales,
+                customerPayments = customerPayments,
+                businessInfo = settingsUiState.businessInfo,
+                ticketConfig = settingsUiState.ticketConfig,
+                bluetoothPrinterConfig = settingsUiState.bluetoothPrinterConfig,
+                currencySymbol = settingsUiState.currencySymbol,
+                defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces,
+                allowExtraDecimals = settingsUiState.allowExtraDecimals,
+                onRegisterAbonoClick = { saleId ->
+                    dialogPreselectedSaleId = saleId
+                    showRegisterPaymentDialog = true
+                },
+                modifier = Modifier.padding(innerPadding)
+            )
+
+            if (showRegisterPaymentDialog) {
+                val customerPendingSales = remember(customer.id, allSales) {
+                    allSales.filter {
+                        it.customerId == customer.id && it.isCredit && !it.isVoided && it.remainingBalance > 0.0
+                    }.sortedByDescending { it.dateMillis }
+                }
+
+                RegisterPaymentDialog(
+                    customer = customer,
+                    pendingSales = customerPendingSales,
+                    preselectedSaleId = dialogPreselectedSaleId,
+                    currencySymbol = settingsUiState.currencySymbol,
+                    defaultDecimalPlaces = settingsUiState.defaultDecimalPlaces,
+                    allowExtraDecimals = settingsUiState.allowExtraDecimals,
+                    onDismissRequest = {
+                        showRegisterPaymentDialog = false
+                        dialogPreselectedSaleId = null
+                    },
+                    onConfirmPayment = { saleId, amount, paymentMethodName, notes ->
+                        viewModel.registerPayment(
+                            customerId = customer.id,
+                            saleId = saleId,
+                            amount = amount,
+                            paymentMethodName = paymentMethodName,
+                            notes = notes
+                        )
+                        showRegisterPaymentDialog = false
+                        dialogPreselectedSaleId = null
+                    }
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Cliente no encontrado.",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
         }
     }
 }
@@ -565,7 +625,6 @@ fun CustomerDebtDetailsView(
     currencySymbol: String,
     defaultDecimalPlaces: Int,
     allowExtraDecimals: Boolean,
-    onBackToList: () -> Unit,
     onRegisterAbonoClick: (saleId: String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -594,19 +653,6 @@ fun CustomerDebtDetailsView(
     ) {
         item {
             Spacer(modifier = Modifier.height(4.dp))
-
-            TextButton(
-                onClick = onBackToList,
-                modifier = Modifier.padding(bottom = 2.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Volver a la lista de deudores")
-            }
 
             // Customer Summary Card
             ElevatedCard(

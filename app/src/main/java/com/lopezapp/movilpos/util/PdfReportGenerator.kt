@@ -18,7 +18,9 @@ import com.lopezapp.movilpos.data.model.CashShift
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.CustomerPayment
 import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
+import com.lopezapp.movilpos.data.model.InventoryOutflow
 import com.lopezapp.movilpos.data.model.InvoiceType
+import com.lopezapp.movilpos.data.model.ProductReturn
 import com.lopezapp.movilpos.data.model.LabelSize
 import com.lopezapp.movilpos.data.model.PrintMode
 import com.lopezapp.movilpos.data.model.Purchase
@@ -30,6 +32,7 @@ import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.TicketPaperSize
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.toSpanishLabel
 import com.lopezapp.movilpos.data.model.calculatePriceWithoutTax
 import com.lopezapp.movilpos.data.model.getFormattedTaxLabel
 import java.io.File
@@ -2659,6 +2662,438 @@ object PdfReportGenerator {
         return outputFile
     }
 
+    fun generateOutflowPdf(
+        context: Context,
+        outflow: InventoryOutflow,
+        businessInfo: BusinessInfo
+    ): File {
+        val pdfDocument = PdfDocument()
+
+        // Standard Letter dimensions in points at 72 DPI: 612 x 792 points
+        val pageWidth = 612
+        val pageHeight = 792
+        val margin = 40f
+
+        var pageNumber = 1
+        var pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+        var page = pdfDocument.startPage(pageInfo)
+        var canvas: Canvas = page.canvas
+
+        // Paint definitions
+        val paintMainTitle = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(24, 43, 73)
+            textSize = 15f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintDocTitle = Paint().apply {
+            isAntiAlias = true
+            color = Color.WHITE
+            textSize = 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintHeader = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(24, 43, 73)
+            textSize = 11f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintText = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(50, 50, 50)
+            textSize = 9.5f
+        }
+
+        val paintTextBold = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(30, 30, 30)
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintTableHeader = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintTableHeaderRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintTableText = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 9.5f
+        }
+
+        val paintTableTextRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 9.5f
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintGrid = Paint().apply {
+            color = Color.LTGRAY
+            strokeWidth = 1f
+            style = Paint.Style.STROKE
+        }
+
+        val paintTableBg = Paint().apply {
+            color = Color.rgb(235, 240, 245)
+            style = Paint.Style.FILL
+        }
+
+        val paintHeaderBoxBg = Paint().apply {
+            color = Color.rgb(24, 43, 73)
+            style = Paint.Style.FILL
+        }
+
+        val paintLightBoxBg = Paint().apply {
+            color = Color.rgb(248, 249, 250)
+            style = Paint.Style.FILL
+        }
+
+        val paintFooter = Paint().apply {
+            isAntiAlias = true
+            color = Color.GRAY
+            textSize = 9f
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintSignatureText = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(50, 50, 50)
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val paintSignatureSubtext = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(100, 100, 100)
+            textSize = 8.5f
+            textAlign = Paint.Align.CENTER
+        }
+
+        var yPos = margin
+
+        // Document Banner Header Title
+        val documentBannerText = "COMPROBANTE DE SALIDA / ACTA DE BAJA DE INVENTARIO"
+        val bannerWidth = paintMainTitle.measureText(documentBannerText)
+        canvas.drawText(documentBannerText, (pageWidth - bannerWidth) / 2f, yPos + 14f, paintMainTitle)
+        yPos += 26f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintGrid)
+        yPos += 14f
+
+        // Try decoding logo
+        var logoBitmap: Bitmap? = null
+        if (!businessInfo.logoUri.isNullOrBlank()) {
+            try {
+                val uri = Uri.parse(businessInfo.logoUri)
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val decoded = BitmapFactory.decodeStream(stream)
+                    if (decoded != null) {
+                        val maxW = 70f
+                        val maxH = 50f
+                        val scale = minOf(maxW / decoded.width, maxH / decoded.height)
+                        val w = (decoded.width * scale).toInt().coerceAtLeast(1)
+                        val h = (decoded.height * scale).toInt().coerceAtLeast(1)
+                        logoBitmap = Bitmap.createScaledBitmap(decoded, w, h, true)
+                    }
+                }
+            } catch (_: Exception) {
+                logoBitmap = null
+            }
+        }
+
+        val leftMargin = margin
+        val rightBoxLeft = 330f
+        val rightBoxWidth = 242f
+        val rightBoxRight = rightBoxLeft + rightBoxWidth
+
+        var leftY = yPos
+        logoBitmap?.let { bmp ->
+            canvas.drawBitmap(bmp, leftMargin, leftY, null)
+            leftY += bmp.height + 6f
+        }
+
+        val businessName = businessInfo.commercialName.ifBlank { businessInfo.name.ifBlank { "MI NEGOCIO" } }
+        canvas.drawText(businessName, leftMargin, leftY + 12f, paintHeader)
+        leftY += 18f
+
+        if (businessInfo.nit.isNotBlank()) {
+            canvas.drawText("NIT: ${businessInfo.nit}", leftMargin, leftY + 10f, paintText)
+            leftY += 14f
+        }
+        if (businessInfo.nrc.isNotBlank()) {
+            canvas.drawText("NRC: ${businessInfo.nrc}", leftMargin, leftY + 10f, paintText)
+            leftY += 14f
+        }
+        if (businessInfo.address.isNotBlank()) {
+            var addr = businessInfo.address
+            if (paintText.measureText("Dirección: $addr") > 260f) {
+                while (addr.isNotEmpty() && paintText.measureText("Dirección: $addr..") > 260f) {
+                    addr = addr.dropLast(1)
+                }
+                addr = "$addr.."
+            }
+            canvas.drawText("Dirección: $addr", leftMargin, leftY + 10f, paintText)
+            leftY += 14f
+        }
+        if (businessInfo.phone.isNotBlank()) {
+            canvas.drawText("Teléfono: ${businessInfo.phone}", leftMargin, leftY + 10f, paintText)
+            leftY += 14f
+        }
+        if (businessInfo.socialMedia.isNotBlank()) {
+            canvas.drawText("Redes: ${businessInfo.socialMedia}", leftMargin, leftY + 10f, paintText)
+            leftY += 14f
+        }
+
+        // Metadata Box on Right
+        var rightY = yPos
+        val docTitle = "COMPROBANTE DE SALIDA DE INVENTARIO"
+
+        val boxHeaderHeight = 22f
+        val boxBodyHeight = 72f
+        val totalBoxHeight = boxHeaderHeight + boxBodyHeight
+
+        canvas.drawRect(rightBoxLeft, rightY, rightBoxRight, rightY + boxHeaderHeight, paintHeaderBoxBg)
+        val titleCenterX = rightBoxLeft + (rightBoxWidth / 2f)
+        canvas.drawText(docTitle, titleCenterX, rightY + 15f, paintDocTitle)
+
+        canvas.drawRect(rightBoxLeft, rightY + boxHeaderHeight, rightBoxRight, rightY + totalBoxHeight, paintLightBoxBg)
+        canvas.drawRect(rightBoxLeft, rightY, rightBoxRight, rightY + totalBoxHeight, paintGrid)
+
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+        val formattedDate = dateFormat.format(Date(outflow.dateMillis))
+
+        var boxTextY = rightY + boxHeaderHeight + 14f
+        val outflowIdDisplay = outflow.id
+        var displayId = outflowIdDisplay
+        if (paintTextBold.measureText("N° Salida: $displayId") > (rightBoxWidth - 12f)) {
+            displayId = outflowIdDisplay.take(16)
+        }
+        canvas.drawText("N° de Salida: $displayId", rightBoxLeft + 6f, boxTextY, paintTextBold)
+        boxTextY += 15f
+        canvas.drawText("Fecha y Hora: $formattedDate", rightBoxLeft + 6f, boxTextY, paintText)
+        boxTextY += 15f
+        val reasonLabel = outflow.reason.toSpanishLabel()
+        var displayReason = reasonLabel
+        if (paintText.measureText("Motivo: $displayReason") > (rightBoxWidth - 12f)) {
+            while (displayReason.isNotEmpty() && paintText.measureText("Motivo: $displayReason..") > (rightBoxWidth - 12f)) {
+                displayReason = displayReason.dropLast(1)
+            }
+            displayReason = "$displayReason.."
+        }
+        canvas.drawText("Motivo: $displayReason", rightBoxLeft + 6f, boxTextY, paintText)
+        boxTextY += 15f
+        val regUser = outflow.registeredByUserName.ifBlank { "Administrador" }
+        var displayUser = regUser
+        if (paintText.measureText("Registrado por: $displayUser") > (rightBoxWidth - 12f)) {
+            while (displayUser.isNotEmpty() && paintText.measureText("Registrado por: $displayUser..") > (rightBoxWidth - 12f)) {
+                displayUser = displayUser.dropLast(1)
+            }
+            displayUser = "$displayUser.."
+        }
+        canvas.drawText("Registrado por: $displayUser", rightBoxLeft + 6f, boxTextY, paintText)
+
+        rightY += totalBoxHeight
+
+        yPos = maxOf(leftY, rightY) + 12f
+        canvas.drawLine(margin, yPos, pageWidth - margin, yPos, paintGrid)
+        yPos += 12f
+
+        // Justification / Note Box Section
+        val noteText = outflow.notes.ifBlank { "Sin nota especificada" }
+        canvas.drawText("JUSTIFICACIÓN / NOTA", margin, yPos + 10f, paintHeader)
+        yPos += 16f
+
+        val noteBoxTop = yPos
+        val maxNoteWidth = pageWidth - 2 * margin - 16f
+
+        val noteLines = mutableListOf<String>()
+        val noteWords = noteText.split(" ")
+        var currentLine = ""
+        for (word in noteWords) {
+            val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
+            if (paintText.measureText(testLine) <= maxNoteWidth) {
+                currentLine = testLine
+            } else {
+                noteLines.add(currentLine)
+                currentLine = word
+            }
+        }
+        if (currentLine.isNotEmpty()) {
+            noteLines.add(currentLine)
+        }
+
+        val noteLineHeight = 14f
+        val noteBoxHeight = (noteLines.size * noteLineHeight + 12f).coerceAtLeast(32f)
+
+        canvas.drawRect(margin, noteBoxTop, pageWidth - margin, noteBoxTop + noteBoxHeight, paintLightBoxBg)
+        canvas.drawRect(margin, noteBoxTop, pageWidth - margin, noteBoxTop + noteBoxHeight, paintGrid)
+
+        var noteTextY = noteBoxTop + 14f
+        for (line in noteLines) {
+            canvas.drawText(line, margin + 8f, noteTextY, paintText)
+            noteTextY += noteLineHeight
+        }
+
+        yPos += noteBoxHeight + 16f
+
+        // Items Table Section
+        canvas.drawText("DETALLE DE PRODUCTOS RETIRADOS", margin, yPos + 10f, paintHeader)
+        yPos += 16f
+
+        val colLefts = floatArrayOf(margin, margin + 30f, margin + 262f, margin + 322f, margin + 422f)
+        val colWidths = floatArrayOf(30f, 232f, 60f, 100f, 110f)
+        val headers = arrayOf("N°", "Producto", "Cantidad", "Costo Unit.", "Costo Total ($)")
+        val rowHeight = 22f
+
+        fun drawTableHeader(c: Canvas, topY: Float) {
+            c.drawRect(margin, topY, pageWidth - margin, topY + rowHeight, paintTableBg)
+
+            c.drawText(headers[0], colLefts[0] + 6f, topY + 15f, paintTableHeader)
+            c.drawText(headers[1], colLefts[1] + 6f, topY + 15f, paintTableHeader)
+            c.drawText(headers[2], colLefts[2] + colWidths[2] - 6f, topY + 15f, paintTableHeaderRight)
+            c.drawText(headers[3], colLefts[3] + colWidths[3] - 6f, topY + 15f, paintTableHeaderRight)
+            c.drawText(headers[4], colLefts[4] + colWidths[4] - 6f, topY + 15f, paintTableHeaderRight)
+
+            c.drawRect(margin, topY, pageWidth - margin, topY + rowHeight, paintGrid)
+            for (i in 1 until colLefts.size) {
+                c.drawLine(colLefts[i], topY, colLefts[i], topY + rowHeight, paintGrid)
+            }
+        }
+
+        fun drawFooter(c: Canvas) {
+            val footerText = "Documento generado por MovilPOS - Sistema de Control de Inventario"
+            c.drawText(footerText, pageWidth / 2f, pageHeight - 30f, paintFooter)
+        }
+
+        drawTableHeader(canvas, yPos)
+        yPos += rowHeight
+
+        outflow.items.forEachIndexed { index, item ->
+            if ((yPos + rowHeight) > (pageHeight - 160f)) {
+                drawFooter(canvas)
+                pdfDocument.finishPage(page)
+
+                pageNumber++
+                pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                page = pdfDocument.startPage(pageInfo)
+                canvas = page.canvas
+                yPos = margin
+
+                drawTableHeader(canvas, yPos)
+                yPos += rowHeight
+            }
+
+            var prodName = item.productName
+            val maxNameWidth = colWidths[1] - 12f
+            if (paintTableText.measureText(prodName) > maxNameWidth) {
+                while (prodName.isNotEmpty() && paintTableText.measureText("$prodName...") > maxNameWidth) {
+                    prodName = prodName.dropLast(1)
+                }
+                prodName = "$prodName..."
+            }
+
+            canvas.drawText("${index + 1}", colLefts[0] + 6f, yPos + 15f, paintTableText)
+            canvas.drawText(prodName, colLefts[1] + 6f, yPos + 15f, paintTableText)
+            canvas.drawText(item.quantity.toString(), colLefts[2] + colWidths[2] - 6f, yPos + 15f, paintTableTextRight)
+            canvas.drawText(formatCurrency(item.unitCost), colLefts[3] + colWidths[3] - 6f, yPos + 15f, paintTableTextRight)
+            canvas.drawText(formatCurrency(item.totalCost), colLefts[4] + colWidths[4] - 6f, yPos + 15f, paintTableTextRight)
+
+            canvas.drawRect(margin, yPos, pageWidth - margin, yPos + rowHeight, paintGrid)
+            for (i in 1 until colLefts.size) {
+                canvas.drawLine(colLefts[i], yPos, colLefts[i], yPos + rowHeight, paintGrid)
+            }
+
+            yPos += rowHeight
+        }
+
+        yPos += 12f
+
+        // Totals Box
+        if ((yPos + 140f) > (pageHeight - 60f)) {
+            drawFooter(canvas)
+            pdfDocument.finishPage(page)
+
+            pageNumber++
+            pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+            page = pdfDocument.startPage(pageInfo)
+            canvas = page.canvas
+            yPos = margin
+        }
+
+        val totalsBoxWidth = 220f
+        val totalsBoxHeight = 32f
+        val totalsBoxLeft = pageWidth - margin - totalsBoxWidth
+        val totalsBoxTop = yPos
+
+        canvas.drawRect(totalsBoxLeft, totalsBoxTop, pageWidth - margin, totalsBoxTop + totalsBoxHeight, paintLightBoxBg)
+        canvas.drawRect(totalsBoxLeft, totalsBoxTop, pageWidth - margin, totalsBoxTop + totalsBoxHeight, paintGrid)
+
+        val totalText = "TOTAL COSTO SALIDA:"
+        val totalAmountFormatted = formatCurrency(outflow.totalCost)
+
+        canvas.drawText(totalText, totalsBoxLeft + 10f, totalsBoxTop + 20f, paintTextBold)
+        canvas.drawText(totalAmountFormatted, pageWidth - margin - 10f, totalsBoxTop + 20f, paintTableHeaderRight)
+
+        yPos += totalsBoxHeight + 40f
+
+        // Signatures Section
+        if ((yPos + 60f) > (pageHeight - 50f)) {
+            drawFooter(canvas)
+            pdfDocument.finishPage(page)
+
+            pageNumber++
+            pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+            page = pdfDocument.startPage(pageInfo)
+            canvas = page.canvas
+            yPos = pageHeight - 120f
+        }
+
+        val sigWidth = 200f
+        val sig1Left = margin + 20f
+        val sig1Right = sig1Left + sigWidth
+        val sig2Right = pageWidth - margin - 20f
+        val sig2Left = sig2Right - sigWidth
+
+        // Signature Line 1: Entregado Por (Cajero/Responsable)
+        canvas.drawLine(sig1Left, yPos, sig1Right, yPos, paintGrid)
+        canvas.drawText("Entregado Por", sig1Left + sigWidth / 2f, yPos + 14f, paintSignatureText)
+        canvas.drawText("(Cajero/Responsable)", sig1Left + sigWidth / 2f, yPos + 26f, paintSignatureSubtext)
+
+        // Signature Line 2: Autorizado Por (Administrador/Supervisor)
+        canvas.drawLine(sig2Left, yPos, sig2Right, yPos, paintGrid)
+        canvas.drawText("Autorizado Por", sig2Left + sigWidth / 2f, yPos + 14f, paintSignatureText)
+        canvas.drawText("(Administrador/Supervisor)", sig2Left + sigWidth / 2f, yPos + 26f, paintSignatureSubtext)
+
+        // Footer
+        drawFooter(canvas)
+
+        pdfDocument.finishPage(page)
+
+        val outputFile = File(context.cacheDir, "comprobante_salida_${outflow.id}.pdf")
+        FileOutputStream(outputFile).use { out ->
+            pdfDocument.writeTo(out)
+        }
+        pdfDocument.close()
+
+        return outputFile
+    }
+
     fun generateBarcodeLabelsPdf(
         context: Context,
         items: List<BatchLabelItem>,
@@ -3047,5 +3482,250 @@ object PdfReportGenerator {
                 return (targetSize * (maxWidth / w)).coerceAtLeast(4f)
             }
         }
+    }
+
+    fun generateReturnReceiptPdf(
+        context: Context,
+        productReturn: ProductReturn,
+        businessInfo: BusinessInfo
+    ): File {
+        val pdfDocument = PdfDocument()
+        val pageWidth = 612
+        val pageHeight = 792
+        val margin = 40f
+
+        var pageNumber = 1
+        var pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+        var page = pdfDocument.startPage(pageInfo)
+        var canvas: Canvas = page.canvas
+
+        val paintMainTitle = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(24, 43, 73)
+            textSize = 14f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintText = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(50, 50, 50)
+            textSize = 9.5f
+        }
+
+        val paintTextBold = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(30, 30, 30)
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintTableHeader = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val paintTableHeaderRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintTableText = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 9f
+        }
+
+        val paintTableTextRight = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 9f
+            textAlign = Paint.Align.RIGHT
+        }
+
+        val paintGrid = Paint().apply {
+            color = Color.LTGRAY
+            strokeWidth = 1f
+            style = Paint.Style.STROKE
+        }
+
+        var yPos = margin
+
+        // Business Header
+        canvas.drawText(businessInfo.name.ifBlank { "Mi Negocio" }, margin, yPos + 15f, paintMainTitle)
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+        val dateStr = dateFormat.format(Date(productReturn.dateMillis))
+
+        val paintRightText = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(80, 80, 80)
+            textSize = 9.5f
+            textAlign = Paint.Align.RIGHT
+        }
+        canvas.drawText("Fecha: $dateStr", pageWidth - margin, yPos + 15f, paintRightText)
+        yPos += 22f
+
+        if (businessInfo.address.isNotBlank()) {
+            canvas.drawText(businessInfo.address, margin, yPos + 12f, paintText)
+            yPos += 16f
+        }
+        if (businessInfo.phone.isNotBlank() || businessInfo.email.isNotBlank()) {
+            canvas.drawText("Tel: ${businessInfo.phone} | Email: ${businessInfo.email}", margin, yPos + 12f, paintText)
+            yPos += 24f
+        } else {
+            yPos += 8f
+        }
+
+        // Document Title Box
+        val titleBoxHeight = 28f
+        val paintBoxBg = Paint().apply {
+            color = Color.rgb(240, 244, 248)
+            style = Paint.Style.FILL
+        }
+        canvas.drawRect(margin, yPos, pageWidth - margin, yPos + titleBoxHeight, paintBoxBg)
+        canvas.drawRect(margin, yPos, pageWidth - margin, yPos + titleBoxHeight, paintGrid)
+
+        val paintDocTitleCenter = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(24, 43, 73)
+            textSize = 11f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText("COMPROBANTE DE DEVOLUCIÓN / NOTA DE CRÉDITO", pageWidth / 2f, yPos + 18f, paintDocTitleCenter)
+        yPos += titleBoxHeight + 16f
+
+        // Metadata block
+        canvas.drawText("ID Devolución: #${productReturn.id.take(8).uppercase()}", margin, yPos, paintTextBold)
+        canvas.drawText("Venta Original: #${productReturn.originalSaleId.take(8).uppercase()}", margin + 240f, yPos, paintTextBold)
+        yPos += 18f
+
+        canvas.drawText("Cliente: ${productReturn.customerName.ifBlank { "Consumidor Final" }}", margin, yPos, paintText)
+        yPos += 18f
+
+        canvas.drawText("Motivo: ${productReturn.reason.toSpanishLabel()}", margin, yPos, paintText)
+        canvas.drawText("Método Reembolso: ${productReturn.refundMethod}", margin + 240f, yPos, paintText)
+        yPos += 18f
+
+        if (productReturn.notes.isNotBlank()) {
+            canvas.drawText("Notas: ${productReturn.notes}", margin, yPos, paintText)
+            yPos += 18f
+        }
+        yPos += 10f
+
+        // Items Table Header
+        val tableTop = yPos
+        val colDescX = margin + 10f
+        val colQtyX = margin + 310f
+        val colPriceX = margin + 390f
+        val colSubtotalX = pageWidth - margin - 10f
+
+        val tableHeaderHeight = 22f
+        val paintTableHeaderBg = Paint().apply {
+            color = Color.rgb(230, 235, 242)
+            style = Paint.Style.FILL
+        }
+        canvas.drawRect(margin, tableTop, pageWidth - margin, tableTop + tableHeaderHeight, paintTableHeaderBg)
+        canvas.drawRect(margin, tableTop, pageWidth - margin, tableTop + tableHeaderHeight, paintGrid)
+
+        canvas.drawText("Descripción de Producto", colDescX, tableTop + 15f, paintTableHeader)
+        canvas.drawText("Cant", colQtyX, tableTop + 15f, paintTableHeaderRight)
+        canvas.drawText("Precio U.", colPriceX, tableTop + 15f, paintTableHeaderRight)
+        canvas.drawText("Subtotal", colSubtotalX, tableTop + 15f, paintTableHeaderRight)
+
+        yPos += tableHeaderHeight
+
+        val rowHeight = 22f
+        for (item in productReturn.items) {
+            if ((yPos + rowHeight) > (pageHeight - 100f)) {
+                canvas.drawRect(margin, tableTop, pageWidth - margin, yPos, paintGrid)
+                pdfDocument.finishPage(page)
+                pageNumber++
+                pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                page = pdfDocument.startPage(pageInfo)
+                canvas = page.canvas
+                yPos = margin
+            }
+
+            canvas.drawRect(margin, yPos, pageWidth - margin, yPos + rowHeight, paintGrid)
+            canvas.drawText(item.productName, colDescX, yPos + 15f, paintTableText)
+            canvas.drawText(item.quantity.toString(), colQtyX, yPos + 15f, paintTableTextRight)
+            canvas.drawText(String.format(Locale.US, "$%.2f", item.unitPrice), colPriceX, yPos + 15f, paintTableTextRight)
+            canvas.drawText(String.format(Locale.US, "$%.2f", item.refundSubtotal), colSubtotalX, yPos + 15f, paintTableTextRight)
+            yPos += rowHeight
+        }
+
+        yPos += 15f
+
+        // Totals Box
+        val totalsBoxWidth = 220f
+        val totalsBoxLeft = pageWidth - margin - totalsBoxWidth
+        val totalsBoxTop = yPos
+        val totalsBoxHeight = 35f
+
+        canvas.drawRect(totalsBoxLeft, totalsBoxTop, pageWidth - margin, totalsBoxTop + totalsBoxHeight, paintBoxBg)
+        canvas.drawRect(totalsBoxLeft, totalsBoxTop, pageWidth - margin, totalsBoxTop + totalsBoxHeight, paintGrid)
+
+        val paintTotalLabel = Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+            textSize = 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val paintTotalVal = Paint().apply {
+            isAntiAlias = true
+            color = Color.rgb(24, 43, 73)
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+
+        canvas.drawText("TOTAL REEMBOLSO:", totalsBoxLeft + 12f, totalsBoxTop + 22f, paintTotalLabel)
+        canvas.drawText(String.format(Locale.US, "$%.2f", productReturn.totalRefundAmount), pageWidth - margin - 12f, totalsBoxTop + 23f, paintTotalVal)
+
+        yPos += totalsBoxHeight + 50f
+
+        // Signatures
+        if ((yPos + 50f) > (pageHeight - 50f)) {
+            pdfDocument.finishPage(page)
+            pageNumber++
+            pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+            page = pdfDocument.startPage(pageInfo)
+            canvas = page.canvas
+            yPos = margin + 40f
+        }
+
+        val sigWidth = 180f
+        val sig1Left = margin + 20f
+        val sig1Right = sig1Left + sigWidth
+        val sig2Right = pageWidth - margin - 20f
+        val sig2Left = sig2Right - sigWidth
+
+        val paintSigText = Paint().apply {
+            isAntiAlias = true
+            color = Color.GRAY
+            textSize = 9f
+            textAlign = Paint.Align.CENTER
+        }
+
+        canvas.drawLine(sig1Left, yPos, sig1Right, yPos, paintGrid)
+        canvas.drawText("Entregado por (Cliente)", sig1Left + sigWidth / 2f, yPos + 14f, paintSigText)
+
+        canvas.drawLine(sig2Left, yPos, sig2Right, yPos, paintGrid)
+        canvas.drawText("Autorizado por (${productReturn.cashierName.ifBlank { "Cajero" }})", sig2Left + sigWidth / 2f, yPos + 14f, paintSigText)
+
+        pdfDocument.finishPage(page)
+
+        val outputFile = File(context.cacheDir, "comprobante_devolucion_${productReturn.id}.pdf")
+        FileOutputStream(outputFile).use { out ->
+            pdfDocument.writeTo(out)
+        }
+        pdfDocument.close()
+
+        return outputFile
     }
 }

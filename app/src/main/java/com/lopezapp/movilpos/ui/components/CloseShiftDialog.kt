@@ -1,6 +1,9 @@
 package com.lopezapp.movilpos.ui.components
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.filled.Money
 import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
@@ -67,6 +71,7 @@ import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import com.lopezapp.movilpos.util.EscPosPrinter
+import com.lopezapp.movilpos.util.PdfReportGenerator
 import com.lopezapp.movilpos.util.formatCurrency
 import com.lopezapp.movilpos.util.sanitizeDecimalTextFieldValue
 import java.text.SimpleDateFormat
@@ -409,11 +414,46 @@ fun CloseShiftDialog(
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // Action Buttons Row ("Imprimir por Bluetooth", "Cerrar Turno", "Cancelar")
+                // Action Buttons Row ("Ver / Exportar PDF de Arqueo", "Imprimir por Bluetooth", "Cerrar Turno", "Cancelar")
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val count = cashCountedValue.text.toDoubleOrNull()
+                                val shiftForPdf = cashShift.copy(
+                                    actualCashCounted = count
+                                )
+                                val pdfFile = PdfReportGenerator.generateCashShiftPdf(
+                                    context = context,
+                                    shift = shiftForPdf,
+                                    businessInfo = businessInfo
+                                )
+                                val uri: Uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    pdfFile
+                                )
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, "application/pdf")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Ver Reporte de Arqueo de Caja"))
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                Toast.makeText(context, "Error al generar reporte PDF: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.PictureAsPdf, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ver / Exportar PDF de Arqueo")
+                    }
+
                     OutlinedButton(
                         onClick = {
                             val macAddress = bluetoothPrinterConfig.macAddress

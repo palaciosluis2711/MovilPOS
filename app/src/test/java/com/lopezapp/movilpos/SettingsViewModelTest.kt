@@ -67,12 +67,14 @@ class SettingsViewModelTest {
         assertEquals("IVA", state.taxes[0].name)
         assertEquals(16.0, state.taxes[0].value, 0.001)
         assertEquals(TaxValueType.PERCENTAGE, state.taxes[0].valueType)
-        assertEquals(4, state.paymentMethods.size)
+        assertEquals(5, state.paymentMethods.size)
         assertEquals("Efectivo", state.paymentMethods[0].name)
         assertTrue(state.paymentMethods[0].isDefault)
-        assertEquals("Tarjeta de Crédito / Débito", state.paymentMethods[1].name)
-        assertEquals("Transferencia Bancaria", state.paymentMethods[2].name)
-        assertEquals("Cheque", state.paymentMethods[3].name)
+        assertEquals("Crédito / A Cuenta", state.paymentMethods[1].name)
+        assertTrue(state.paymentMethods[1].isSystemDefault)
+        assertEquals("Tarjeta de Crédito / Débito", state.paymentMethods[2].name)
+        assertEquals("Transferencia Bancaria", state.paymentMethods[3].name)
+        assertEquals("Cheque", state.paymentMethods[4].name)
         assertEquals("Mi Negocio", state.businessInfo.name)
         assertEquals("", state.businessInfo.nit)
         assertEquals("", state.businessInfo.nrc)
@@ -111,7 +113,7 @@ class SettingsViewModelTest {
         assertTrue(viewModel.validateAdminPin("1234"))
         assertFalse(viewModel.validateAdminPin("9999"))
 
-        val newUser = User(id = "u_test", name = "Test User", pin = "8888", role = Role.SUPERVISOR)
+        val newUser = User(id = "u_test", name = "Test User", username = "test_user", pin = "8888", role = Role.SUPERVISOR)
         viewModel.addUser(newUser)
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -491,12 +493,22 @@ class SettingsViewModelTest {
 
     @Test
     fun deletePaymentMethod_removesMethodFromViewModelAndRepository() = runTest {
-        val initialMethod = viewModel.uiState.value.paymentMethods.first()
+        val initialMethod = viewModel.uiState.value.paymentMethods.first { !it.isSystemDefault }
         viewModel.deletePaymentMethod(initialMethod.id)
         testDispatcher.scheduler.advanceUntilIdle()
 
         val deletedMethod = viewModel.uiState.value.paymentMethods.find { it.id == initialMethod.id }
         assertNull(deletedMethod)
+    }
+
+    @Test
+    fun deletePaymentMethod_systemDefaultMethod_isNotDeleted() = runTest {
+        val systemMethod = viewModel.uiState.value.paymentMethods.first { it.isSystemDefault }
+        viewModel.deletePaymentMethod(systemMethod.id)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val remainingMethod = viewModel.uiState.value.paymentMethods.find { it.id == systemMethod.id }
+        assertNotNull(remainingMethod)
     }
 
     @Test

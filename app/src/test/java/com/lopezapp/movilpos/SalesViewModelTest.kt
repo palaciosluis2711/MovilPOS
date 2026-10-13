@@ -1,5 +1,6 @@
 package com.lopezapp.movilpos
 
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.SaleItem
@@ -284,6 +285,13 @@ class SalesViewModelTest {
 
     @Test
     fun voidSaleDte_voidsSaleInViewModel() = runTest {
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                nit = "06140101901015",
+                apiToken = "valid",
+                certificateUri = "content://cert.p12"
+            )
+        )
         val sale = Sale(
             id = "SALE-VOID-TEST",
             customerId = "c1",
@@ -305,5 +313,135 @@ class SalesViewModelTest {
         assertNotNull(updated)
         assertTrue(updated!!.isVoided)
         assertEquals("Anulación por error de digitación", updated.voidReason)
+    }
+
+    @Test
+    fun upgradeSaleToDte_upgradesSaleInRepository() = runTest {
+        val sale = Sale(
+            id = "SALE-UPGRADE-TEST",
+            customerId = "c1",
+            customerName = "Test Client",
+            invoiceType = InvoiceType.TICKET,
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 15.0,
+            isDteIssued = false
+        )
+        repository.addSale(sale)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val customer = com.lopezapp.movilpos.data.model.Customer(
+            id = "c2",
+            name = "Cliente Factura S.A.",
+            documentType = com.lopezapp.movilpos.data.model.DocumentType.NIT,
+            documentNumber = "0614-010190-102-3",
+            department = "San Salvador",
+            municipality = "San Salvador",
+            district = "San Salvador Centro"
+        )
+
+        viewModel.upgradeSaleToDte("SALE-UPGRADE-TEST", customer, InvoiceType.CONSUMIDOR_FINAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updated = viewModel.getSaleById("SALE-UPGRADE-TEST")
+        assertNotNull(updated)
+        assertEquals("c2", updated!!.customerId)
+        assertEquals("Cliente Factura S.A.", updated.customerName)
+        assertEquals(InvoiceType.CONSUMIDOR_FINAL, updated.invoiceType)
+        assertTrue(updated.isDteIssued)
+        assertEquals("01", updated.dteType)
+        assertNotNull(updated.dteGenerationCode)
+        assertNotNull(updated.dteReceptionSeal)
+        assertNotNull(updated.dteControlNumber)
+    }
+
+    @Test
+    fun upgradeSaleToDte_whenElectronicBillingIsDisabled_blocksEmission() = runTest {
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(isEnabled = false)
+        )
+        val sale = Sale(
+            id = "SALE-BLOCKED-TEST",
+            customerId = "c1",
+            customerName = "Test Client",
+            invoiceType = InvoiceType.TICKET,
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 10.0,
+            isDteIssued = false
+        )
+        repository.addSale(sale)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val customer = com.lopezapp.movilpos.data.model.Customer(
+            id = "c2",
+            name = "Cliente Factura S.A.",
+            documentType = com.lopezapp.movilpos.data.model.DocumentType.NIT,
+            documentNumber = "0614-010190-102-3",
+            department = "San Salvador",
+            municipality = "San Salvador",
+            district = "San Salvador Centro"
+        )
+
+        viewModel.upgradeSaleToDte("SALE-BLOCKED-TEST", customer, InvoiceType.CONSUMIDOR_FINAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNotNull(viewModel.dteInvalidationError.value)
+        assertTrue(viewModel.dteInvalidationError.value!!.contains("deshabilitada"))
+
+        val unupdated = viewModel.getSaleById("SALE-BLOCKED-TEST")
+        assertNotNull(unupdated)
+        assertEquals(InvoiceType.TICKET, unupdated!!.invoiceType)
+        assertTrue(!unupdated.isDteIssued)
+    }
+
+    @Test
+    fun upgradeSaleToDte_whenRealModeAndMissingCredentials_blocksEmission() = runTest {
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                isEnabled = true,
+                environment = com.lopezapp.movilpos.data.model.DteEnvironment.PRODUCTION,
+                isSimulationMode = false,
+                nit = "",
+                apiToken = "",
+                certificateUri = null
+            )
+        )
+        val sale = Sale(
+            id = "SALE-REALMODE-BLOCKED",
+            customerId = "c1",
+            customerName = "Test Client",
+            invoiceType = InvoiceType.TICKET,
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 10.0,
+            isDteIssued = false
+        )
+        repository.addSale(sale)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val customer = com.lopezapp.movilpos.data.model.Customer(
+            id = "c2",
+            name = "Cliente Factura S.A.",
+            documentType = com.lopezapp.movilpos.data.model.DocumentType.NIT,
+            documentNumber = "0614-010190-102-3",
+            department = "San Salvador",
+            municipality = "San Salvador",
+            district = "San Salvador Centro"
+        )
+
+        viewModel.upgradeSaleToDte("SALE-REALMODE-BLOCKED", customer, InvoiceType.CONSUMIDOR_FINAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNotNull(viewModel.dteInvalidationError.value)
+        assertTrue(viewModel.dteInvalidationError.value!!.contains("debe completar la configuración"))
+
+        val unupdated = viewModel.getSaleById("SALE-REALMODE-BLOCKED")
+        assertNotNull(unupdated)
+        assertEquals(InvoiceType.TICKET, unupdated!!.invoiceType)
+        assertTrue(!unupdated.isDteIssued)
     }
 }

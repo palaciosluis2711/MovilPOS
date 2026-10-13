@@ -21,10 +21,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CreditScore
 import androidx.compose.material.icons.rounded.Analytics
+import androidx.compose.material.icons.automirrored.rounded.AssignmentReturn
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.Inventory
 import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.MoneyOff
+import androidx.compose.material.icons.rounded.Outbox
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PointOfSale
 import androidx.compose.material.icons.rounded.Print
@@ -32,13 +34,48 @@ import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.RequestQuote
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ShoppingBag
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.Dialog
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.graphics.Color
+import com.lopezapp.movilpos.util.FirebaseSyncService
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.alpha
+import android.widget.Toast
+import com.lopezapp.movilpos.data.model.AuthSession
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
+import com.lopezapp.movilpos.data.model.BusinessInfo
+import com.lopezapp.movilpos.data.model.Role
+import com.lopezapp.movilpos.data.model.toSpanishLabel
+import com.lopezapp.movilpos.ui.LoginScreen
+import com.lopezapp.movilpos.ui.navigation.LoginRoute
+import com.lopezapp.movilpos.ui.viewmodel.AuthViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -74,6 +111,7 @@ import com.lopezapp.movilpos.ui.SettingsBusinessInfoScreen
 import com.lopezapp.movilpos.ui.SettingsCategoriesScreen
 import com.lopezapp.movilpos.ui.SettingsCurrencyScreen
 import com.lopezapp.movilpos.ui.SettingsElectronicBillingScreen
+import com.lopezapp.movilpos.ui.SettingsFirebaseScreen
 import com.lopezapp.movilpos.ui.SettingsPaymentMethodsScreen
 import com.lopezapp.movilpos.ui.SettingsPriceRulesScreen
 import com.lopezapp.movilpos.ui.SettingsScreen
@@ -82,6 +120,7 @@ import com.lopezapp.movilpos.ui.SettingsTicketScreen
 import com.lopezapp.movilpos.ui.SettingsBluetoothPrinterScreen
 import com.lopezapp.movilpos.ui.SettingsUnitsScreen
 import com.lopezapp.movilpos.ui.SettingsUsersScreen
+import com.lopezapp.movilpos.ui.UserEditScreen
 import com.lopezapp.movilpos.ui.SupplierEditForm
 import com.lopezapp.movilpos.ui.SupplierReadOnlyView
 import com.lopezapp.movilpos.ui.SupplierScreen
@@ -111,6 +150,7 @@ import com.lopezapp.movilpos.ui.navigation.SettingsBusinessInfoKey
 import com.lopezapp.movilpos.ui.navigation.SettingsCategoriesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsCurrencyKey
 import com.lopezapp.movilpos.ui.navigation.SettingsElectronicBillingKey
+import com.lopezapp.movilpos.ui.navigation.SettingsFirebaseKey
 import com.lopezapp.movilpos.ui.navigation.SettingsPaymentMethodsKey
 import com.lopezapp.movilpos.ui.navigation.SettingsPriceRulesKey
 import com.lopezapp.movilpos.ui.navigation.SettingsRoute
@@ -119,23 +159,40 @@ import com.lopezapp.movilpos.ui.navigation.SettingsTicketKey
 import com.lopezapp.movilpos.ui.navigation.SettingsBluetoothPrinterKey
 import com.lopezapp.movilpos.ui.navigation.SettingsUnitsKey
 import com.lopezapp.movilpos.ui.navigation.SettingsUsersKey
+import com.lopezapp.movilpos.ui.navigation.UserEditKey
 import com.lopezapp.movilpos.ui.navigation.SupplierDetailRoute
 import com.lopezapp.movilpos.ui.navigation.SupplierEditRoute
 import com.lopezapp.movilpos.ui.navigation.SuppliersRoute
 import com.lopezapp.movilpos.ui.theme.MovilPOSTheme
 import com.lopezapp.movilpos.ui.AnalyticsScreen
 import com.lopezapp.movilpos.ui.AccountsReceivableScreen
+import com.lopezapp.movilpos.ui.AccountsReceivableDetailScreen
 import com.lopezapp.movilpos.ui.ExpensesScreen
 import com.lopezapp.movilpos.ui.BarcodeLabelScreen
+import com.lopezapp.movilpos.ui.InventoryOutflowScreen
+import com.lopezapp.movilpos.ui.InventoryOutflowEditForm
+import com.lopezapp.movilpos.ui.InventoryOutflowReadOnlyView
+import com.lopezapp.movilpos.ui.ProductReturnScreen
+import com.lopezapp.movilpos.ui.ProductReturnEditForm
+import com.lopezapp.movilpos.ui.ProductReturnReadOnlyView
 import com.lopezapp.movilpos.ui.navigation.AnalyticsRoute
 import com.lopezapp.movilpos.ui.navigation.AccountsReceivableRoute
+import com.lopezapp.movilpos.ui.navigation.AccountsReceivableDetailRoute
 import com.lopezapp.movilpos.ui.navigation.ExpensesRoute
 import com.lopezapp.movilpos.ui.navigation.BarcodeLabelsRoute
+import com.lopezapp.movilpos.ui.navigation.InventoryOutflowsRoute
+import com.lopezapp.movilpos.ui.navigation.InventoryOutflowDetailRoute
+import com.lopezapp.movilpos.ui.navigation.InventoryOutflowEditRoute
+import com.lopezapp.movilpos.ui.navigation.ProductReturnsRoute
+import com.lopezapp.movilpos.ui.navigation.ProductReturnDetailRoute
+import com.lopezapp.movilpos.ui.navigation.ProductReturnEditRoute
 import com.lopezapp.movilpos.ui.viewmodel.AnalyticsViewModel
 import com.lopezapp.movilpos.ui.viewmodel.AccountsReceivableViewModel
 import com.lopezapp.movilpos.ui.viewmodel.BarcodeLabelViewModel
 import com.lopezapp.movilpos.ui.viewmodel.CustomerViewModel
 import com.lopezapp.movilpos.ui.viewmodel.ExpensesViewModel
+import com.lopezapp.movilpos.ui.viewmodel.InventoryOutflowViewModel
+import com.lopezapp.movilpos.ui.viewmodel.ProductReturnViewModel
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import com.lopezapp.movilpos.ui.viewmodel.PurchaseViewModel
@@ -159,27 +216,67 @@ class MainActivity : ComponentActivity() {
                 val posViewModel: POSViewModel = viewModel(
                     factory = POSViewModel.Factory(appRepository)
                 )
-                val backStack = rememberNavBackStack(HomeRoute)
+                val authViewModel: AuthViewModel = viewModel(
+                    factory = AuthViewModel.Factory(appRepository)
+                )
 
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    AppNavDisplay(
-                        backStack = backStack,
-                        onBack = { backStack.removeLastOrNull() },
-                        modifier = Modifier
+                val currentAuthSession by authViewModel.authSession.collectAsState()
+                val isSyncing by FirebaseSyncService.isSyncing.collectAsState()
+                val context = LocalContext.current
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                        val screenModifier = Modifier
                             .padding(innerPadding)
                             .consumeWindowInsets(innerPadding)
-                            .imePadding(),
-                        settingsViewModel = settingsViewModel,
-                        entryProvider = { key ->
-                            when (key) {
-                                is HomeRoute -> NavEntry(key) {
-                                    HomeScreen(
+                            .imePadding()
+
+                        val isLoggedIn = currentAuthSession?.isLoggedIn == true
+                        val initialRoute = if (isLoggedIn) HomeRoute else LoginRoute
+                        val backStack = rememberNavBackStack(initialRoute)
+
+                        LaunchedEffect(isLoggedIn) {
+                            if (isLoggedIn) {
+                                if (backStack.lastOrNull() != HomeRoute) {
+                                    backStack.clear()
+                                    backStack.add(HomeRoute)
+                                }
+                            } else {
+                                if (backStack.lastOrNull() != LoginRoute) {
+                                    backStack.clear()
+                                    backStack.add(LoginRoute)
+                                }
+                            }
+                        }
+
+                        AppNavDisplay(
+                            backStack = backStack,
+                            onBack = { backStack.removeLastOrNull() },
+                            modifier = screenModifier,
+                            settingsViewModel = settingsViewModel,
+                            entryProvider = { key ->
+                                when (key) {
+                                    is LoginRoute -> NavEntry(key) {
+                                        LoginScreen(
+                                            authViewModel = authViewModel,
+                                            settingsViewModel = settingsViewModel
+                                        )
+                                    }
+                                    is HomeRoute -> NavEntry(key) {
+                                        HomeScreen(
+                                            authViewModel = authViewModel,
+                                            settingsViewModel = settingsViewModel,
+                                            onLogoutClick = {
+                                                authViewModel.logout()
+                                            },
                                         onNavigateToInventory = { backStack.add(InventoryRoute) },
                                         onNavigateToPOS = { backStack.add(POSRoute) },
                                         onNavigateToSales = { backStack.add(SalesRoute) },
                                         onNavigateToQuotations = { backStack.add(QuotationsRoute) },
                                         onNavigateToPurchases = { backStack.add(PurchasesRoute) },
                                         onNavigateToExpenses = { backStack.add(ExpensesRoute) },
+                                        onNavigateToInventoryOutflows = { backStack.add(InventoryOutflowsRoute) },
+                                        onNavigateToProductReturns = { backStack.add(ProductReturnsRoute) },
                                         onNavigateToSuppliers = { backStack.add(SuppliersRoute) },
                                         onNavigateToCustomers = { backStack.add(CustomersRoute) },
                                         onNavigateToAccountsReceivable = { backStack.add(AccountsReceivableRoute) },
@@ -234,6 +331,10 @@ class MainActivity : ComponentActivity() {
                                     POSScreen(
                                         viewModel = posViewModel,
                                         settingsViewModel = settingsViewModel,
+                                        authViewModel = authViewModel,
+                                        onLogoutClick = {
+                                            authViewModel.logout()
+                                        },
                                         onNavigateToCheckout = { backStack.add(POSCheckoutKey) },
                                         onBackClick = { backStack.removeLastOrNull() }
                                     )
@@ -367,6 +468,68 @@ class MainActivity : ComponentActivity() {
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
+                                is InventoryOutflowsRoute -> NavEntry(key) {
+                                    val outflowViewModel: InventoryOutflowViewModel = viewModel(
+                                        factory = InventoryOutflowViewModel.Factory(appRepository)
+                                    )
+                                    InventoryOutflowScreen(
+                                        viewModel = outflowViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is InventoryOutflowDetailRoute -> NavEntry(key) {
+                                    val outflowViewModel: InventoryOutflowViewModel = viewModel(
+                                        factory = InventoryOutflowViewModel.Factory(appRepository)
+                                    )
+                                    InventoryOutflowReadOnlyView(
+                                        outflowId = key.outflowId,
+                                        viewModel = outflowViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is InventoryOutflowEditRoute -> NavEntry(key) {
+                                    val outflowViewModel: InventoryOutflowViewModel = viewModel(
+                                        factory = InventoryOutflowViewModel.Factory(appRepository)
+                                    )
+                                    InventoryOutflowEditForm(
+                                        viewModel = outflowViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is ProductReturnsRoute -> NavEntry(key) {
+                                    val productReturnViewModel: ProductReturnViewModel = viewModel(
+                                        factory = ProductReturnViewModel.Factory(appRepository)
+                                    )
+                                    ProductReturnScreen(
+                                        viewModel = productReturnViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() },
+                                        settingsViewModel = settingsViewModel
+                                    )
+                                }
+                                is ProductReturnDetailRoute -> NavEntry(key) {
+                                    val productReturnViewModel: ProductReturnViewModel = viewModel(
+                                        factory = ProductReturnViewModel.Factory(appRepository)
+                                    )
+                                    ProductReturnReadOnlyView(
+                                        returnId = key.returnId,
+                                        viewModel = productReturnViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is ProductReturnEditRoute -> NavEntry(key) {
+                                    val productReturnViewModel: ProductReturnViewModel = viewModel(
+                                        factory = ProductReturnViewModel.Factory(appRepository)
+                                    )
+                                    ProductReturnEditForm(
+                                        viewModel = productReturnViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                    )
+                                }
                                 is PurchaseDetailRoute -> NavEntry(key) {
                                     val purchaseViewModel: PurchaseViewModel = viewModel(
                                         factory = PurchaseViewModel.Factory(appRepository)
@@ -434,7 +597,21 @@ class MainActivity : ComponentActivity() {
                                     AccountsReceivableScreen(
                                         viewModel = accountsReceivableViewModel,
                                         settingsViewModel = settingsViewModel,
-                                        onBackClick = { backStack.removeLastOrNull() }
+                                        onBackClick = { backStack.removeLastOrNull() },
+                                        onCustomerClick = { customerId ->
+                                            backStack.add(AccountsReceivableDetailRoute(customerId))
+                                        }
+                                    )
+                                }
+                                is AccountsReceivableDetailRoute -> NavEntry(key) {
+                                    val accountsReceivableViewModel: AccountsReceivableViewModel = viewModel(
+                                        factory = AccountsReceivableViewModel.Factory(appRepository)
+                                    )
+                                    AccountsReceivableDetailScreen(
+                                        customerId = key.customerId,
+                                        viewModel = accountsReceivableViewModel,
+                                        settingsViewModel = settingsViewModel,
+                                        onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
                                 is CustomerDetailRoute -> NavEntry(key) {
@@ -473,13 +650,28 @@ class MainActivity : ComponentActivity() {
                                         onNavigateToTicket = { backStack.add(SettingsTicketKey) },
                                         onNavigateToBluetoothPrinter = { backStack.add(SettingsBluetoothPrinterKey) },
                                         onNavigateToElectronicBilling = { backStack.add(SettingsElectronicBillingKey) },
+                                        onNavigateToFirebase = { backStack.add(SettingsFirebaseKey) },
                                         onNavigateToUsers = { backStack.add(SettingsUsersKey) },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is SettingsFirebaseKey -> NavEntry(key) {
+                                    SettingsFirebaseScreen(
+                                        repository = appRepository,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
                                 is SettingsUsersKey -> NavEntry(key) {
                                     SettingsUsersScreen(
                                         viewModel = settingsViewModel,
+                                        onNavigateToUserEdit = { userId -> backStack.add(UserEditKey(userId)) },
+                                        onNavigateBack = { backStack.removeLastOrNull() }
+                                    )
+                                }
+                                is UserEditKey -> NavEntry(key) {
+                                    UserEditScreen(
+                                        viewModel = settingsViewModel,
+                                        userId = key.userId,
                                         onNavigateBack = { backStack.removeLastOrNull() }
                                     )
                                 }
@@ -570,19 +762,77 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+
+                if (isSyncing) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding(),
+                        color = Color(0xCC2E7D32), // Semi-transparent green
+                        contentColor = Color.White
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    color = Color.White,
+                                    strokeWidth = 1.5.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Sincronizando datos...",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp),
+                                color = Color.White,
+                                trackColor = Color.Transparent
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
+}
 
+data class HomeMenuItem(
+    val title: String,
+    val subtitle: String? = null,
+    val icon: ImageVector,
+    val onClick: () -> Unit,
+    val allowedRoles: Set<Role>,
+    val enabled: Boolean = true
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    authViewModel: AuthViewModel? = null,
+    settingsViewModel: SettingsViewModel? = null,
+    electronicBillingConfig: ElectronicBillingConfig? = null,
+    authSession: AuthSession? = null,
+    businessInfo: BusinessInfo? = null,
+    onLogoutClick: () -> Unit = {},
     onNavigateToInventory: () -> Unit,
     onNavigateToPOS: () -> Unit,
     onNavigateToSales: () -> Unit,
     onNavigateToQuotations: () -> Unit,
     onNavigateToPurchases: () -> Unit,
-    onNavigateToExpenses: () -> Unit,
+    onNavigateToExpenses: () -> Unit = {},
+    onNavigateToInventoryOutflows: () -> Unit = {},
+    onNavigateToProductReturns: () -> Unit = {},
     onNavigateToSuppliers: () -> Unit,
     onNavigateToCustomers: () -> Unit,
     onNavigateToAccountsReceivable: () -> Unit = {},
@@ -592,106 +842,233 @@ fun HomeScreen(
     onNavigateToAnalytics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = modifier.fillMaxSize()
-    ) {
-        item {
-            MenuCard(
-                title = "Etiquetas de Productos",
-                subtitle = "Códigos de barras y etiquetas térmicas o carta",
-                icon = Icons.Rounded.Print,
-                onClick = onNavigateToBarcodeLabels
-            )
+    val context = LocalContext.current
+    val currentAuthSession = authSession ?: authViewModel?.authSession?.collectAsState()?.value
+    val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
+    val effectiveEbConfig = electronicBillingConfig ?: settingsUiState?.electronicBillingConfig ?: ElectronicBillingConfig()
+    val isDteEnabled = effectiveEbConfig.isEnabled
+
+    val activeUser = currentAuthSession?.user
+    val userRole = activeUser?.role ?: Role.ADMINISTRATOR
+
+    
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    val isLoggingOut = authViewModel?.isLoggingOut?.collectAsState()?.value == true
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Cerrar Sesión") },
+            text = { Text("¿Desea cerrar sesión ahora?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLogoutDialog = false
+                    onLogoutClick()
+                }) {
+                    Text("Confirmar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (isLoggingOut) {
+        Dialog(onDismissRequest = { /* Prevent dismiss */ }) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text("Cerrando sesión...")
+                }
+            }
         }
-        item {
-            MenuCard(
-                title = "Estadísticas",
-                icon = Icons.Rounded.Analytics,
-                onClick = onNavigateToAnalytics
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column(verticalArrangement = Arrangement.Center) {
+                        Text(
+                            text = "MovilPOS",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (activeUser != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(top = 2.dp)
+                            ) {
+                                Text(
+                                    text = "${activeUser.name} • ${activeUser.role.toSpanishLabel()}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            onLogoutClick()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = "Cerrar Sesión"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
-        }
-        item {
-            MenuCard(
-                title = "Inventory",
-                icon = Icons.Rounded.Inventory,
-                onClick = onNavigateToInventory
+        },
+        modifier = modifier
+    ) { innerPadding ->
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            val menuItems = listOf(
+                HomeMenuItem(
+                    title = "POS",
+                    icon = Icons.Rounded.PointOfSale,
+                    onClick = onNavigateToPOS,
+                    allowedRoles = setOf(Role.CASHIER, Role.SUPERVISOR, Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Clientes",
+                    icon = Icons.Rounded.Person,
+                    onClick = onNavigateToCustomers,
+                    allowedRoles = setOf(Role.CASHIER, Role.SUPERVISOR, Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Cotizaciones",
+                    icon = Icons.Rounded.RequestQuote,
+                    onClick = onNavigateToQuotations,
+                    allowedRoles = setOf(Role.CASHIER, Role.SUPERVISOR, Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Inventario",
+                    icon = Icons.Rounded.Inventory,
+                    onClick = onNavigateToInventory,
+                    allowedRoles = setOf(Role.SUPERVISOR, Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Ventas",
+                    icon = Icons.Rounded.ReceiptLong,
+                    onClick = onNavigateToSales,
+                    allowedRoles = setOf(Role.SUPERVISOR, Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Etiquetas de Productos",
+                    subtitle = "Códigos de barras y etiquetas térmicas o carta",
+                    icon = Icons.Rounded.Print,
+                    onClick = onNavigateToBarcodeLabels,
+                    allowedRoles = setOf(Role.SUPERVISOR, Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Salidas de Inventario",
+                    subtitle = "Uso interno, mermas, vencimientos y bajas de productos",
+                    icon = Icons.Rounded.Outbox,
+                    onClick = onNavigateToInventoryOutflows,
+                    allowedRoles = setOf(Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Devoluciones",
+                    subtitle = "Devoluciones de clientes, notas de crédito y reposición de stock",
+                    icon = Icons.AutoMirrored.Rounded.AssignmentReturn,
+                    onClick = onNavigateToProductReturns,
+                    allowedRoles = setOf(Role.CASHIER, Role.SUPERVISOR, Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Cuentas por Cobrar",
+                    subtitle = "Saldos deudores, fiados y registro de abonos",
+                    icon = Icons.Rounded.CreditScore,
+                    onClick = onNavigateToAccountsReceivable,
+                    allowedRoles = setOf(Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Estadísticas",
+                    icon = Icons.Rounded.Analytics,
+                    onClick = onNavigateToAnalytics,
+                    allowedRoles = setOf(Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Reportes DTE y MH",
+                    icon = Icons.Rounded.CloudDone,
+                    onClick = {
+                        if (isDteEnabled) {
+                            onNavigateToDteReports()
+                        } else {
+                            Toast.makeText(context, "Facturación Electrónica deshabilitada en Ajustes", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    allowedRoles = setOf(Role.ADMINISTRATOR),
+                    enabled = isDteEnabled
+                ),
+                HomeMenuItem(
+                    title = "Compras",
+                    icon = Icons.Rounded.ShoppingBag,
+                    onClick = onNavigateToPurchases,
+                    allowedRoles = setOf(Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Gastos de Caja",
+                    subtitle = "Registrar y consultar egresos o salidas de efectivo",
+                    icon = Icons.Rounded.MoneyOff,
+                    onClick = onNavigateToExpenses,
+                    allowedRoles = setOf(Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Proveedores",
+                    icon = Icons.Rounded.LocalShipping,
+                    onClick = onNavigateToSuppliers,
+                    allowedRoles = setOf(Role.ADMINISTRATOR)
+                ),
+                HomeMenuItem(
+                    title = "Configuración",
+                    icon = Icons.Rounded.Settings,
+                    onClick = onNavigateToSettings,
+                    allowedRoles = setOf(Role.ADMINISTRATOR)
+                )
             )
-        }
-        item {
-            MenuCard(
-                title = "POS",
-                icon = Icons.Rounded.PointOfSale,
-                onClick = onNavigateToPOS
-            )
-        }
-        item {
-            MenuCard(
-                title = "Ventas",
-                icon = Icons.Rounded.ReceiptLong,
-                onClick = onNavigateToSales
-            )
-        }
-        item {
-            MenuCard(
-                title = "Cuentas por Cobrar",
-                subtitle = "Saldos deudores, fiados y registro de abonos",
-                icon = Icons.Rounded.CreditScore,
-                onClick = onNavigateToAccountsReceivable
-            )
-        }
-        item {
-            MenuCard(
-                title = "Reportes DTE y MH",
-                icon = Icons.Rounded.CloudDone,
-                onClick = onNavigateToDteReports
-            )
-        }
-        item {
-            MenuCard(
-                title = "Cotizaciones",
-                icon = Icons.Rounded.RequestQuote,
-                onClick = onNavigateToQuotations
-            )
-        }
-        item {
-            MenuCard(
-                title = "Compras",
-                icon = Icons.Rounded.ShoppingBag,
-                onClick = onNavigateToPurchases
-            )
-        }
-        item {
-            MenuCard(
-                title = "Gastos de Caja",
-                subtitle = "Registrar y consultar egresos o salidas de efectivo",
-                icon = Icons.Rounded.MoneyOff,
-                onClick = onNavigateToExpenses
-            )
-        }
-        item {
-            MenuCard(
-                title = "Proveedores",
-                icon = Icons.Rounded.LocalShipping,
-                onClick = onNavigateToSuppliers
-            )
-        }
-        item {
-            MenuCard(
-                title = "Clientes",
-                icon = Icons.Rounded.Person,
-                onClick = onNavigateToCustomers
-            )
-        }
-        item {
-            MenuCard(
-                title = "Configuración",
-                icon = Icons.Rounded.Settings,
-                onClick = onNavigateToSettings
-            )
+
+            val visibleItems = menuItems.filter { userRole in it.allowedRoles }
+
+            items(visibleItems.size) { index ->
+                val item = visibleItems[index]
+                MenuCard(
+                    title = item.title,
+                    subtitle = item.subtitle,
+                    icon = item.icon,
+                    onClick = item.onClick,
+                    enabled = item.enabled
+                )
+            }
         }
     }
 }
@@ -702,13 +1079,15 @@ fun MenuCard(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    subtitle: String? = null
+    subtitle: String? = null,
+    enabled: Boolean = true
 ) {
     ElevatedCard(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
+            .then(if (!enabled) Modifier.alpha(0.5f) else Modifier)
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -721,14 +1100,15 @@ fun MenuCard(
                 imageVector = icon,
                 contentDescription = title,
                 modifier = Modifier.size(40.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
             if (!subtitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))

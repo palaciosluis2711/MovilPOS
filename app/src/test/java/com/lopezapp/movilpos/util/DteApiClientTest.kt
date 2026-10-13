@@ -297,8 +297,7 @@ class DteApiClientTest {
                 environment = DteEnvironment.SANDBOX,
                 nit = "06140101901015",
                 apiToken = "real_api_key_valid",
-                certificatePassword = certPassword,
-                isSimulationMode = false
+                certificatePassword = certPassword
             )
         )
 
@@ -322,38 +321,6 @@ class DteApiClientTest {
     }
 
     @Test
-    fun posViewModel_integration_simulatesDte_whenSimulationModeIsTrue() = runTest {
-        val repository = AppRepository()
-        val viewModel = POSViewModel(repository = repository)
-
-        repository.updateElectronicBillingConfig(
-            ElectronicBillingConfig(
-                isEnabled = true,
-                environment = DteEnvironment.SANDBOX,
-                nit = "06140101901015",
-                apiToken = "test" // test credentials -> trigger fallback simulation
-            )
-        )
-
-        viewModel.selectInvoiceType(InvoiceType.CONSUMIDOR_FINAL)
-        val product = repository.products.value.first { !it.isService }
-        viewModel.addToCart(product)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        var navigatedSaleId: String? = null
-        viewModel.processSale { saleId ->
-            navigatedSaleId = saleId
-        }
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertNotNull(navigatedSaleId)
-        val savedSale = repository.sales.value.find { it.id == navigatedSaleId }
-        assertNotNull(savedSale)
-        assertTrue(savedSale!!.isDteIssued)
-        assertTrue("El sello de simulación debe comenzar con MH-DTE-", savedSale.dteReceptionSeal?.startsWith("MH-DTE-") == true)
-    }
-
-    @Test
     fun posViewModel_integration_savesToContingency_whenCredentialsAreTest() = runTest {
         val repository = AppRepository()
         val viewModel = POSViewModel(repository = repository)
@@ -363,8 +330,7 @@ class DteApiClientTest {
                 isEnabled = true,
                 environment = DteEnvironment.SANDBOX,
                 nit = "06140101901015",
-                apiToken = "test", // test credentials -> should save to contingency
-                isSimulationMode = false
+                apiToken = "test" // test credentials -> should save to contingency
             )
         )
 

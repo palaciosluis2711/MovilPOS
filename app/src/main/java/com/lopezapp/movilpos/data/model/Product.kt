@@ -18,5 +18,10 @@ data class Product(
     val isTaxIncludedInPrice: Boolean = false,
     val isBundle: Boolean = false,
     val bundleItems: List<BundleItem> = emptyList(),
-    val isService: Boolean = false
-)
+    val isService: Boolean = false,
+    val tags: List<String> = emptyList(),
+    val differentiator: String? = null
+) {
+    val displayName: String
+        get() = if (!differentiator.isNullOrBlank()) "$name [$differentiator]" else name
+}

@@ -350,4 +350,69 @@ class InventoryViewModelTest {
         assertNull(viewModel.selectedTypeFilter.value)
         assertFalse(viewModel.lowStockOnlyFilter.value)
     }
+
+    @Test
+    fun addProduct_withTagsAndDifferentiator_addsProductSuccessfully() = runTest {
+        viewModel.addProduct(
+            name = "Página Bond",
+            price = 5.0,
+            tags = listOf("Oferta", "Marzo 2025"),
+            differentiator = "Lote $0.01"
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val products = repository.products.value
+        val addedProduct = products.find { it.name == "Página Bond" }
+
+        assertEquals("Página Bond", addedProduct?.name)
+        assertEquals("Lote $0.01", addedProduct?.differentiator)
+        assertEquals(listOf("Oferta", "Marzo 2025"), addedProduct?.tags)
+        assertEquals("Página Bond [Lote $0.01]", addedProduct?.displayName)
+    }
+
+    @Test
+    fun searchQuery_filtersProductsByTags() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        viewModel.addProduct(
+            name = "Cuaderno 1",
+            price = 2.0,
+            tags = listOf("estante3", "promoción")
+        )
+        viewModel.addProduct(
+            name = "Cuaderno 2",
+            price = 2.0,
+            tags = listOf("estante1")
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onSearchQueryChanged("estante3")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val filtered = viewModel.filteredProducts.value
+        assertEquals(1, filtered.size)
+        assertEquals("Cuaderno 1", filtered.first().name)
+    }
+
+    @Test
+    fun searchQuery_filtersProductsByDifferentiator() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        viewModel.addProduct(
+            name = "Página Bond",
+            price = 0.05,
+            differentiator = "Lote $0.01"
+        )
+        viewModel.addProduct(
+            name = "Página Bond",
+            price = 0.06,
+            differentiator = "Lote $0.02"
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onSearchQueryChanged("Lote $0.01")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val filtered = viewModel.filteredProducts.value
+        assertEquals(1, filtered.size)
+        assertEquals("Lote $0.01", filtered.first().differentiator)
+    }
 }

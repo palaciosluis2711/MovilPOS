@@ -17,7 +17,10 @@ fun Role.toSpanishLabel(): String = when (this) {
 data class User(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
+    val username: String = "",
+    val email: String = "",
     val pin: String,
+    val passwordHash: String = "",
     val role: Role = Role.CASHIER,
     val isActive: Boolean = true,
 )

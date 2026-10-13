@@ -25,14 +25,10 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -65,29 +61,21 @@ import java.util.Locale
 /**
  * Dialog for opening a new cash shift ("Apertura de Turno de Caja").
  *
- * @param users List of active users to select from as cashier
+ * @param activeUser The currently logged-in user opening the shift
  * @param onOpenShift Callback with selected cashier, PIN, and initial float amount
  * @param onDismiss Callback when the user cancels the dialog
  * @param initialFloatDefault Default initial float amount (defaults to 50.00)
  * @param errorMessage Optional external error message to show
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OpenShiftDialog(
     modifier: Modifier = Modifier,
-    users: List<User>,
+    activeUser: User,
     onOpenShift: (cashier: User, pin: String, initialFloat: Double) -> Unit,
     onDismiss: () -> Unit,
     initialFloatDefault: Double = 50.0,
     errorMessage: String? = null,
 ) {
-    val activeUsers = remember(users) {
-        users.filter { it.isActive }.ifEmpty { users }
-    }
-
-    var selectedCashier by remember {
-        mutableStateOf(activeUsers.firstOrNull())
-    }
     var pin by remember { mutableStateOf("") }
     var isPinVisible by remember { mutableStateOf(value = false) }
 
@@ -104,7 +92,6 @@ fun OpenShiftDialog(
         )
     }
 
-    var isDropdownExpanded by remember { mutableStateOf(value = false) }
     var localError by remember { mutableStateOf<String?>(null) }
 
     val displayError = errorMessage ?: localError
@@ -179,61 +166,21 @@ fun OpenShiftDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // 1. Cashier Dropdown / Selector
-                ExposedDropdownMenuBox(
-                    expanded = isDropdownExpanded,
-                    onExpandedChange = { isDropdownExpanded = !isDropdownExpanded },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = selectedCashier?.name ?: "Seleccione un cajero",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Cajero Responsable") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = null
-                            )
-                        },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = isDropdownExpanded,
-                        onDismissRequest = { isDropdownExpanded = false }
-                    ) {
-                        activeUsers.forEach { user ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(
-                                            text = user.name,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            text = user.role.toSpanishLabel(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    selectedCashier = user
-                                    isDropdownExpanded = false
-                                    localError = null
-                                }
-                            )
-                        }
-                    }
-                }
+                // 1. Cashier Field (Read-only)
+                OutlinedTextField(
+                    value = activeUser.name,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Cajero Responsable") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -312,11 +259,6 @@ fun OpenShiftDialog(
 
                     Button(
                         onClick = {
-                            val cashier = selectedCashier
-                            if (cashier == null) {
-                                localError = "Seleccione un cajero válido"
-                                return@Button
-                            }
                             if (pin.isBlank()) {
                                 localError = "Ingrese el PIN para verificar su identidad"
                                 return@Button
@@ -327,7 +269,7 @@ fun OpenShiftDialog(
                                 return@Button
                             }
 
-                            onOpenShift(cashier, pin, floatAmount)
+                            onOpenShift(activeUser, pin, floatAmount)
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
@@ -345,10 +287,7 @@ fun OpenShiftDialog(
 fun OpenShiftDialogPreview() {
     MovilPOSTheme {
         OpenShiftDialog(
-            users = listOf(
-                User(id = "1", name = "Carlos López", pin = "1234", role = Role.ADMINISTRATOR),
-                User(id = "2", name = "María Pérez", pin = "5678", role = Role.CASHIER)
-            ),
+            activeUser = User(id = "1", name = "Carlos López", pin = "1234", role = Role.ADMINISTRATOR),
             onOpenShift = { _, _, _ -> },
             onDismiss = {}
         )

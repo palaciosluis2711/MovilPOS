@@ -349,7 +349,14 @@ class SettingsViewModel(
 
     fun updatePaymentMethod(id: String, name: String, isDefault: Boolean = false) {
         if (name.isBlank()) return
-        val paymentMethod = PaymentMethod(id = id, name = name.trim(), isDefault = isDefault)
+        val currentMethod = repository.paymentMethods.value.find { it.id == id }
+        val isSystemDefault = currentMethod?.isSystemDefault ?: false
+        val paymentMethod = PaymentMethod(
+            id = id,
+            name = name.trim(),
+            isDefault = isDefault,
+            isSystemDefault = isSystemDefault
+        )
         updatePaymentMethod(paymentMethod)
     }
 

@@ -4,6 +4,9 @@ import androidx.navigation3.runtime.NavKey
 import kotlinx.serialization.Serializable
 
 @Serializable
+data object LoginRoute : NavKey
+
+@Serializable
 data object HomeRoute : NavKey
 
 @Serializable
@@ -61,7 +64,13 @@ data object SettingsBluetoothPrinterKey : NavKey
 data object SettingsElectronicBillingKey : NavKey
 
 @Serializable
+data object SettingsFirebaseKey : NavKey
+
+@Serializable
 data object SettingsUsersKey : NavKey
+
+@Serializable
+data class UserEditKey(val userId: String? = null) : NavKey
 
 @Serializable
 data class PriceRuleEditKey(val ruleId: String? = null) : NavKey
@@ -121,4 +130,25 @@ data object ExpensesRoute : NavKey
 data object AccountsReceivableRoute : NavKey
 
 @Serializable
+data class AccountsReceivableDetailRoute(val customerId: String) : NavKey
+
+@Serializable
 data object BarcodeLabelsRoute : NavKey
+
+@Serializable
+data object InventoryOutflowsRoute : NavKey
+
+@Serializable
+data class InventoryOutflowDetailRoute(val outflowId: String) : NavKey
+
+@Serializable
+data object InventoryOutflowEditRoute : NavKey
+
+@Serializable
+data object ProductReturnsRoute : NavKey
+
+@Serializable
+data class ProductReturnDetailRoute(val returnId: String) : NavKey
+
+@Serializable
+data object ProductReturnEditRoute : NavKey

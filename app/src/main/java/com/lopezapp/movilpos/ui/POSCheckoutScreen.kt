@@ -68,6 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -109,6 +110,7 @@ fun POSCheckoutScreen(
     val allowExtraDecimals = settingsUiState.allowExtraDecimals
 
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
 
     var customerDropdownExpanded by remember { mutableStateOf(false) }
@@ -354,6 +356,7 @@ fun POSCheckoutScreen(
                                 onClick = {
                                     customerDropdownExpanded = false
                                     handleCustomerFallback()
+                                    focusManager.clearFocus()
                                 }
                             )
                         } else {
@@ -378,6 +381,7 @@ fun POSCheckoutScreen(
                                         viewModel.selectCustomer(customer.id)
                                         customerSearchText = customer.name
                                         customerDropdownExpanded = false
+                                        focusManager.clearFocus()
                                     },
                                     leadingIcon = if (isSelected) {
                                         {

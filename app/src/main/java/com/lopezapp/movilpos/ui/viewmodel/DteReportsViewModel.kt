@@ -96,45 +96,30 @@ class DteReportsViewModel(
             _dteInvalidationError.value = null
             _isDteInvalidating.value = true
 
-            if (ebConfig.isSimulationMode) {
-                _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                delay(800)
-                _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
-                delay(800)
-                _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
-                delay(800)
-            } else {
-                val hasApiCredentials = ebConfig.nit.isNotBlank() &&
-                        ebConfig.apiToken.isNotBlank() &&
-                        !ebConfig.apiToken.equals("test", ignoreCase = true)
-                
-                val hasCert = ebConfig.certificateUri != null && context != null
+            val hasApiCredentials = ebConfig.nit.isNotBlank() &&
+                    ebConfig.apiToken.isNotBlank() &&
+                    !ebConfig.apiToken.equals("test", ignoreCase = true)
 
-                if (!hasCert && context == null) {
-                    // if context is null, we can't reliably check cert existence from URI, but assume it fails if missing credentials
-                }
-
-                if (!hasApiCredentials || (ebConfig.certificateUri == null)) {
-                    _isDteInvalidating.value = false
-                    _dteInvalidationError.value = "Faltan credenciales DTE para anular la factura."
-                    return@launch
-                }
-                
-                _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                delay(500)
-                _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
-                delay(500)
-                _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
-                delay(500)
+            if (!hasApiCredentials || (ebConfig.certificateUri == null)) {
+                _isDteInvalidating.value = false
+                _dteInvalidationError.value = "Faltan credenciales DTE para anular la factura."
+                return@launch
             }
+            
+            _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
+            delay(500)
+            _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
+            delay(500)
+            _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
+            delay(500)
 
             repository.voidSaleDte(saleId, reason)
             _isDteInvalidating.value = false
         }
     }
 
-    fun retryContingencyTransmissions(context: Context? = null): Result<Int> {
-        return repository.retryContingencyTransmissions(context = context)
+    fun retryContingencyTransmissions(context: Context? = null, certificateInputStream: java.io.InputStream? = null): Result<Int> {
+        return repository.retryContingencyTransmissions(context = context, certificateInputStream = certificateInputStream)
     }
 
     class Factory(private val repository: AppRepository) : ViewModelProvider.Factory {

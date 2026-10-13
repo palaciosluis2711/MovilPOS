@@ -704,7 +704,12 @@ fun PurchaseEditForm(
         if (productSearchText.isBlank()) {
             nonServiceProducts
         } else {
-            nonServiceProducts.filter { it.name.contains(productSearchText, ignoreCase = true) }
+            nonServiceProducts.filter { product ->
+                product.name.contains(productSearchText, ignoreCase = true) ||
+                (product.barcode?.contains(productSearchText, ignoreCase = true) == true) ||
+                (product.differentiator?.contains(productSearchText, ignoreCase = true) == true) ||
+                product.tags.any { it.contains(productSearchText, ignoreCase = true) }
+            }
         }
     }
 
@@ -855,7 +860,7 @@ fun PurchaseEditForm(
                             text = {
                                 Column {
                                     Text(
-                                        text = product.name,
+                                        text = product.displayName,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(

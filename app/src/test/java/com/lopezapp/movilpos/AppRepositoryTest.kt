@@ -7,7 +7,13 @@ import com.lopezapp.movilpos.data.model.CustomerPayment
 import com.lopezapp.movilpos.data.model.DocumentType
 import com.lopezapp.movilpos.data.model.Expense
 import com.lopezapp.movilpos.data.model.InvoiceType
+import com.lopezapp.movilpos.data.model.InventoryOutflow
+import com.lopezapp.movilpos.data.model.OutflowItem
+import com.lopezapp.movilpos.data.model.OutflowReason
+import com.lopezapp.movilpos.data.model.toSpanishLabel
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.ProductReturn
+import com.lopezapp.movilpos.data.model.ReturnItem
 import com.lopezapp.movilpos.data.model.BundleItem
 import com.lopezapp.movilpos.data.model.Purchase
 import com.lopezapp.movilpos.data.model.PurchaseItem
@@ -17,6 +23,12 @@ import com.lopezapp.movilpos.data.model.SaleItem
 import com.lopezapp.movilpos.data.model.ShiftStatus
 import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.data.repository.AppRepository
+import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
+import com.lopezapp.movilpos.util.DteApiClient
+import com.lopezapp.movilpos.util.TestDteUtils
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import java.io.ByteArrayInputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -41,6 +53,7 @@ class AppRepositoryTest {
         val admin = users.first()
         assertEquals("admin_1", admin.id)
         assertEquals("Administrador", admin.name)
+        assertEquals("admin", admin.username)
         assertEquals("1234", admin.pin)
         assertEquals(Role.ADMINISTRATOR, admin.role)
         assertTrue(admin.isActive)
@@ -48,7 +61,7 @@ class AppRepositoryTest {
 
     @Test
     fun userCrud_addsUpdatesAndDeletesUser() {
-        val cashier = User(id = "u2", name = "Juan Pérez", pin = "5678", role = Role.CASHIER)
+        val cashier = User(id = "u2", name = "Juan Pérez", username = "juan_perez", pin = "5678", role = Role.CASHIER)
         repository.addUser(cashier)
         assertEquals(2, repository.users.value.size)
         assertTrue(repository.users.value.any { it.id == "u2" })
@@ -66,7 +79,7 @@ class AppRepositoryTest {
 
     @Test
     fun updateUser_updatesActiveShiftCashierNameWhenActiveShiftMatchesUser() {
-        val cashier = User(id = "c1", name = "Cajero Inicial", pin = "1111", role = Role.CASHIER)
+        val cashier = User(id = "c1", name = "Cajero Inicial", username = "cajero_inicial", pin = "1111", role = Role.CASHIER)
         repository.addUser(cashier)
         repository.openShift(cashier, initialFloat = 50.0)
 
@@ -85,12 +98,12 @@ class AppRepositoryTest {
         assertFalse(repository.validateAdminPin("9999"))
 
         // Add Supervisor
-        val supervisor = User(id = "sup_1", name = "Supervisor", pin = "4321", role = Role.SUPERVISOR)
+        val supervisor = User(id = "sup_1", name = "Supervisor", username = "supervisor", pin = "4321", role = Role.SUPERVISOR)
         repository.addUser(supervisor)
         assertTrue(repository.validateAdminPin("4321"))
 
         // Add Cashier
-        val cashier = User(id = "cash_1", name = "Cajero", pin = "1111", role = Role.CASHIER)
+        val cashier = User(id = "cash_1", name = "Cajero", username = "cajero", pin = "1111", role = Role.CASHIER)
         repository.addUser(cashier)
         assertFalse(repository.validateAdminPin("1111"))
 
@@ -212,6 +225,46 @@ class AppRepositoryTest {
     }
 
     @Test
+    fun upgradeSaleToDte_updatesSaleAndGeneratesDteMetadata() {
+        val originalSale = Sale(
+            id = "sale_ticket_1",
+            customerId = "c_default",
+            customerName = "Cliente General",
+            invoiceType = InvoiceType.TICKET,
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 25.0,
+            isDteIssued = false
+        )
+        repository.addSale(originalSale)
+
+        val targetCustomer = Customer(
+            id = "c_vip",
+            name = "Empresa VIP S.A.",
+            documentType = DocumentType.NIT,
+            documentNumber = "0614-120590-101-5",
+            department = "San Salvador",
+            municipality = "San Salvador",
+            district = "San Salvador Centro"
+        )
+
+        repository.upgradeSaleToDte("sale_ticket_1", targetCustomer, InvoiceType.CREDITO_FISCAL)
+
+        val updatedSale = repository.sales.value.find { it.id == "sale_ticket_1" }
+        assertNotNull(updatedSale)
+        assertEquals("c_vip", updatedSale!!.customerId)
+        assertEquals("Empresa VIP S.A.", updatedSale.customerName)
+        assertEquals(InvoiceType.CREDITO_FISCAL, updatedSale.invoiceType)
+        assertTrue(updatedSale.isDteIssued)
+        assertEquals("03", updatedSale.dteType)
+        assertNotNull(updatedSale.dteGenerationCode)
+        assertNotNull(updatedSale.dteReceptionSeal)
+        assertNotNull(updatedSale.dteControlNumber)
+        assertTrue(updatedSale.dteControlNumber!!.startsWith("DTE-03-"))
+    }
+
+    @Test
     fun addToContingencyQueue_setsContingencyModeTrueAndAddsToQueue() {
         val sale = Sale(
             id = "sale_contingency_1",
@@ -236,6 +289,37 @@ class AppRepositoryTest {
 
     @Test
     fun retryContingencyTransmissions_retransmitsAndClearsQueue() {
+        val mockClient = TestDteUtils.createMockOkHttpClient { request ->
+            val urlStr = request.url.toString()
+            val responseJson = if (urlStr.contains("/gettoken")) {
+                """{"status": "OK", "token": "real_auth_token_123"}"""
+            } else {
+                """{"estado": "PROCESADO", "selloRecibido": "MH-REAL-SELLO-123", "codigoGeneracion": "GEN-REAL-123"}"""
+            }
+            okhttp3.Response.Builder()
+                .request(request)
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(responseJson.toResponseBody("application/json".toMediaType()))
+                .build()
+        }
+        val apiClient = DteApiClient(okHttpClient = mockClient)
+        val repo = AppRepository(dteApiClient = apiClient)
+
+        val certPassword = "CertPassword123!"
+        val pkcs12Bytes = TestDteUtils.generateMockPkcs12Stream("test_alias", certPassword)
+
+        repo.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                isEnabled = true,
+                nit = "06140101901015",
+                apiToken = "valid",
+                certificatePassword = certPassword,
+                certificateUri = "content://cert.p12"
+            )
+        )
+
         val sale = Sale(
             id = "sale_contingency_2",
             customerId = "c1",
@@ -246,20 +330,20 @@ class AppRepositoryTest {
             totalAmount = 45.0,
             isDteIssued = false
         )
-        repository.addToContingencyQueue(sale)
-        assertEquals(1, repository.contingencyDtes.value.size)
+        repo.addToContingencyQueue(sale)
+        assertEquals(1, repo.contingencyDtes.value.size)
 
-        val result = repository.retryContingencyTransmissions()
+        val result = repo.retryContingencyTransmissions(certificateInputStream = ByteArrayInputStream(pkcs12Bytes))
         assertTrue(result.isSuccess)
         val count = result.getOrNull()
         assertEquals(1, count)
 
-        assertTrue(repository.contingencyDtes.value.isEmpty())
-        val updatedSale = repository.sales.value.find { it.id == "sale_contingency_2" }
+        assertTrue(repo.contingencyDtes.value.isEmpty())
+        val updatedSale = repo.sales.value.find { it.id == "sale_contingency_2" }
         assertNotNull(updatedSale)
         assertTrue(updatedSale!!.isDteIssued)
         assertFalse(updatedSale.contingencyMode)
-        assertNotNull(updatedSale.dteReceptionSeal)
+        assertEquals("MH-REAL-SELLO-123", updatedSale.dteReceptionSeal)
     }
 
     @Test
@@ -267,7 +351,6 @@ class AppRepositoryTest {
         val currentConfig = repository.electronicBillingConfig.value
         repository.updateElectronicBillingConfig(
             currentConfig.copy(
-                isSimulationMode = false,
                 nit = "",
                 apiToken = "",
                 certificateUri = null
@@ -298,7 +381,6 @@ class AppRepositoryTest {
         val currentConfig = repository.electronicBillingConfig.value
         repository.updateElectronicBillingConfig(
             currentConfig.copy(
-                isSimulationMode = false,
                 nit = "06140101011015",
                 apiToken = "some_api_token",
                 certificateUri = "/non/existent/path/cert.p12"
@@ -353,7 +435,7 @@ class AppRepositoryTest {
 
     @Test
     fun addExpense_withActiveShift_associatesShiftDetailsAndUpdatesShiftTotalsAndExpectedCash() {
-        val cashier = User(id = "c1", name = "Juan Cajero", pin = "1111", role = Role.CASHIER)
+        val cashier = User(id = "c1", name = "Juan Cajero", username = "juan_cajero", pin = "1111", role = Role.CASHIER)
         repository.addUser(cashier)
         val shift = repository.openShift(cashier, initialFloat = 100.0)
 
@@ -645,5 +727,218 @@ class AppRepositoryTest {
 
         val currentService = repository.products.value.find { it.id == "s2" }
         assertEquals(5, currentService?.stock)
+    }
+
+    @Test
+    fun addInventoryOutflow_savesOutflow_deductsProductStock_andRegistersExpense() {
+        val product = Product(id = "p_test_1", name = "Galletas", price = 1.0, cost = 0.5, stock = 10)
+        repository.addProduct(product)
+
+        val item = OutflowItem(
+            productId = "p_test_1",
+            productName = "Galletas",
+            quantity = 3,
+            unitCost = 0.5
+        )
+        val outflow = InventoryOutflow(
+            id = "out_1",
+            reason = OutflowReason.MERMA_DANADO,
+            notes = "Caja aplastada",
+            items = listOf(item)
+        )
+
+        val initialExpenseCount = repository.expenses.value.size
+
+        repository.addInventoryOutflow(outflow)
+
+        // 1. Outflow saved
+        val savedOutflows = repository.inventoryOutflows.value
+        assertEquals(1, savedOutflows.size)
+        assertEquals("out_1", savedOutflows.first().id)
+
+        // 2. Product stock deducted: 10 - 3 = 7
+        val updatedProduct = repository.products.value.find { it.id == "p_test_1" }
+        assertNotNull(updatedProduct)
+        assertEquals(7, updatedProduct?.stock)
+
+        // 3. Operational expense registered
+        val expenses = repository.expenses.value
+        assertEquals(initialExpenseCount + 1, expenses.size)
+        val expense = expenses.last()
+        assertEquals("Bajas y Mermas de Inventario", expense.category)
+        assertEquals(1.5, expense.amount, 0.001)
+        assertEquals("Salida [Merma / Producto Dañado]: Caja aplastada", expense.description)
+    }
+
+    @Test
+    fun addInventoryOutflow_consumoInterno_usesConsumoInternoCategory() {
+        val outflow = InventoryOutflow(
+            id = "out_2",
+            reason = OutflowReason.CONSUMO_INTERNO,
+            notes = "Café para personal",
+            items = listOf(OutflowItem(productId = "p1", productName = "Coffee", quantity = 1, unitCost = 2.0))
+        )
+
+        repository.addInventoryOutflow(outflow)
+
+        val expense = repository.expenses.value.find { it.description.contains("Café para personal") }
+        assertNotNull(expense)
+        assertEquals("Consumo Interno", expense?.category)
+        assertEquals("Salida [Consumo Propio / Uso Interno]: Café para personal", expense?.description)
+    }
+
+    @Test
+    fun deleteInventoryOutflow_removesOutflowFromRepository() {
+        val outflow = InventoryOutflow(id = "out_delete_1", notes = "Test delete")
+        repository.addInventoryOutflow(outflow)
+
+        assertEquals(1, repository.inventoryOutflows.value.size)
+
+        repository.deleteInventoryOutflow("out_delete_1")
+
+        assertTrue(repository.inventoryOutflows.value.isEmpty())
+    }
+
+    @Test
+    fun authSession_defaultsToNull() {
+        assertNull(repository.authSession.value)
+    }
+
+    @Test
+    fun login_withAdminCredentials_succeedsAndSetsAuthSession() {
+        val result = repository.login("admin", "Admin123!")
+        assertTrue(result.isSuccess)
+
+        val user = result.getOrNull()
+        assertNotNull(user)
+        assertEquals("admin_1", user?.id)
+        assertEquals("Administrador", user?.name)
+
+        val session = repository.authSession.value
+        assertNotNull(session)
+        assertEquals(user, session?.user)
+        assertTrue(session?.isLoggedIn == true)
+    }
+
+    @Test
+    fun login_withPassword_succeeds() {
+        val cashier = User(id = "c_1", name = "Ana Maria", username = "ana_maria", pin = "5555", passwordHash = "Pass555!", role = Role.CASHIER)
+        repository.addUser(cashier)
+
+        val result = repository.login("ana_maria", "Pass555!")
+        assertTrue(result.isSuccess)
+        assertEquals("Ana Maria", result.getOrNull()?.name)
+        assertEquals(cashier, repository.authSession.value?.user)
+    }
+
+    @Test
+    fun login_withInvalidCredentials_returnsFailure() {
+        val result = repository.login("admin", "9999")
+        assertTrue(result.isFailure)
+        assertEquals("Usuario o contraseña incorrectos", result.exceptionOrNull()?.message)
+        assertNull(repository.authSession.value)
+    }
+
+    @Test
+    fun login_updatesActiveShiftCashierInfo() {
+        val cashier = User(id = "c_shift", name = "Carlos Cashier", username = "carlos", pin = "7777", passwordHash = "Pass777!", role = Role.CASHIER)
+        repository.addUser(cashier)
+        repository.openShift(cashier = cashier, initialFloat = 100.0)
+
+        // Login with Carlos
+        val result = repository.login("carlos", "Pass777!")
+        assertTrue(result.isSuccess)
+
+        val active = repository.activeShift.value
+        assertNotNull(active)
+        assertEquals("c_shift", active?.cashierId)
+        assertEquals("Carlos Cashier", active?.cashierName)
+    }
+
+    @Test
+    fun logout_clearsAuthSession() {
+        repository.login("admin", "Admin123!")
+        assertNotNull(repository.authSession.value)
+
+        repository.logout()
+        assertNull(repository.authSession.value)
+    }
+
+    @Test
+    fun login_withEmailCredentials_succeeds() {
+        val user = User(id = "user_email", name = "Juan Email", email = "juan@tienda.com", pin = "4321", passwordHash = "Juan123!", role = Role.SUPERVISOR)
+        repository.addUser(user)
+
+        // Default admin email
+        val adminResult = repository.login("admin@minegocio.com", "Admin123!")
+        assertTrue(adminResult.isSuccess)
+        assertEquals("admin_1", adminResult.getOrNull()?.id)
+
+        // Custom user email
+        val userResult = repository.login("juan@tienda.com", "Juan123!")
+        assertTrue(userResult.isSuccess)
+        assertEquals("user_email", userResult.getOrNull()?.id)
+    }
+
+    @Test
+    fun login_withRememberMe_managesRememberMePreference() {
+        assertTrue(repository.rememberMe.value)
+
+        repository.setRememberMe(false)
+        assertFalse(repository.rememberMe.value)
+
+        repository.login("admin", "Admin123!", rememberMe = true)
+        assertTrue(repository.rememberMe.value)
+    }
+
+    @Test
+    fun deleteProductReturn_revertsStockAndRemovesExpense() {
+        val initialExpenseCount = repository.expenses.value.size
+        val product = Product(id = "p1", name = "Test Product", stock = 10, price = 50.0)
+        repository.addProduct(product)
+
+        val returnItem = ReturnItem(
+            productId = "p1",
+            productName = "Test Product",
+            quantity = 3,
+            unitPrice = 50.0,
+            refundSubtotal = 150.0
+        )
+        val productReturn = ProductReturn(
+            id = "ret_1",
+            originalSaleId = "sale_1",
+            customerName = "Test Customer",
+            items = listOf(returnItem),
+            totalRefundAmount = 150.0,
+            refundMethod = "Efectivo"
+        )
+
+        repository.processProductReturn(productReturn)
+
+        // Stock should be 10 + 3 = 13
+        assertEquals(13, repository.products.value.find { it.id == "p1" }?.stock)
+        // Expense should be added (initial + 1)
+        assertEquals(initialExpenseCount + 1, repository.expenses.value.size)
+
+        // Now delete product return
+        repository.deleteProductReturn("ret_1")
+
+        // Product return removed
+        assertTrue(repository.productReturns.value.isEmpty())
+        // Stock reverted: 13 - 3 = 10
+        assertEquals(10, repository.products.value.find { it.id == "p1" }?.stock)
+        // Expense removed (back to initialExpenseCount)
+        assertEquals(initialExpenseCount, repository.expenses.value.size)
+    }
+
+    @Test
+    fun addUser_withEmailAndPassword_handlesFirebaseGracefully() {
+        val userWithEmail = User(id = "u_email", name = "Test Email User", email = "testuser@minegocio.com", pin = "1234", passwordHash = "Password123!", role = Role.CASHIER)
+        repository.addUser(userWithEmail)
+
+        assertEquals(2, repository.users.value.size)
+        val fetched = repository.users.value.find { it.id == "u_email" }
+        assertNotNull(fetched)
+        assertEquals("testuser@minegocio.com", fetched?.email)
     }
 }

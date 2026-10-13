@@ -76,7 +76,9 @@ class InventoryViewModel(
                 true
             } else {
                 product.name.contains(params.query, ignoreCase = true) ||
-                        product.barcode?.contains(params.query, ignoreCase = true) == true
+                        (product.barcode?.contains(params.query, ignoreCase = true) == true) ||
+                        (product.differentiator?.contains(params.query, ignoreCase = true) == true) ||
+                        product.tags.any { it.contains(params.query, ignoreCase = true) }
             }
 
             val matchesCategory = if (params.categoryFilter == null) {
@@ -157,7 +159,9 @@ class InventoryViewModel(
         isTaxIncludedInPrice: Boolean = false,
         isBundle: Boolean = false,
         bundleItems: List<BundleItem> = emptyList(),
-        isService: Boolean = false
+        isService: Boolean = false,
+        tags: List<String> = emptyList(),
+        differentiator: String? = null
     ) {
         viewModelScope.launch {
             val newProduct = Product(
@@ -175,7 +179,9 @@ class InventoryViewModel(
                 isTaxIncludedInPrice = isTaxIncludedInPrice,
                 isBundle = isBundle,
                 bundleItems = bundleItems,
-                isService = isService
+                isService = isService,
+                tags = tags,
+                differentiator = differentiator
             )
             repository.addProduct(newProduct)
         }

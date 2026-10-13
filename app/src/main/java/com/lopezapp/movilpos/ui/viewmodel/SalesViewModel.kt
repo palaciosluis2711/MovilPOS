@@ -132,39 +132,52 @@ class SalesViewModel(
         }
     }
 
+    fun upgradeSaleToDte(saleId: String, customer: Customer, invoiceType: InvoiceType) {
+        viewModelScope.launch {
+            val ebConfig = repository.electronicBillingConfig.value
+            if (!ebConfig.isEnabled) {
+                _dteInvalidationError.value = "La Facturación Electrónica está deshabilitada. Habilítela en Configuración > Facturación Electrónica."
+                return@launch
+            }
+            val isSimMode = ebConfig.isSimulationMode ||
+                    ebConfig.environment == com.lopezapp.movilpos.data.model.DteEnvironment.SANDBOX ||
+                    ebConfig.apiToken.equals("test", ignoreCase = true)
+            val hasApiCredentials = ebConfig.nit.isNotBlank() &&
+                    ebConfig.apiToken.isNotBlank() &&
+                    !ebConfig.apiToken.equals("test", ignoreCase = true)
+            val hasCertificate = !ebConfig.certificateUri.isNullOrBlank()
+
+            if (!isSimMode && (!hasApiCredentials || !hasCertificate)) {
+                _dteInvalidationError.value = "Para emitir DTEs en modo real, debe completar la configuración de Facturación Electrónica (NIT, Token API y Certificado .p12) en Configuración > Facturación Electrónica."
+                return@launch
+            }
+
+            repository.upgradeSaleToDte(saleId, customer, invoiceType)
+        }
+    }
+
     fun voidSaleDte(saleId: String, reason: String, context: Context? = null) {
         viewModelScope.launch {
             val ebConfig = repository.electronicBillingConfig.value
             _dteInvalidationError.value = null
             _isDteInvalidating.value = true
 
-            if (ebConfig.isSimulationMode) {
-                _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                delay(800)
-                _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
-                delay(800)
-                _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
-                delay(800)
-            } else {
-                val hasApiCredentials = ebConfig.nit.isNotBlank() &&
-                        ebConfig.apiToken.isNotBlank() &&
-                        !ebConfig.apiToken.equals("test", ignoreCase = true)
-                
-                val hasCert = ebConfig.certificateUri != null && context != null
+            val hasApiCredentials = ebConfig.nit.isNotBlank() &&
+                    ebConfig.apiToken.isNotBlank() &&
+                    !ebConfig.apiToken.equals("test", ignoreCase = true)
 
-                if (!hasApiCredentials || (ebConfig.certificateUri == null)) {
-                    _isDteInvalidating.value = false
-                    _dteInvalidationError.value = "Faltan credenciales DTE para anular la factura."
-                    return@launch
-                }
-                
-                _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                delay(500)
-                _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
-                delay(500)
-                _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
-                delay(500)
+            if (!hasApiCredentials || (ebConfig.certificateUri == null)) {
+                _isDteInvalidating.value = false
+                _dteInvalidationError.value = "Faltan credenciales DTE para anular la factura."
+                return@launch
             }
+            
+            _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
+            delay(500)
+            _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
+            delay(500)
+            _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
+            delay(500)
 
             repository.voidSaleDte(saleId, reason)
             _isDteInvalidating.value = false

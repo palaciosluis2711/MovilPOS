@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.FilterAltOff
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -48,6 +49,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
+import com.lopezapp.movilpos.data.model.Customer
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,6 +88,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
+import com.lopezapp.movilpos.data.model.DteEnvironment
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.ui.viewmodel.SalesViewModel
@@ -588,6 +594,40 @@ fun SaleReadOnlyView(
     val invalidationMessage by salesViewModel.dteInvalidationStatusMessage.collectAsState()
     val invalidationError by salesViewModel.dteInvalidationError.collectAsState()
 
+    var showEmitDteDialog by remember { mutableStateOf(false) }
+    var showDisabledDteDialog by remember { mutableStateOf(false) }
+    var showIncompleteDteConfigDialog by remember { mutableStateOf(false) }
+
+    if (showDisabledDteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDisabledDteDialog = false },
+            title = { Text("Facturación Electrónica Deshabilitada") },
+            text = {
+                Text("La Facturación Electrónica está deshabilitada. Habilítela en Configuración > Facturación Electrónica.")
+            },
+            confirmButton = {
+                TextButton(onClick = { showDisabledDteDialog = false }) {
+                    Text("Aceptar")
+                }
+            }
+        )
+    }
+
+    if (showIncompleteDteConfigDialog) {
+        AlertDialog(
+            onDismissRequest = { showIncompleteDteConfigDialog = false },
+            title = { Text("Configuración DTE Incompleta") },
+            text = {
+                Text("Para emitir DTEs en modo real, debe completar la configuración de Facturación Electrónica (NIT, Token API y Certificado .p12) en Configuración > Facturación Electrónica.")
+            },
+            confirmButton = {
+                TextButton(onClick = { showIncompleteDteConfigDialog = false }) {
+                    Text("Aceptar")
+                }
+            }
+        )
+    }
+
     fun printOrViewTicketPdf() {
         if (sale == null) return
         try {
@@ -670,33 +710,167 @@ fun SaleReadOnlyView(
         )
     }
 
-    if (isDteInvalidating) {
-        Dialog(onDismissRequest = { }) {
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator()
-                    Text(invalidationMessage, textAlign = TextAlign.Center)
+    if (showEmitDteDialog && sale != null) {
+        var selectedCustomer by remember {
+            mutableStateOf(customer ?: allCustomers.find { it.isDefault } ?: allCustomers.firstOrNull())
+        }
+        var customerSearchText by remember { mutableStateOf(selectedCustomer?.name ?: "") }
+        var customerDropdownExpanded by remember { mutableStateOf(false) }
+        var selectedInvoiceType by remember {
+            mutableStateOf(
+                if (sale.invoiceType == InvoiceType.CREDITO_FISCAL) InvoiceType.CREDITO_FISCAL else InvoiceType.CONSUMIDOR_FINAL
+            )
+        }
+
+        val filteredCustomers = remember(customerSearchText, allCustomers) {
+            if (customerSearchText.isBlank()) {
+                allCustomers
+            } else {
+                allCustomers.filter {
+                    it.name.contains(customerSearchText, ignoreCase = true) ||
+                            it.documentNumber.contains(customerSearchText, ignoreCase = true)
                 }
             }
         }
-    }
 
-    if (invalidationError != null) {
         AlertDialog(
-            onDismissRequest = { salesViewModel.clearDteInvalidationError() },
-            title = { Text("Error al Anular") },
-            text = { Text(invalidationError ?: "") },
+            onDismissRequest = { showEmitDteDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ReceiptLong,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text("Emitir Factura / DTE")
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Seleccione el cliente y el tipo de comprobante DTE a emitir para esta venta.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    ExposedDropdownMenuBox(
+                        expanded = customerDropdownExpanded,
+                        onExpandedChange = { customerDropdownExpanded = it },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = customerSearchText,
+                            onValueChange = { newValue ->
+                                customerSearchText = newValue
+                                customerDropdownExpanded = true
+                            },
+                            label = { Text("Cliente") },
+                            placeholder = { Text("Buscar cliente por nombre o documento...") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = customerDropdownExpanded)
+                            },
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryEditable)
+                                .fillMaxWidth()
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = customerDropdownExpanded,
+                            onDismissRequest = { customerDropdownExpanded = false }
+                        ) {
+                            if (filteredCustomers.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("No se encontraron clientes") },
+                                    onClick = { customerDropdownExpanded = false }
+                                )
+                            } else {
+                                filteredCustomers.forEach { cust ->
+                                    val isSelected = cust.id == selectedCustomer?.id
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    text = cust.name,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                                Text(
+                                                    text = "${cust.documentType}: ${cust.documentNumber}" +
+                                                            if (cust.isDefault) " (Por defecto)" else "",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            selectedCustomer = cust
+                                            customerSearchText = cust.name
+                                            customerDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "Tipo de Comprobante / DTE:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        FilterChip(
+                            selected = selectedInvoiceType == InvoiceType.CONSUMIDOR_FINAL,
+                            onClick = { selectedInvoiceType = InvoiceType.CONSUMIDOR_FINAL },
+                            label = { Text("Consumidor Final (01)") }
+                        )
+                        FilterChip(
+                            selected = selectedInvoiceType == InvoiceType.CREDITO_FISCAL,
+                            onClick = { selectedInvoiceType = InvoiceType.CREDITO_FISCAL },
+                            label = { Text("Crédito Fiscal (03)") }
+                        )
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = { salesViewModel.clearDteInvalidationError() }) {
-                    Text("Aceptar")
+                Button(
+                    onClick = {
+                        val targetCust = selectedCustomer ?: allCustomers.find { it.name.equals(customerSearchText, ignoreCase = true) }
+                        if (targetCust == null) {
+                            Toast.makeText(context, "Por favor seleccione un cliente válido", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        salesViewModel.upgradeSaleToDte(
+                            saleId = sale.id,
+                            customer = targetCust,
+                            invoiceType = selectedInvoiceType
+                        )
+                        showEmitDteDialog = false
+                        Toast.makeText(context, "DTE Emitido exitosamente para ${targetCust.name}", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Emitir DTE / Comprobante")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmitDteDialog = false }) {
+                    Text("Cancelar")
                 }
             }
         )
@@ -903,21 +1077,62 @@ fun SaleReadOnlyView(
                                 }
                             }
                         } else {
-                            Row(
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = "Estado MH:",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "No Aplica (Ticket / Venta Local)",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Estado MH:",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "No Aplica (Ticket / Venta Local)",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (!sale.isVoided) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val ebConfig = settingsUiState.electronicBillingConfig
+                                            val isEbEnabled = ebConfig.isEnabled
+                                            val isSimMode = ebConfig.isSimulationMode ||
+                                                    ebConfig.environment == DteEnvironment.SANDBOX ||
+                                                    ebConfig.apiToken.equals("test", ignoreCase = true)
+                                            val hasCredentials = ebConfig.nit.isNotBlank() &&
+                                                    ebConfig.apiToken.isNotBlank() &&
+                                                    !ebConfig.apiToken.equals("test", ignoreCase = true)
+                                            val hasCertificate = !ebConfig.certificateUri.isNullOrBlank()
+
+                                            if (!isEbEnabled) {
+                                                showDisabledDteDialog = true
+                                                Toast.makeText(
+                                                    context,
+                                                    "La Facturación Electrónica está deshabilitada. Habilítela en Configuración > Facturación Electrónica.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            } else if (!isSimMode && (!hasCredentials || !hasCertificate)) {
+                                                showIncompleteDteConfigDialog = true
+                                            } else {
+                                                showEmitDteDialog = true
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ReceiptLong,
+                                            contentDescription = null
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Emitir Factura / DTE")
+                                    }
+                                }
                             }
                         }
                     }

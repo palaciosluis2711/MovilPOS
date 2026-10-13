@@ -28,14 +28,14 @@ class UserAndShiftTest {
 
     @Test
     fun userCreation_andDefaults() {
-        val user = User(name = "Maria Lopez", pin = "1122")
+        val user = User(name = "Maria Lopez", username = "maria_lopez", pin = "1122")
         assertNotNull(user.id)
         assertEquals("Maria Lopez", user.name)
         assertEquals("1122", user.pin)
         assertEquals(Role.CASHIER, user.role)
         assertTrue(user.isActive)
 
-        val admin = User(id = "usr_admin", name = "Carlos Admin", pin = "9999", role = Role.ADMINISTRATOR, isActive = false)
+        val admin = User(id = "usr_admin", name = "Carlos Admin", username = "carlos_admin", pin = "9999", role = Role.ADMINISTRATOR, isActive = false)
         assertEquals("usr_admin", admin.id)
         assertEquals("Carlos Admin", admin.name)
         assertEquals("9999", admin.pin)
@@ -57,12 +57,12 @@ class UserAndShiftTest {
         assertFalse(repository.validateAdminPin("0000"))
 
         // Add Supervisor
-        val supervisor = User(id = "sup_1", name = "Supervisora Ana", pin = "2468", role = Role.SUPERVISOR)
+        val supervisor = User(id = "sup_1", name = "Supervisora Ana", username = "ana", pin = "2468", role = Role.SUPERVISOR)
         repository.addUser(supervisor)
         assertTrue(repository.validateAdminPin("2468"))
 
         // Add Cashier
-        val cashier = User(id = "cash_1", name = "Cajero Pedro", pin = "1357", role = Role.CASHIER)
+        val cashier = User(id = "cash_1", name = "Cajero Pedro", username = "pedro", pin = "1357", role = Role.CASHIER)
         repository.addUser(cashier)
         assertFalse(repository.validateAdminPin("1357"))
 
@@ -172,7 +172,7 @@ class UserAndShiftTest {
         assertTrue(repository.shiftHistory.value.isEmpty())
 
         // 1. Open shift
-        val cashier = User(id = "user_c1", name = "Laura", pin = "5555", role = Role.CASHIER)
+        val cashier = User(id = "user_c1", name = "Laura", username = "laura", pin = "5555", role = Role.CASHIER)
         repository.addUser(cashier)
 
         val openedShift = repository.openShift(cashier = cashier, initialFloat = 80.0)

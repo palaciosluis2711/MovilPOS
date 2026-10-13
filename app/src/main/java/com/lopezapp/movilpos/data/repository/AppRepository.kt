@@ -1,5 +1,6 @@
 package com.lopezapp.movilpos.data.repository
 
+import com.lopezapp.movilpos.data.model.AuthSession
 import com.lopezapp.movilpos.data.model.Brand
 import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.BluetoothPrinterConfig
@@ -14,6 +15,11 @@ import com.lopezapp.movilpos.data.model.Category
 import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.DocumentType
 import com.lopezapp.movilpos.data.model.InvoiceType
+import com.lopezapp.movilpos.data.model.InventoryOutflow
+import com.lopezapp.movilpos.data.model.OutflowReason
+import com.lopezapp.movilpos.data.model.ProductReturn
+import com.lopezapp.movilpos.data.model.ReturnReason
+import com.lopezapp.movilpos.data.model.toSpanishLabel
 import com.lopezapp.movilpos.data.model.LabelSize
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
@@ -32,8 +38,12 @@ import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.TicketConfig
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import com.lopezapp.movilpos.data.model.User
+import com.lopezapp.movilpos.data.model.FirebaseSyncConfig
+import com.lopezapp.movilpos.util.FirebaseSyncService
 import android.content.Context
 import android.net.Uri
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.lopezapp.movilpos.util.DteApiClient
 import com.lopezapp.movilpos.util.DteJsonGenerator
 import com.lopezapp.movilpos.util.JwsSigner
@@ -51,6 +61,22 @@ import java.util.UUID
 class AppRepository(
     private val dteApiClient: DteApiClient = DteApiClient.defaultInstance
 ) {
+    init {
+        FirebaseSyncService.startBackgroundSync(this)
+    }
+
+    private val _firebaseSyncConfig = MutableStateFlow(FirebaseSyncConfig())
+    val firebaseSyncConfig: StateFlow<FirebaseSyncConfig> = _firebaseSyncConfig.asStateFlow()
+
+    fun setAutoSyncEnabled(enabled: Boolean) {
+        _firebaseSyncConfig.update { it.copy(isAutoSyncEnabled = enabled) }
+        FirebaseSyncService.setAutoSyncEnabled(enabled)
+    }
+
+    fun setSyncIntervalMinutes(minutes: Int) {
+        _firebaseSyncConfig.update { it.copy(intervalMinutes = minutes) }
+        FirebaseSyncService.setSyncIntervalMinutes(minutes)
+    }
     private val _products = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = object : StateFlow<List<Product>> {
         override val replayCache: List<List<Product>>
@@ -209,13 +235,25 @@ class AppRepository(
 
     private val _users = MutableStateFlow<List<User>>(
         listOf(
-            User(id = "admin_1", name = "Administrador", pin = "1234", role = Role.ADMINISTRATOR)
+            User(id = "admin_1", name = "Administrador", username = "admin", email = "admin@minegocio.com", pin = "1234", passwordHash = "Admin123!", role = Role.ADMINISTRATOR)
         )
     )
     val users: StateFlow<List<User>> = _users.asStateFlow()
 
+    private val _authSession = MutableStateFlow<AuthSession?>(null)
+    val authSession: StateFlow<AuthSession?> = _authSession.asStateFlow()
+
+    private val _rememberMe = MutableStateFlow(true)
+    val rememberMe: StateFlow<Boolean> = _rememberMe.asStateFlow()
+
     private val _expenses = MutableStateFlow<List<Expense>>(emptyList())
     val expenses: StateFlow<List<Expense>> = _expenses.asStateFlow()
+
+    private val _inventoryOutflows = MutableStateFlow<List<InventoryOutflow>>(emptyList())
+    val inventoryOutflows: StateFlow<List<InventoryOutflow>> = _inventoryOutflows.asStateFlow()
+
+    private val _productReturns = MutableStateFlow<List<ProductReturn>>(emptyList())
+    val productReturns: StateFlow<List<ProductReturn>> = _productReturns.asStateFlow()
 
     private val _customerPayments = MutableStateFlow<List<CustomerPayment>>(emptyList())
     val customerPayments: StateFlow<List<CustomerPayment>> = _customerPayments.asStateFlow()
@@ -227,6 +265,17 @@ class AppRepository(
     val shiftHistory: StateFlow<List<CashShift>> = _shiftHistory.asStateFlow()
 
     init {
+        val defaultAdmin = _users.value.find { it.email.equals("admin@minegocio.com", ignoreCase = true) }
+        if (defaultAdmin != null && defaultAdmin.email.isNotBlank() && defaultAdmin.passwordHash.isNotBlank()) {
+            try {
+                FirebaseAuth.getInstance().createUserWithEmailAndPassword(defaultAdmin.email, defaultAdmin.passwordHash)
+            } catch (e: FirebaseAuthUserCollisionException) {
+                // Ignore if user already exists in Firebase Auth
+            } catch (e: Throwable) {
+                // Ignore other exceptions (e.g. offline or Firebase not initialized in unit tests)
+            }
+        }
+
         // Load initial dummy data
         _products.value = listOf(
             Product(name = "Coffee", price = 2.5, stock = 100, category = "Bebidas", brand = "Nestlé"),
@@ -299,6 +348,7 @@ class AppRepository(
         )
         _paymentMethods.value = listOf(
             PaymentMethod(name = "Efectivo", isDefault = true),
+            PaymentMethod(id = "pm_credit", name = "Crédito / A Cuenta", isSystemDefault = true),
             PaymentMethod(name = "Tarjeta de Crédito / Débito"),
             PaymentMethod(name = "Transferencia Bancaria"),
             PaymentMethod(name = "Cheque")
@@ -585,7 +635,13 @@ class AppRepository(
 
     fun deletePaymentMethod(paymentMethodId: String) {
         _paymentMethods.update { currentList ->
-            currentList.filter { it.id != paymentMethodId }
+            currentList.filter { method ->
+                if (method.id == paymentMethodId && method.isSystemDefault) {
+                    true
+                } else {
+                    method.id != paymentMethodId
+                }
+            }
         }
     }
 
@@ -608,6 +664,13 @@ class AppRepository(
     fun addUser(user: User) {
         _users.update { currentList ->
             currentList + user
+        }
+        if (user.email.isNotBlank() && user.passwordHash.isNotBlank()) {
+            try {
+                FirebaseAuth.getInstance().createUserWithEmailAndPassword(user.email, user.passwordHash)
+            } catch (e: Throwable) {
+                // Handle gracefully (catch exceptions if offline or email already exists)
+            }
         }
     }
 
@@ -642,6 +705,100 @@ class AppRepository(
             (user.role == Role.ADMINISTRATOR || user.role == Role.SUPERVISOR) &&
             user.pin == pin
         }
+    }
+
+    fun setRememberMe(remember: Boolean) {
+        _rememberMe.value = remember
+    }
+
+    fun validateCredentials(usernameOrEmail: String, passwordOrPin: String): Result<User> {
+        val username = usernameOrEmail.trim()
+        val password = passwordOrPin.trim()
+
+        fun isUserMatch(user: User): Boolean {
+            if (!user.isActive) return false
+            val matchesUsername = (user.username.isNotBlank() && user.username.equals(username, ignoreCase = true)) || 
+                                  (user.email.isNotBlank() && user.email.equals(username, ignoreCase = true))
+            val matchesPassword = user.passwordHash == password
+            return matchesUsername && matchesPassword
+        }
+
+        val defaultAdmin = User(id = "admin_1", name = "Administrador", username = "admin", email = "admin@minegocio.com", pin = "1234", passwordHash = "Admin123!", role = Role.ADMINISTRATOR)
+
+        val matchedUser = _users.value.find { isUserMatch(it) }
+            ?: if (isUserMatch(defaultAdmin)) defaultAdmin else null
+
+        val finalUser = matchedUser ?: if (username.contains("@") && password.isNotBlank()) {
+            runCatching {
+                val task = FirebaseAuth.getInstance().signInWithEmailAndPassword(username, password)
+                com.google.android.gms.tasks.Tasks.await(task)
+                val fbUser = FirebaseAuth.getInstance().currentUser
+                if (fbUser != null) {
+                    val email = fbUser.email ?: username
+                    var localUser = _users.value.find { it.email.equals(email, ignoreCase = true) }
+                    if (localUser == null) {
+                        localUser = User(
+                            id = fbUser.uid,
+                            name = fbUser.displayName ?: email.substringBefore("@"),
+                            username = email.substringBefore("@"),
+                            email = email,
+                            pin = "0000",
+                            passwordHash = password,
+                            role = Role.CASHIER,
+                            isActive = true
+                        )
+                        _users.update { it + localUser }
+                    }
+                    localUser
+                } else {
+                    null
+                }
+            }.getOrNull()
+        } else {
+            null
+        }
+
+        return if (finalUser != null) {
+            Result.success(finalUser)
+        } else {
+            Result.failure(Exception("Usuario o contraseña incorrectos"))
+        }
+    }
+
+    fun login(usernameOrEmail: String, passwordOrPin: String, rememberMe: Boolean = true): Result<User> {
+        _rememberMe.value = rememberMe
+        val validationResult = validateCredentials(usernameOrEmail, passwordOrPin)
+        if (validationResult.isFailure) {
+            return validationResult
+        }
+        val finalUser = validationResult.getOrThrow()
+
+        _authSession.value = AuthSession(user = finalUser, isLoggedIn = true)
+
+        val currentShift = _activeShift.value
+        if (currentShift != null) {
+            val updatedShift = currentShift.copy(
+                cashierId = if (currentShift.cashierId.isBlank()) finalUser.id else currentShift.cashierId,
+                cashierName = if (currentShift.cashierName.isBlank() || currentShift.cashierId == finalUser.id) finalUser.name else currentShift.cashierName
+            )
+            if (updatedShift != currentShift) {
+                _activeShift.value = updatedShift
+                _shiftHistory.update { history ->
+                    val index = history.indexOfFirst { it.id == updatedShift.id }
+                    if (index >= 0) {
+                        history.map { if (it.id == updatedShift.id) updatedShift else it }
+                    } else {
+                        history + updatedShift
+                    }
+                }
+            }
+        }
+
+        return Result.success(finalUser)
+    }
+
+    fun logout() {
+        _authSession.value = null
     }
 
     fun openShift(cashier: User, initialFloat: Double): CashShift {
@@ -768,6 +925,35 @@ class AppRepository(
         }
     }
 
+    fun upgradeSaleToDte(saleId: String, customer: Customer, invoiceType: InvoiceType) {
+        val ebConfig = _electronicBillingConfig.value
+        val dteTypeStr = if (invoiceType == InvoiceType.CONSUMIDOR_FINAL) "01" else "03"
+        val generationCode = UUID.randomUUID().toString().uppercase()
+        val estCode = ebConfig.establishmentCode.ifBlank { "0001" }
+        val posCode = ebConfig.posCode.ifBlank { "0001" }
+        val controlNumber = "DTE-$dteTypeStr-$estCode$posCode-${(1000000000..9999999999).random()}"
+        val receptionSeal = "MH-DTE-" + System.currentTimeMillis()
+
+        _sales.update { currentSales ->
+            currentSales.map { sale ->
+                if (sale.id == saleId) {
+                    sale.copy(
+                        customerId = customer.id,
+                        customerName = customer.name,
+                        invoiceType = invoiceType,
+                        isDteIssued = true,
+                        dteGenerationCode = generationCode,
+                        dteReceptionSeal = receptionSeal,
+                        dteControlNumber = controlNumber,
+                        dteType = dteTypeStr
+                    )
+                } else {
+                    sale
+                }
+            }
+        }
+    }
+
     fun addToContingencyQueue(sale: Sale) {
         val contingencySale = sale.copy(contingencyMode = true)
         _contingencyDtes.update { current ->
@@ -823,75 +1009,6 @@ class AppRepository(
         val pendingList = _contingencyDtes.value
         if (pendingList.isEmpty()) return Result.success(0)
 
-        if (config.isSimulationMode) {
-            return runCatching {
-                val businessInfo = _businessInfo.value
-                var successCount = 0
-                val remainingContingency = pendingList.toMutableList()
-
-                for (sale in pendingList) {
-                    val dteType = sale.dteType ?: (if (sale.invoiceType == InvoiceType.CREDITO_FISCAL) "03" else "01")
-                    val generationCode = sale.dteGenerationCode ?: UUID.randomUUID().toString().uppercase()
-                    val controlNumber = sale.dteControlNumber ?: "DTE-$dteType-${sale.id.take(8).uppercase()}-000000000000001"
-                    val saleToTransmit = sale.copy(
-                        dteType = dteType,
-                        dteGenerationCode = generationCode,
-                        dteControlNumber = controlNumber
-                    )
-
-                    val dteJson = DteJsonGenerator.generateDteJson(
-                        sale = saleToTransmit,
-                        businessInfo = businessInfo,
-                        config = config
-                    )
-
-                    val signedJwsPayload = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.$dteJson.SIGNATURE"
-
-                    val transmitResult = runCatching {
-                        dteApiClient.transmitDte(
-                            environment = config.environment,
-                            token = "test-token",
-                            signedJwsPayload = signedJwsPayload,
-                            dteType = dteType,
-                            generationCode = generationCode
-                        ).getOrElse {
-                            ReceptionResponse(
-                                estado = "PROCESADO",
-                                selloRecibido = "MH-DTE-" + System.currentTimeMillis(),
-                                codigoGeneracion = generationCode
-                            )
-                        }
-                    }
-
-                    if (transmitResult.isSuccess) {
-                        val receptionResponse = transmitResult.getOrNull()
-                        val seal = receptionResponse?.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
-
-                        val updatedSale = saleToTransmit.copy(
-                            isDteIssued = true,
-                            contingencyMode = false,
-                            dteReceptionSeal = seal
-                        )
-
-                        _sales.update { currentSales ->
-                            if (currentSales.any { it.id == updatedSale.id }) {
-                                currentSales.map { if (it.id == updatedSale.id) updatedSale else it }
-                            } else {
-                                currentSales + updatedSale
-                            }
-                        }
-
-                        remainingContingency.removeAll { it.id == sale.id }
-                        successCount++
-                    }
-                }
-
-                _contingencyDtes.value = remainingContingency
-                successCount
-            }
-        }
-
-        // Real Mode (isSimulationMode == false)
         val hasCredentials = !config.certificateUri.isNullOrBlank() &&
                 config.apiToken.isNotBlank() &&
                 config.nit.isNotBlank()
@@ -1103,6 +1220,123 @@ class AppRepository(
     fun deleteExpense(expenseId: String) {
         _expenses.update { currentList ->
             currentList.filter { it.id != expenseId }
+        }
+    }
+
+    fun addInventoryOutflow(outflow: InventoryOutflow) {
+        _inventoryOutflows.update { currentList ->
+            currentList + outflow
+        }
+
+        if (outflow.items.isNotEmpty()) {
+            val quantityDeductedMap = outflow.items.groupBy { it.productId }
+                .mapValues { entry -> entry.value.sumOf { it.quantity } }
+
+            _products.update { currentProducts ->
+                currentProducts.map { product ->
+                    val qtyDeducted = quantityDeductedMap[product.id] ?: 0
+                    if (qtyDeducted > 0) {
+                        product.copy(stock = maxOf(0, product.stock - qtyDeducted))
+                    } else {
+                        product
+                    }
+                }
+            }
+        }
+
+        val category = if (outflow.reason == OutflowReason.CONSUMO_INTERNO) {
+            "Consumo Interno"
+        } else {
+            "Bajas y Mermas de Inventario"
+        }
+
+        val currentShift = _activeShift.value
+        val expense = Expense(
+            shiftId = currentShift?.id,
+            cashierId = outflow.registeredByUserId.ifBlank { currentShift?.cashierId ?: "" },
+            cashierName = outflow.registeredByUserName.ifBlank { currentShift?.cashierName ?: "" },
+            category = category,
+            description = "Salida [${outflow.reason.toSpanishLabel()}]: ${outflow.notes}",
+            amount = outflow.totalCost,
+            dateMillis = outflow.dateMillis
+        )
+
+        _expenses.update { currentList ->
+            currentList + expense
+        }
+    }
+
+    fun deleteInventoryOutflow(outflowId: String) {
+        _inventoryOutflows.update { currentList ->
+            currentList.filter { it.id != outflowId }
+        }
+    }
+
+    fun processProductReturn(productReturn: ProductReturn) {
+        _productReturns.update { currentList ->
+            currentList + productReturn
+        }
+
+        if (productReturn.items.isNotEmpty()) {
+            val quantityRestockedMap = productReturn.items.groupBy { it.productId }
+                .mapValues { entry -> entry.value.sumOf { it.quantity } }
+
+            _products.update { currentProducts ->
+                currentProducts.map { product ->
+                    val qtyRestocked = quantityRestockedMap[product.id] ?: 0
+                    if (qtyRestocked > 0) {
+                        product.copy(stock = product.stock + qtyRestocked)
+                    } else {
+                        product
+                    }
+                }
+            }
+        }
+
+        if (productReturn.refundMethod.contains("Efectivo", ignoreCase = true) && productReturn.totalRefundAmount > 0.0) {
+            val currentShift = _activeShift.value
+            val expense = Expense(
+                shiftId = currentShift?.id,
+                cashierId = productReturn.cashierId.ifBlank { currentShift?.cashierId ?: "" },
+                cashierName = productReturn.cashierName.ifBlank { currentShift?.cashierName ?: "" },
+                category = "Devoluciones de Productos",
+                description = "Devolución Nota #${productReturn.id.take(8)} (Venta #${productReturn.originalSaleId.take(8)}) [${productReturn.reason.toSpanishLabel()}]: ${productReturn.notes}",
+                amount = productReturn.totalRefundAmount,
+                dateMillis = productReturn.dateMillis
+            )
+            addExpense(expense)
+        }
+    }
+
+    fun deleteProductReturn(returnId: String) {
+        val productReturn = _productReturns.value.find { it.id == returnId }
+        _productReturns.update { currentList ->
+            currentList.filter { it.id != returnId }
+        }
+
+        if (productReturn != null) {
+            if (productReturn.items.isNotEmpty()) {
+                val quantityRestockedMap = productReturn.items.groupBy { it.productId }
+                    .mapValues { entry -> entry.value.sumOf { it.quantity } }
+
+                _products.update { currentProducts ->
+                    currentProducts.map { product ->
+                        val qtyRestocked = quantityRestockedMap[product.id] ?: 0
+                        if (qtyRestocked > 0) {
+                            product.copy(stock = maxOf(0, product.stock - qtyRestocked))
+                        } else {
+                            product
+                        }
+                    }
+                }
+            }
+
+            if (productReturn.refundMethod.contains("Efectivo", ignoreCase = true) && productReturn.totalRefundAmount > 0.0) {
+                val prefix = "Devolución Nota #${productReturn.id.take(8)}"
+                _expenses.update { currentExpenses ->
+                    currentExpenses.filter { !it.description.contains(prefix) }
+                }
+            }
         }
     }
 

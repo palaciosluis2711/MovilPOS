@@ -6,7 +6,12 @@ import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.SaleItem
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.DteReportsViewModel
+import com.lopezapp.movilpos.util.DteApiClient
 import com.lopezapp.movilpos.util.DteJsonGenerator
+import com.lopezapp.movilpos.util.TestDteUtils
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import java.io.ByteArrayInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -143,6 +148,13 @@ class DteReportsViewModelTest {
 
     @Test
     fun voidSaleDte_updatesSaleStateInRepositoryAndViewModel() = runTest {
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                nit = "06140101901015",
+                apiToken = "valid",
+                certificateUri = "content://cert.p12"
+            )
+        )
         val dteSale = Sale(
             id = "sale-to-void-1",
             customerId = "c1",
@@ -195,6 +207,38 @@ class DteReportsViewModelTest {
 
     @Test
     fun retryContingencyTransmissions_retransmitsAndUpdatesViewModelFlows() = runTest {
+        val mockClient = TestDteUtils.createMockOkHttpClient { request ->
+            val urlStr = request.url.toString()
+            val responseJson = if (urlStr.contains("/gettoken")) {
+                """{"status": "OK", "token": "real_auth_token_123"}"""
+            } else {
+                """{"estado": "PROCESADO", "selloRecibido": "MH-REAL-SELLO-123", "codigoGeneracion": "GEN-REAL-123"}"""
+            }
+            okhttp3.Response.Builder()
+                .request(request)
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(responseJson.toResponseBody("application/json".toMediaType()))
+                .build()
+        }
+        val apiClient = DteApiClient(okHttpClient = mockClient)
+        repository = AppRepository(dteApiClient = apiClient)
+        viewModel = DteReportsViewModel(repository)
+
+        val certPassword = "CertPassword123!"
+        val pkcs12Bytes = TestDteUtils.generateMockPkcs12Stream("test_alias", certPassword)
+
+        repository.updateElectronicBillingConfig(
+            ElectronicBillingConfig(
+                isEnabled = true,
+                nit = "06140101901015",
+                apiToken = "valid",
+                certificatePassword = certPassword,
+                certificateUri = "content://cert.p12"
+            )
+        )
+
         val contingencySale = Sale(
             id = "contingency-sale-retry",
             customerId = "c1",
@@ -210,7 +254,7 @@ class DteReportsViewModelTest {
 
         assertEquals(1, viewModel.contingencyDtes.value.size)
 
-        val result = viewModel.retryContingencyTransmissions()
+        val result = viewModel.retryContingencyTransmissions(certificateInputStream = ByteArrayInputStream(pkcs12Bytes))
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(result.isSuccess)
@@ -221,5 +265,6 @@ class DteReportsViewModelTest {
         assertNotNull(updatedSale)
         assertTrue(updatedSale!!.isDteIssued)
         Assert.assertFalse(updatedSale.contingencyMode)
+        assertEquals("MH-REAL-SELLO-123", updatedSale.dteReceptionSeal)
     }
 }

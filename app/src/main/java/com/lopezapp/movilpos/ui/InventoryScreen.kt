@@ -24,6 +24,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,12 +44,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.BrandingWatermark
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -534,11 +542,23 @@ fun ProductListScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(text = product.name, style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        text = product.displayName,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                     Text(
                                         text = if (product.isService && product.bundleItems.isEmpty()) "Stock: Ilimitado" else "Stock: ${product.stock}",
                                         style = MaterialTheme.typography.bodyMedium
                                     )
+                                    if (product.tags.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = product.tags.joinToString(" • "),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                                 Text(
                                     text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
@@ -750,7 +770,7 @@ fun ProductReadOnlyView(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = product.name,
+                            text = product.displayName,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -1261,6 +1281,22 @@ fun ProductReadOnlyView(
                             value = taxesText
                         )
                     }
+
+                    if (!product.differentiator.isNullOrBlank()) {
+                        InfoRow(
+                            icon = Icons.Default.Extension,
+                            label = "Diferenciador / Lote / Variación",
+                            value = product.differentiator
+                        )
+                    }
+
+                    if (product.tags.isNotEmpty()) {
+                        InfoRow(
+                            icon = Icons.Default.LocalOffer,
+                            label = "Etiquetas / Tags",
+                            value = product.tags.joinToString(", ")
+                        )
+                    }
                 }
             }
 
@@ -1351,6 +1387,34 @@ fun ProductEditForm(
     val taxesList by viewModel.taxes.collectAsState()
     var selectedTaxIds by remember(product) { mutableStateOf(product?.appliedTaxIds?.toSet() ?: emptySet()) }
     var isTaxIncludedInPrice by remember(product) { mutableStateOf(product?.isTaxIncludedInPrice ?: false) }
+
+    var differentiator by remember(product) { mutableStateOf(product?.differentiator ?: "") }
+    var activeTags by remember(product) { mutableStateOf(product?.tags ?: emptyList()) }
+    var customTagInput by remember { mutableStateOf("") }
+
+    val currentMonthYear = remember {
+        try {
+            val cal = java.util.Calendar.getInstance()
+            val monthFormat = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale("es", "ES"))
+            val formatted = monthFormat.format(cal.time)
+            formatted.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale("es", "ES")) else it.toString() }
+        } catch (_: Exception) {
+            "Marzo 2025"
+        }
+    }
+
+    val suggestedTags = remember(currentMonthYear) {
+        listOf(currentMonthYear, "Nuevo", "Promoción", "Oferta", "Importación")
+    }
+
+    val parseAndAddTags: (String) -> Unit = { input ->
+        val parsed = input.split(",", ";")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        if (parsed.isNotEmpty()) {
+            activeTags = (activeTags + parsed).distinct()
+        }
+    }
 
     var pendingCropUri by remember { mutableStateOf<String?>(null) }
     var barcodeNotApplicable by remember(product) { mutableStateOf(product != null && product.barcode.isNullOrBlank()) }
@@ -1621,6 +1685,16 @@ fun ProductEditForm(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
+            OutlinedTextField(
+                value = differentiator,
+                onValueChange = { differentiator = it },
+                label = { Text("Diferenciador / Lote / Variación") },
+                placeholder = { Text("ej. Lote $0.01") },
+                supportingText = { Text("Permite diferenciar dos productos idénticos comprados a distinto costo, ej. 'Lote $0.01' vs 'Lote $0.02'") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Checkboxes "Bundle" & "Servicio"
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1803,6 +1877,128 @@ fun ProductEditForm(
                 }
             }
 
+            // Sección: Etiquetas / Tags
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Etiquetas / Tags",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    OutlinedTextField(
+                        value = customTagInput,
+                        onValueChange = { newValue ->
+                            if (newValue.contains(",") || newValue.contains(";")) {
+                                val parts = newValue.split(",", ";")
+                                val toAdd = parts.dropLast(1).map { it.trim() }.filter { it.isNotBlank() }
+                                if (toAdd.isNotEmpty()) {
+                                    activeTags = (activeTags + toAdd).distinct()
+                                }
+                                customTagInput = parts.last()
+                            } else {
+                                customTagInput = newValue
+                            }
+                        },
+                        label = { Text("Agregar etiquetas (separadas por comas)") },
+                        placeholder = { Text("ej. oferta, estante3") },
+                        trailingIcon = {
+                            if (customTagInput.isNotBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        parseAndAddTags(customTagInput)
+                                        customTagInput = ""
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = "Agregar etiqueta")
+                                }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            parseAndAddTags(customTagInput)
+                            customTagInput = ""
+                        }),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Sugerencias de etiquetas:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            suggestedTags.forEach { tag ->
+                                val isSelected = activeTags.contains(tag)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        activeTags = if (isSelected) {
+                                            activeTags - tag
+                                        } else {
+                                            (activeTags + tag).distinct()
+                                        }
+                                    },
+                                    label = { Text(tag) },
+                                    leadingIcon = if (isSelected) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                    } else null
+                                )
+                            }
+                        }
+                    }
+
+                    if (activeTags.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Etiquetas activas:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OptIn(ExperimentalLayoutApi::class)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                activeTags.forEach { tag ->
+                                    FilterChip(
+                                        selected = true,
+                                        onClick = { activeTags = activeTags - tag },
+                                        label = { Text(tag) },
+                                        trailingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Eliminar etiqueta $tag",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Unidad de Medida (Hidden when isService is true)
             AnimatedVisibility(
                 visible = !isService,
@@ -1855,6 +2051,8 @@ fun ProductEditForm(
                     Spacer(modifier = Modifier.height(12.dp))
                 }
             }
+
+
 
             // Section: Productos incluidos / requeridos en el Bundle o Servicio
             AnimatedVisibility(
@@ -2316,6 +2514,13 @@ fun ProductEditForm(
 
             Button(
                 onClick = {
+                    if (customTagInput.isNotBlank()) {
+                        parseAndAddTags(customTagInput)
+                        customTagInput = ""
+                    }
+                    val finalDifferentiator = differentiator.trim().takeIf { it.isNotBlank() }
+                    val finalTags = activeTags
+
                     val price = priceState.text.toDoubleOrNull() ?: 0.0
                     val cost = costState.text.toDoubleOrNull() ?: 0.0
                     val finalAlertQuantity = if (isService) 0 else (alertQuantityStr.toIntOrNull() ?: 0)
@@ -2342,7 +2547,9 @@ fun ProductEditForm(
                                     isTaxIncludedInPrice = isTaxIncludedInPrice,
                                     isBundle = isBundle,
                                     bundleItems = if (isBundle || isService) bundleItems else emptyList(),
-                                    isService = isService
+                                    isService = isService,
+                                    tags = finalTags,
+                                    differentiator = finalDifferentiator
                                 )
                             )
                         } else {
@@ -2360,7 +2567,9 @@ fun ProductEditForm(
                                 isTaxIncludedInPrice = isTaxIncludedInPrice,
                                 isBundle = isBundle,
                                 bundleItems = if (isBundle || isService) bundleItems else emptyList(),
-                                isService = isService
+                                isService = isService,
+                                tags = finalTags,
+                                differentiator = finalDifferentiator
                             )
                         }
                         onSaveSuccess()

@@ -1007,7 +1007,9 @@ fun QuotationEditForm(
                             allProducts.filter { product ->
                                 product.name.contains(productSearchText, ignoreCase = true) ||
                                         product.category.contains(productSearchText, ignoreCase = true) ||
-                                        (product.barcode?.contains(productSearchText, ignoreCase = true) == true)
+                                        (product.barcode?.contains(productSearchText, ignoreCase = true) == true) ||
+                                        (product.differentiator?.contains(productSearchText, ignoreCase = true) == true) ||
+                                        product.tags.any { it.contains(productSearchText, ignoreCase = true) }
                             }
                         }
                     }
@@ -1061,7 +1063,7 @@ fun QuotationEditForm(
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = product.name,
+                                                    text = product.displayName,
                                                     style = MaterialTheme.typography.bodyLarge,
                                                     fontWeight = FontWeight.SemiBold
                                                 )

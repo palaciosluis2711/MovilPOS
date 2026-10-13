@@ -16,6 +16,11 @@ import com.lopezapp.movilpos.data.model.ShiftStatus
 import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
+import com.lopezapp.movilpos.util.DteApiClient
+import com.lopezapp.movilpos.util.TestDteUtils
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import java.io.ByteArrayInputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -90,8 +95,8 @@ class POSViewModelTest {
 
     @Test
     fun setSearchQuery_filtersProductsByNameAndBarcode() = runTest {
-        val p1 = Product(name = "Espresso Coffee", barcode = "123456", price = 3.0, stock = 10)
-        val p2 = Product(name = "Green Tea", barcode = "789012", price = 2.0, stock = 10)
+        val p1 = Product(name = "Espresso Coffee", barcode = "123456", price = 3.0, stock = 10, tags = listOf("Importación"), differentiator = "Lote A")
+        val p2 = Product(name = "Green Tea", barcode = "789012", price = 2.0, stock = 10, tags = listOf("Oferta"), differentiator = "Lote B")
         repository.addProduct(p1)
         repository.addProduct(p2)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -109,6 +114,20 @@ class POSViewModelTest {
         val barcodeFiltered = viewModel.uiState.value.products
         assertEquals(1, barcodeFiltered.size)
         assertEquals("Green Tea", barcodeFiltered.first().name)
+
+        // Search by tag
+        viewModel.setSearchQuery("Importación")
+        testDispatcher.scheduler.advanceUntilIdle()
+        val tagFiltered = viewModel.uiState.value.products
+        assertEquals(1, tagFiltered.size)
+        assertEquals("Espresso Coffee", tagFiltered.first().name)
+
+        // Search by differentiator
+        viewModel.setSearchQuery("Lote B")
+        testDispatcher.scheduler.advanceUntilIdle()
+        val diffFiltered = viewModel.uiState.value.products
+        assertEquals(1, diffFiltered.size)
+        assertEquals("Green Tea", diffFiltered.first().name)
 
         // Clear search
         viewModel.setSearchQuery("")
@@ -977,7 +996,7 @@ class POSViewModelTest {
 
         assertEquals(defaultCustomer?.id, state.selectedCustomerId)
         assertEquals(defaultPaymentMethod?.id, state.selectedPaymentMethodId)
-        assertEquals(InvoiceType.CONSUMIDOR_FINAL, state.selectedInvoiceType)
+        assertEquals(InvoiceType.TICKET, state.selectedInvoiceType)
     }
 
     @Test
@@ -1062,9 +1081,34 @@ class POSViewModelTest {
 
     @Test
     fun processSale_withElectronicBillingEnabled_issuesDteForConsumidorFinal() = runTest {
+        val mockClient = TestDteUtils.createMockOkHttpClient { request ->
+            val urlStr = request.url.toString()
+            val responseJson = if (urlStr.contains("/gettoken")) {
+                """{"status": "OK", "token": "real_auth_token_123"}"""
+            } else {
+                """{"estado": "PROCESADO", "selloRecibido": "MH-REAL-SELLO-123", "codigoGeneracion": "GEN-REAL-123"}"""
+            }
+            okhttp3.Response.Builder()
+                .request(request)
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(responseJson.toResponseBody("application/json".toMediaType()))
+                .build()
+        }
+        val apiClient = DteApiClient(okHttpClient = mockClient)
+        repository = AppRepository(dteApiClient = apiClient)
+        viewModel = POSViewModel(repository = repository, dteApiClient = apiClient)
+
+        val certPassword = "CertPassword123!"
+        val pkcs12Bytes = TestDteUtils.generateMockPkcs12Stream("test_alias", certPassword)
+
         repository.updateElectronicBillingConfig(
             ElectronicBillingConfig(
                 isEnabled = true,
+                nit = "06140101901015",
+                apiToken = "valid",
+                certificatePassword = certPassword,
                 establishmentCode = "0001",
                 posCode = "0001"
             )
@@ -1076,7 +1120,7 @@ class POSViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         var navigatedSaleId: String? = null
-        viewModel.processSale { saleId ->
+        viewModel.processSale(certificateInputStream = ByteArrayInputStream(pkcs12Bytes)) { saleId ->
             navigatedSaleId = saleId
         }
         testDispatcher.scheduler.advanceUntilIdle()
@@ -1087,15 +1131,40 @@ class POSViewModelTest {
         assertTrue(savedSale!!.isDteIssued)
         assertEquals("01", savedSale.dteType)
         assertTrue(savedSale.dteGenerationCode?.isNotBlank() == true)
-        assertTrue(savedSale.dteReceptionSeal?.startsWith("MH-DTE-") == true)
+        assertEquals("MH-REAL-SELLO-123", savedSale.dteReceptionSeal)
         assertTrue(savedSale.dteControlNumber?.startsWith("DTE-01-") == true)
     }
 
     @Test
     fun processSale_withElectronicBillingEnabled_issuesDteForCreditoFiscal() = runTest {
+        val mockClient = TestDteUtils.createMockOkHttpClient { request ->
+            val urlStr = request.url.toString()
+            val responseJson = if (urlStr.contains("/gettoken")) {
+                """{"status": "OK", "token": "real_auth_token_123"}"""
+            } else {
+                """{"estado": "PROCESADO", "selloRecibido": "MH-REAL-SELLO-123", "codigoGeneracion": "GEN-REAL-123"}"""
+            }
+            okhttp3.Response.Builder()
+                .request(request)
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(responseJson.toResponseBody("application/json".toMediaType()))
+                .build()
+        }
+        val apiClient = DteApiClient(okHttpClient = mockClient)
+        repository = AppRepository(dteApiClient = apiClient)
+        viewModel = POSViewModel(repository = repository, dteApiClient = apiClient)
+
+        val certPassword = "CertPassword123!"
+        val pkcs12Bytes = TestDteUtils.generateMockPkcs12Stream("test_alias", certPassword)
+
         repository.updateElectronicBillingConfig(
             ElectronicBillingConfig(
                 isEnabled = true,
+                nit = "06140101901015",
+                apiToken = "valid",
+                certificatePassword = certPassword,
                 establishmentCode = "0002",
                 posCode = "0002"
             )
@@ -1107,7 +1176,7 @@ class POSViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         var navigatedSaleId: String? = null
-        viewModel.processSale { saleId ->
+        viewModel.processSale(certificateInputStream = ByteArrayInputStream(pkcs12Bytes)) { saleId ->
             navigatedSaleId = saleId
         }
         testDispatcher.scheduler.advanceUntilIdle()
@@ -1118,7 +1187,7 @@ class POSViewModelTest {
         assertTrue(savedSale!!.isDteIssued)
         assertEquals("03", savedSale.dteType)
         assertTrue(savedSale.dteGenerationCode?.isNotBlank() == true)
-        assertTrue(savedSale.dteReceptionSeal?.startsWith("MH-DTE-") == true)
+        assertEquals("MH-REAL-SELLO-123", savedSale.dteReceptionSeal)
         assertTrue(savedSale.dteControlNumber?.startsWith("DTE-03-") == true)
     }
 
@@ -1129,8 +1198,7 @@ class POSViewModelTest {
                 isEnabled = true,
                 environment = DteEnvironment.SANDBOX,
                 nit = "", // missing credentials -> contingency
-                apiToken = "",
-                isSimulationMode = false
+                apiToken = ""
             )
         )
         viewModel.selectInvoiceType(InvoiceType.CONSUMIDOR_FINAL)
@@ -1203,7 +1271,7 @@ class POSViewModelTest {
 
     @Test
     fun openShift_validPin_opensShiftAndReturnsTrue() = runTest {
-        val cashier = User(id = "user1", name = "Juan Pérez", pin = "1234", role = Role.CASHIER)
+        val cashier = User(id = "user1", name = "Juan Pérez", username = "juan_perez", pin = "1234", role = Role.CASHIER)
         repository.addUser(cashier)
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -1220,7 +1288,7 @@ class POSViewModelTest {
 
     @Test
     fun openShift_invalidPin_returnsFalse() = runTest {
-        val cashier = User(id = "user1", name = "Juan Pérez", pin = "1234", role = Role.CASHIER)
+        val cashier = User(id = "user1", name = "Juan Pérez", username = "juan_perez", pin = "1234", role = Role.CASHIER)
         repository.addUser(cashier)
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -1233,7 +1301,7 @@ class POSViewModelTest {
 
     @Test
     fun closeShift_closesActiveShiftAndReturnsClosedShift() = runTest {
-        val cashier = User(id = "user1", name = "Juan Pérez", pin = "1234", role = Role.CASHIER)
+        val cashier = User(id = "user1", name = "Juan Pérez", username = "juan_perez", pin = "1234", role = Role.CASHIER)
         viewModel.openShift(cashier, "1234", 100.0)
         testDispatcher.scheduler.advanceUntilIdle()
 

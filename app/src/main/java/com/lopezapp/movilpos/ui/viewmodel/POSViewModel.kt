@@ -52,7 +52,7 @@ data class POSState(
     val customers: List<Customer> = emptyList(),
     val paymentMethods: List<PaymentMethod> = emptyList(),
     val selectedCustomerId: String? = null,
-    val selectedInvoiceType: InvoiceType = InvoiceType.CONSUMIDOR_FINAL,
+    val selectedInvoiceType: InvoiceType = InvoiceType.TICKET,
     val selectedPaymentMethodId: String? = null,
     val cashReceivedStr: String = "",
     val changeAmount: Double = 0.0,
@@ -101,7 +101,7 @@ class POSViewModel(
     private val _selectedPriceRuleId = MutableStateFlow<String?>(null)
     private val _selectedCartItemIds = MutableStateFlow<Set<String>>(emptySet())
     private val _selectedCustomerId = MutableStateFlow<String?>(null)
-    private val _selectedInvoiceType = MutableStateFlow(InvoiceType.CONSUMIDOR_FINAL)
+    private val _selectedInvoiceType = MutableStateFlow(InvoiceType.TICKET)
     private val _selectedPaymentMethodId = MutableStateFlow<String?>(null)
     private val _cashReceivedStr = MutableStateFlow("")
     private val _isCreditSale = MutableStateFlow(false)
@@ -202,7 +202,9 @@ class POSViewModel(
         } else {
             products.filter { product ->
                 product.name.contains(query, ignoreCase = true) ||
-                (product.barcode?.contains(query, ignoreCase = true) == true)
+                (product.barcode?.contains(query, ignoreCase = true) == true) ||
+                (product.differentiator?.contains(query, ignoreCase = true) == true) ||
+                product.tags.any { it.contains(query, ignoreCase = true) }
             }
         }
 
@@ -942,98 +944,86 @@ class POSViewModel(
                 var finalReceptionSeal: String? = null
                 var contingencyMode = false
 
-                if (ebConfig.isSimulationMode) {
-                    _dteStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                    delay(800)
-                    _dteStatusMessage.value = "Firmando DTE..."
-                    delay(800)
-                    _dteStatusMessage.value = "Transmitiendo DTE al MH..."
-                    delay(800)
-                    finalReceptionSeal = "MH-DTE-" + System.currentTimeMillis()
-                    _dteStatusMessage.value = "¡DTE Emitido con Éxito!"
-                    delay(800)
-                } else {
-                    val certStream: InputStream? = certificateInputStream ?: context?.let { ctx ->
-                        ebConfig.certificateUri?.let { uriStr ->
-                            runCatching {
-                                ctx.contentResolver.openInputStream(Uri.parse(uriStr))
-                            }.getOrNull() ?: runCatching {
-                                File(uriStr).takeIf { it.exists() }?.inputStream()
-                            }.getOrNull()
-                        }
-                    }
-
-                    val hasApiCredentials = ebConfig.nit.isNotBlank() &&
-                            ebConfig.apiToken.isNotBlank() &&
-                            !ebConfig.apiToken.equals("test", ignoreCase = true)
-
-                    if (certStream == null || !hasApiCredentials) {
-                        contingencyMode = true
-                        _dteStatusMessage.value = "Guardando en Contingencia..."
-                        delay(500)
-                    } else {
+                val certStream: InputStream? = certificateInputStream ?: context?.let { ctx ->
+                    ebConfig.certificateUri?.let { uriStr ->
                         runCatching {
-                            _dteStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                            val authResult = dteApiClient.authenticate(
-                                environment = ebConfig.environment,
-                                nit = ebConfig.nit,
-                                apiKey = ebConfig.apiToken
-                            )
+                            ctx.contentResolver.openInputStream(Uri.parse(uriStr))
+                        }.getOrNull() ?: runCatching {
+                            File(uriStr).takeIf { it.exists() }?.inputStream()
+                        }.getOrNull()
+                    }
+                }
 
-                            val token = authResult.getOrThrow()
+                val hasApiCredentials = ebConfig.nit.isNotBlank() &&
+                        ebConfig.apiToken.isNotBlank() &&
+                        !ebConfig.apiToken.equals("test", ignoreCase = true)
 
-                            _dteStatusMessage.value = "Firmando DTE..."
-                            val draftSale = Sale(
-                                id = UUID.randomUUID().toString(),
-                                customerId = custId,
-                                customerName = custName,
-                                invoiceType = invoiceType,
-                                paymentMethodId = pmId,
-                                paymentMethodName = pmName,
-                                items = items,
-                                totalAmount = total,
-                                cashReceived = cashReceived,
-                                changeAmount = changeAmount,
-                                dateMillis = System.currentTimeMillis(),
-                                isDteIssued = true,
-                                dteGenerationCode = generationCode,
-                                dteControlNumber = controlNumber,
-                                dteType = dteTypeStr,
-                                isCredit = isCredit,
-                                creditDueDateMillis = if (isCredit) dueDateMillis else null,
-                                remainingBalance = total,
-                                creditStatus = CreditStatus.UNPAID
-                            )
+                if (certStream == null || !hasApiCredentials) {
+                    contingencyMode = true
+                    _dteStatusMessage.value = "Guardando en Contingencia..."
+                    delay(500)
+                } else {
+                    runCatching {
+                        _dteStatusMessage.value = "Conectando con Ministerio de Hacienda..."
+                        val authResult = dteApiClient.authenticate(
+                            environment = ebConfig.environment,
+                            nit = ebConfig.nit,
+                            apiKey = ebConfig.apiToken
+                        )
 
-                            val dteJson = DteJsonGenerator.generateDteJson(
-                                sale = draftSale,
-                                businessInfo = repository.businessInfo.value,
-                                config = ebConfig
-                            )
+                        val token = authResult.getOrThrow()
 
-                            val signedJws = JwsSigner.signDteJson(
-                                jsonPayload = dteJson,
-                                certificateInputStream = certStream,
-                                password = ebConfig.certificatePassword
-                            ).getOrThrow()
+                        _dteStatusMessage.value = "Firmando DTE..."
+                        val draftSale = Sale(
+                            id = UUID.randomUUID().toString(),
+                            customerId = custId,
+                            customerName = custName,
+                            invoiceType = invoiceType,
+                            paymentMethodId = pmId,
+                            paymentMethodName = pmName,
+                            items = items,
+                            totalAmount = total,
+                            cashReceived = cashReceived,
+                            changeAmount = changeAmount,
+                            dateMillis = System.currentTimeMillis(),
+                            isDteIssued = true,
+                            dteGenerationCode = generationCode,
+                            dteControlNumber = controlNumber,
+                            dteType = dteTypeStr,
+                            isCredit = isCredit,
+                            creditDueDateMillis = if (isCredit) dueDateMillis else null,
+                            remainingBalance = total,
+                            creditStatus = CreditStatus.UNPAID
+                        )
 
-                            _dteStatusMessage.value = "Transmitiendo DTE al MH..."
-                            val receptionResponse = dteApiClient.transmitDte(
-                                environment = ebConfig.environment,
-                                token = token,
-                                signedJwsPayload = signedJws,
-                                dteType = dteTypeStr,
-                                generationCode = generationCode
-                            ).getOrThrow()
+                        val dteJson = DteJsonGenerator.generateDteJson(
+                            sale = draftSale,
+                            businessInfo = repository.businessInfo.value,
+                            config = ebConfig
+                        )
 
-                            finalReceptionSeal = receptionResponse.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
-                            _dteStatusMessage.value = "¡DTE Emitido con Éxito!"
-                            delay(800)
-                        }.onFailure {
-                            contingencyMode = true
-                            _dteStatusMessage.value = "Error de red/MH. Guardado en Contingencia."
-                            delay(800)
-                        }
+                        val signedJws = JwsSigner.signDteJson(
+                            jsonPayload = dteJson,
+                            certificateInputStream = certStream,
+                            password = ebConfig.certificatePassword
+                        ).getOrThrow()
+
+                        _dteStatusMessage.value = "Transmitiendo DTE al MH..."
+                        val receptionResponse = dteApiClient.transmitDte(
+                            environment = ebConfig.environment,
+                            token = token,
+                            signedJwsPayload = signedJws,
+                            dteType = dteTypeStr,
+                            generationCode = generationCode
+                        ).getOrThrow()
+
+                        finalReceptionSeal = receptionResponse.selloRecibido ?: ("MH-DTE-" + System.currentTimeMillis())
+                        _dteStatusMessage.value = "¡DTE Emitido con Éxito!"
+                        delay(800)
+                    }.onFailure {
+                        contingencyMode = true
+                        _dteStatusMessage.value = "Error de red/MH. Guardado en Contingencia."
+                        delay(800)
                     }
                 }
 
@@ -1143,31 +1133,22 @@ class POSViewModel(
             _dteInvalidationError.value = null
             _isDteInvalidating.value = true
 
-            if (ebConfig.isSimulationMode) {
-                _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                delay(800)
-                _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
-                delay(800)
-                _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
-                delay(800)
-            } else {
-                val hasApiCredentials = ebConfig.nit.isNotBlank() &&
-                        ebConfig.apiToken.isNotBlank() &&
-                        !ebConfig.apiToken.equals("test", ignoreCase = true)
+            val hasApiCredentials = ebConfig.nit.isNotBlank() &&
+                    ebConfig.apiToken.isNotBlank() &&
+                    !ebConfig.apiToken.equals("test", ignoreCase = true)
 
-                if (!hasApiCredentials || (ebConfig.certificateUri == null)) {
-                    _isDteInvalidating.value = false
-                    _dteInvalidationError.value = "Faltan credenciales DTE para anular la factura."
-                    return@launch
-                }
-                
-                _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
-                delay(500)
-                _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
-                delay(500)
-                _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
-                delay(500)
+            if (!hasApiCredentials || (ebConfig.certificateUri == null)) {
+                _isDteInvalidating.value = false
+                _dteInvalidationError.value = "Faltan credenciales DTE para anular la factura."
+                return@launch
             }
+            
+            _dteInvalidationStatusMessage.value = "Conectando con Ministerio de Hacienda..."
+            delay(500)
+            _dteInvalidationStatusMessage.value = "Enviando Evento de Invalidez..."
+            delay(500)
+            _dteInvalidationStatusMessage.value = "¡DTE Anulado con Éxito!"
+            delay(500)
 
             repository.voidSaleDte(saleId, reason)
             _isDteInvalidating.value = false

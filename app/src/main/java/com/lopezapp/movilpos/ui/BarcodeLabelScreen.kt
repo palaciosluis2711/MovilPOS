@@ -36,6 +36,8 @@ import com.lopezapp.movilpos.ui.viewmodel.BarcodeLabelViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import com.lopezapp.movilpos.util.formatCurrency
 import kotlinx.coroutines.launch
+import androidx.compose.animation.AnimatedContent
+import com.lopezapp.movilpos.ui.navigation.buildNavTransition
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +54,7 @@ fun BarcodeLabelScreen(
     val config by viewModel.config.collectAsState()
     val batchItems by viewModel.batchItems.collectAsState()
     val isGeneratingPdf by viewModel.isGeneratingPdf.collectAsState()
+    val settingsUiState by settingsViewModel.uiState.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -227,12 +230,23 @@ fun BarcodeLabelScreen(
                 .padding(paddingValues)
                 .padding(16.dp)
         ) {
-            if (currentStep == 1) {
-                // Step 1: Product Selection & Quantities
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+            AnimatedContent(
+                targetState = currentStep,
+                transitionSpec = {
+                    buildNavTransition(
+                        animationType = settingsUiState.animationType,
+                        durationMs = settingsUiState.animationDurationMs,
+                        isPop = initialState > targetState
+                    )
+                },
+                label = "step_transition"
+            ) { step ->
+                if (step == 1) {
+                    // Step 1: Product Selection & Quantities
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -579,6 +593,7 @@ fun BarcodeLabelScreen(
                     }
                 }
             }
+            }
         }
     }
 
@@ -627,7 +642,9 @@ fun BarcodeLabelScreen(
                         if (searchQuery.isBlank()) products
                         else products.filter {
                             it.name.contains(searchQuery, ignoreCase = true) ||
-                                    it.barcode?.contains(searchQuery, ignoreCase = true) == true
+                                    (it.barcode?.contains(searchQuery, ignoreCase = true) == true) ||
+                                    (it.differentiator?.contains(searchQuery, ignoreCase = true) == true) ||
+                                    it.tags.any { tag -> tag.contains(searchQuery, ignoreCase = true) }
                         }
                     }
 
@@ -643,7 +660,7 @@ fun BarcodeLabelScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         viewModel.addProductToBatch(product, 1)
-                                        snackbarMessage = "Agregado: ${product.name}"
+                                        snackbarMessage = "Agregado: ${product.displayName}"
                                     },
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -657,7 +674,7 @@ fun BarcodeLabelScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = product.name, fontWeight = FontWeight.Bold)
+                                        Text(text = product.displayName, fontWeight = FontWeight.Bold)
                                         Text(
                                             text = "Cod: ${product.barcode ?: "N/D"} | Stock: ${product.stock}",
                                             style = MaterialTheme.typography.bodySmall,

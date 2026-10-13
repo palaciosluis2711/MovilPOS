@@ -73,6 +73,7 @@ import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -111,6 +112,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import com.lopezapp.movilpos.data.model.AuthSession
 import com.lopezapp.movilpos.data.model.BusinessInfo
 import com.lopezapp.movilpos.data.model.CartItem
 import com.lopezapp.movilpos.data.model.CashShift
@@ -125,6 +127,7 @@ import com.lopezapp.movilpos.ui.components.CompactSearchBar
 import com.lopezapp.movilpos.ui.components.OpenShiftDialog
 import com.lopezapp.movilpos.ui.components.RegisterExpenseDialog
 import com.lopezapp.movilpos.ui.theme.PriceRuleColors
+import com.lopezapp.movilpos.ui.viewmodel.AuthViewModel
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsUiState
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
@@ -136,6 +139,9 @@ import com.lopezapp.movilpos.util.formatCurrency
 fun POSScreen(
     viewModel: POSViewModel,
     settingsViewModel: SettingsViewModel? = null,
+    authViewModel: AuthViewModel? = null,
+    authSession: AuthSession? = null,
+    onLogoutClick: (() -> Unit)? = null,
     onNavigateToCheckout: (() -> Unit)? = null,
     onBackClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -146,6 +152,9 @@ fun POSScreen(
     val selectedCartItemIds by viewModel.selectedCartItemIds.collectAsState()
     val activeShift by viewModel.activeShift.collectAsState()
     val users by viewModel.users.collectAsState()
+
+    val currentAuthSession = authSession ?: authViewModel?.authSession?.collectAsState()?.value
+    val currentUser = currentAuthSession?.user
 
     val settingsUiState = settingsViewModel?.uiState?.collectAsState()?.value
         ?: SettingsUiState()
@@ -212,24 +221,26 @@ fun POSScreen(
     }
 
     if (showOpenShiftDialog) {
-        OpenShiftDialog(
-            users = users,
-            errorMessage = openShiftErrorMessage,
-            onOpenShift = { cashier, pin, initialFloat ->
-                val success = viewModel.openShift(cashier, pin, initialFloat)
-                if (success) {
+        if (currentUser != null) {
+            OpenShiftDialog(
+                activeUser = currentUser,
+                errorMessage = openShiftErrorMessage,
+                onOpenShift = { cashier, pin, initialFloat ->
+                    val success = viewModel.openShift(cashier, pin, initialFloat)
+                    if (success) {
+                        showOpenShiftDialog = false
+                        openShiftErrorMessage = null
+                        Toast.makeText(context, "Turno abierto con éxito", Toast.LENGTH_SHORT).show()
+                    } else {
+                        openShiftErrorMessage = "PIN incorrecto para ${cashier.name}"
+                    }
+                },
+                onDismiss = {
                     showOpenShiftDialog = false
                     openShiftErrorMessage = null
-                    Toast.makeText(context, "Turno abierto con éxito", Toast.LENGTH_SHORT).show()
-                } else {
-                    openShiftErrorMessage = "PIN incorrecto para ${cashier.name}"
                 }
-            },
-            onDismiss = {
-                showOpenShiftDialog = false
-                openShiftErrorMessage = null
-            }
-        )
+            )
+        }
     }
 
     if (showCloseShiftDialog && activeShift != null) {
@@ -305,26 +316,35 @@ fun POSScreen(
         )
     }
 
+    val localActiveShift = activeShift
+    val isForeignShift = localActiveShift != null && currentAuthSession?.user != null && localActiveShift.cashierId != currentAuthSession.user.id
+    val isAdmin = currentAuthSession?.user?.role == Role.ADMINISTRATOR
+
     Scaffold(
         topBar = {
             Column(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
                 ActiveShiftHeaderBar(
                     activeShift = activeShift,
                     users = users,
+                    authSession = currentAuthSession,
                     onOpenShiftClick = { showOpenShiftDialog = true },
                     onCloseShiftClick = { showCloseShiftDialog = true },
                     onRegisterExpenseClick = { showRegisterExpenseDialog = true },
                     onBackClick = onBackClick,
                     currencySymbol = currencySymbol,
                     defaultDecimalPlaces = defaultDecimalPlaces,
-                    allowExtraDecimals = allowExtraDecimals
+                    allowExtraDecimals = allowExtraDecimals,
+                    isForeignShift = isForeignShift,
+                    isAdmin = isAdmin
                 )
-                ProductSearchBar(
-                    searchQuery = uiState.searchQuery,
-                    onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                    onScanBarcodeClick = { showScannerDialog = true },
-                    onSearch = { handleBarcodeSubmit(uiState.searchQuery) }
-                )
+                if (!isForeignShift) {
+                    ProductSearchBar(
+                        searchQuery = uiState.searchQuery,
+                        onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                        onScanBarcodeClick = { showScannerDialog = true },
+                        onSearch = { handleBarcodeSubmit(uiState.searchQuery) }
+                    )
+                }
             }
         },
         modifier = modifier.onKeyEvent { keyEvent ->
@@ -355,7 +375,52 @@ fun POSScreen(
                 .imePadding()
                 .fillMaxSize()
         ) {
-            if (maxWidth > 600.dp) {
+            if (isForeignShift) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = "Turno Activo de ${activeShift?.cashierName ?: "Otro Usuario"}",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "No puedes realizar ventas en el turno de otro usuario.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        if (isAdmin) {
+                            Text(
+                                text = "Puedes forzar el cierre de este turno usando el botón en la barra superior.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Text(
+                                text = "Pide a un Administrador que fuerce el cierre, o solicita al usuario que inicie sesión para cerrar su turno.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            } else if (maxWidth > 600.dp) {
                 // Wide layout (tablet/landscape)
                 Row(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.weight(1.5f).fillMaxHeight()) {
@@ -435,6 +500,7 @@ fun POSScreen(
 fun ActiveShiftHeaderBar(
     activeShift: CashShift?,
     users: List<User> = emptyList(),
+    authSession: AuthSession? = null,
     onOpenShiftClick: () -> Unit,
     onCloseShiftClick: () -> Unit,
     onRegisterExpenseClick: (() -> Unit)? = null,
@@ -442,6 +508,8 @@ fun ActiveShiftHeaderBar(
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true,
+    isForeignShift: Boolean = false,
+    isAdmin: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -449,11 +517,12 @@ fun ActiveShiftHeaderBar(
         tonalElevation = 2.dp,
         modifier = modifier.fillMaxWidth()
     ) {
-        if (activeShift != null) {
-            val currentCashierUser = users.find { it.id == activeShift.cashierId }
-            val primaryTitle = currentCashierUser?.name ?: activeShift.cashierName
-            val displayRole = currentCashierUser?.role?.toSpanishLabel() ?: Role.CASHIER.toSpanishLabel()
+        val loggedInUser = authSession?.user
+        val primaryUser = loggedInUser ?: users.find { it.id == activeShift?.cashierId }
+        val primaryTitle = primaryUser?.name ?: activeShift?.cashierName ?: "Cajero"
+        val displayRole = primaryUser?.role?.toSpanishLabel() ?: Role.CASHIER.toSpanishLabel()
 
+        if (activeShift != null) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -522,25 +591,55 @@ fun ActiveShiftHeaderBar(
                         }
                     }
 
-                    Button(
-                        onClick = onCloseShiftClick,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.LockClock,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Cerrar Turno",
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                        if (isForeignShift) {
+                            if (isAdmin) {
+                                Button(
+                                    onClick = onCloseShiftClick,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Forzar Cierre (Admin)",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = onCloseShiftClick,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.LockClock,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Cerrar Turno",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -577,7 +676,7 @@ fun ActiveShiftHeaderBar(
                         )
                     }
 
-                    if (onRegisterExpenseClick != null) {
+                    if (onRegisterExpenseClick != null && !isForeignShift) {
                         OutlinedButton(
                             onClick = onRegisterExpenseClick,
                             shape = RoundedCornerShape(12.dp),
@@ -607,7 +706,8 @@ fun ActiveShiftHeaderBar(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f, fill = false)
                 ) {
                     if (onBackClick != null) {
                         IconButton(
@@ -621,31 +721,59 @@ fun ActiveShiftHeaderBar(
                             )
                         }
                     }
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                     Text(
-                        text = "Sin turno de caja activo",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error
+                        text = primaryTitle.ifBlank { "Cajero" },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = displayRole,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            maxLines = 1
+                        )
+                    }
                 }
 
-                Button(
-                    onClick = onOpenShiftClick,
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PointOfSale,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Abrir Turno")
+                    Button(
+                        onClick = onOpenShiftClick,
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PointOfSale,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Abrir Turno")
+                    }
                 }
             }
         }
@@ -714,7 +842,7 @@ fun ProductGrid(
                         horizontalAlignment = Alignment.Start
                     ) {
                         Text(
-                            text = product.name,
+                            text = product.displayName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -1321,7 +1449,7 @@ fun CartItemRow(
                     .clickable { onToggleSelection?.invoke() }
             ) {
                 Text(
-                    text = item.product.name,
+                    text = item.product.displayName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,

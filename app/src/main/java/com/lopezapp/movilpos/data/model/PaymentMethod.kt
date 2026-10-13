@@ -5,5 +5,6 @@ import java.util.UUID
 data class PaymentMethod(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    val isSystemDefault: Boolean = false,
 )
