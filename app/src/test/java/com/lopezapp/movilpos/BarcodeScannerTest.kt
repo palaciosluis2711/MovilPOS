@@ -3,6 +3,7 @@ package com.lopezapp.movilpos
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.POSViewModel
+import com.lopezapp.movilpos.util.BeepSoundPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -93,5 +94,10 @@ class BarcodeScannerTest {
         assertFalse(result1)
         assertFalse(result2)
         assertTrue(viewModel.uiState.value.cartItems.isEmpty())
+    }
+
+    @Test
+    fun beepSoundPlayer_playBeep_executesWithoutException() {
+        BeepSoundPlayer.playBeep()
     }
 }

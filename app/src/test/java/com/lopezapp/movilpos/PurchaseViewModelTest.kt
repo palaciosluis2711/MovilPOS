@@ -65,6 +65,22 @@ class PurchaseViewModelTest {
     }
 
     @Test
+    fun addDraftItem_prependsNewItemsToDraftList() = runTest {
+        val products = repository.products.value
+        val p1 = products[0]
+        val p2 = products[1]
+
+        viewModel.addDraftItem(p1, 1, p1.cost)
+        viewModel.addDraftItem(p2, 1, p2.cost)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val draftItems = viewModel.draftItems.value
+        assertEquals(2, draftItems.size)
+        assertEquals(p2.id, draftItems[0].productId)
+        assertEquals(p1.id, draftItems[1].productId)
+    }
+
+    @Test
     fun updateDraftItemQuantityAndUnitCost_calculatesTotalCostCorrectly() = runTest {
         val product = repository.products.value.first()
         viewModel.addProductToDraft(product)
@@ -219,5 +235,52 @@ class PurchaseViewModelTest {
         val oldIndex = list.indexOfFirst { it.dateMillis == now - 100000 }
         assertTrue(newIndex != -1 && oldIndex != -1)
         assertTrue(newIndex < oldIndex)
+    }
+
+    @Test
+    fun deletePurchases_bulkDeletesPurchases() = runTest {
+        val initialPurchases = viewModel.allPurchases.value
+        val idsToDelete = initialPurchases.map { it.id }.toSet()
+
+        viewModel.deletePurchases(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val purchases = viewModel.allPurchases.value
+        assertEquals(0, purchases.size)
+    }
+
+    @Test
+    fun loadPurchaseForEdit_populatesDraftState() = runTest {
+        val existingPurchase = viewModel.allPurchases.value.first()
+        viewModel.loadPurchaseForEdit(existingPurchase.id)
+
+        assertEquals(existingPurchase.id, viewModel.editingPurchaseId.value)
+        assertEquals(existingPurchase.supplierId, viewModel.selectedSupplier.value?.id)
+        assertEquals(existingPurchase.dateMillis, viewModel.selectedDateMillis.value)
+        assertEquals(existingPurchase.items, viewModel.draftItems.value)
+    }
+
+    @Test
+    fun savePurchase_whenEditing_updatesExistingPurchase() = runTest {
+        val existingPurchase = viewModel.allPurchases.value.first()
+        viewModel.loadPurchaseForEdit(existingPurchase.id)
+
+        val product = repository.products.value.first()
+        viewModel.updateDraftItemQuantity(product.id, 20)
+        viewModel.updateDraftItemUnitCost(product.id, 2.50)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val saved = viewModel.savePurchase()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(saved)
+        assertNull(viewModel.editingPurchaseId.value)
+        assertNull(viewModel.selectedSupplier.value)
+        assertTrue(viewModel.draftItems.value.isEmpty())
+
+        // Purchase count should remain 1, with updated totalCost (20 * 2.50 = 50.00)
+        val purchases = viewModel.allPurchases.value
+        assertEquals(1, purchases.size)
+        assertEquals(50.0, purchases[0].totalCost, 0.001)
     }
 }

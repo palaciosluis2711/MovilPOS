@@ -223,6 +223,7 @@ class MainActivity : ComponentActivity() {
 
                 val currentAuthSession by authViewModel.authSession.collectAsState()
                 val isSyncing by FirebaseSyncService.isSyncing.collectAsState()
+                val productsList by appRepository.products.collectAsState(initial = emptyList())
                 val context = LocalContext.current
 
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -267,6 +268,7 @@ class MainActivity : ComponentActivity() {
                                         HomeScreen(
                                             authViewModel = authViewModel,
                                             settingsViewModel = settingsViewModel,
+                                            productsCount = productsList.size,
                                             onLogoutClick = {
                                                 authViewModel.logout()
                                             },
@@ -539,7 +541,8 @@ class MainActivity : ComponentActivity() {
                                     PurchaseReadOnlyView(
                                         purchaseId = key.purchaseId,
                                         viewModel = purchaseViewModel,
-                                        onNavigateUp = { backStack.removeLastOrNull() }
+                                        onNavigateUp = { backStack.removeLastOrNull() },
+                                        onNavigateToEdit = { editId -> backStack.add(PurchaseEditRoute(editId)) }
                                     )
                                 }
                                 is PurchaseEditRoute -> NavEntry(key) {
@@ -547,6 +550,7 @@ class MainActivity : ComponentActivity() {
                                         factory = PurchaseViewModel.Factory(appRepository)
                                     )
                                     PurchaseEditForm(
+                                        purchaseId = key.purchaseId,
                                         viewModel = purchaseViewModel,
                                         onNavigateUp = { backStack.removeLastOrNull() }
                                     )
@@ -823,6 +827,7 @@ data class HomeMenuItem(
 fun HomeScreen(
     authViewModel: AuthViewModel? = null,
     settingsViewModel: SettingsViewModel? = null,
+    productsCount: Int = 0,
     electronicBillingConfig: ElectronicBillingConfig? = null,
     authSession: AuthSession? = null,
     businessInfo: BusinessInfo? = null,
@@ -975,6 +980,7 @@ fun HomeScreen(
                 ),
                 HomeMenuItem(
                     title = "Inventario",
+                    subtitle = "Gestionar $productsCount productos y stock",
                     icon = Icons.Rounded.Inventory,
                     onClick = onNavigateToInventory,
                     allowedRoles = setOf(Role.SUPERVISOR, Role.ADMINISTRATOR)
@@ -987,7 +993,7 @@ fun HomeScreen(
                 ),
                 HomeMenuItem(
                     title = "Etiquetas de Productos",
-                    subtitle = "Códigos de barras y etiquetas térmicas o carta",
+                    subtitle = "Impresión para $productsCount productos",
                     icon = Icons.Rounded.Print,
                     onClick = onNavigateToBarcodeLabels,
                     allowedRoles = setOf(Role.SUPERVISOR, Role.ADMINISTRATOR)

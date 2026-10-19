@@ -1,5 +1,10 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.util.ImageUtils
+import com.lopezapp.movilpos.ui.components.MultiSelectionTopAppBar
+import com.lopezapp.movilpos.ui.components.BulkDeleteConfirmationDialog
+import androidx.compose.material3.Checkbox
+
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -111,6 +116,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -804,7 +812,7 @@ fun SettingsCurrencyScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsCategoriesScreen(
     viewModel: SettingsViewModel,
@@ -820,23 +828,36 @@ fun SettingsCategoriesScreen(
     var nameError by rememberSaveable { mutableStateOf(value = false) }
     var categoryToDelete by remember { mutableStateOf<Category?>(null) }
 
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Categorías") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Volver",
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = uiState.categories.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Categorías") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Volver",
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         },
         modifier = modifier,
     ) { innerPadding ->
@@ -893,53 +914,80 @@ fun SettingsCategoriesScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                         )
                     }
-                    Row(
+                    
+                    val isSelected = selectedIds.contains(category.id)
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .combinedClickable(
+                                onClick = {
+                                    if (selectedIds.isNotEmpty()) {
+                                        selectedIds = if (isSelected) selectedIds - category.id else selectedIds + category.id
+                                    }
+                                },
+                                onLongClick = {
+                                    if (selectedIds.isEmpty()) {
+                                        selectedIds = selectedIds + category.id
+                                    }
+                                }
+                            ),
+                        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent
                     ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = category.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = {
+                                    selectedIds = if (isSelected) selectedIds - category.id else selectedIds + category.id
+                                }
                             )
-                            if (!category.description.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(
+                                modifier = Modifier.weight(1f),
+                            ) {
                                 Text(
-                                    text = category.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    text = category.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                if (!category.description.isNullOrBlank()) {
+                                    Text(
+                                        text = category.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = {
+                                    categoryToEditId = category.id
+                                    categoryName = category.name
+                                    categoryDescription = category.description ?: ""
+                                    nameError = false
+                                    showCategoryDialog = true
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Editar categoría ${category.name}",
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                        }
-                        IconButton(
-                            onClick = {
-                                categoryToEditId = category.id
-                                categoryName = category.name
-                                categoryDescription = category.description ?: ""
-                                nameError = false
-                                showCategoryDialog = true
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Editar categoría ${category.name}",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                categoryToDelete = category
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Eliminar categoría ${category.name}",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
+                            IconButton(
+                                onClick = {
+                                    categoryToDelete = category
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Eliminar categoría ${category.name}",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
@@ -1036,10 +1084,22 @@ fun SettingsCategoriesScreen(
                 },
             )
         }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.deleteCategories(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsBrandsScreen(
     viewModel: SettingsViewModel,
@@ -1047,6 +1107,7 @@ fun SettingsBrandsScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var showBrandDialog by rememberSaveable { mutableStateOf(value = false) }
     var brandToEditId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1055,30 +1116,46 @@ fun SettingsBrandsScreen(
     var brandLogoUri by rememberSaveable { mutableStateOf<String?>(null) }
     var brandNameError by rememberSaveable { mutableStateOf(value = false) }
     var brandToDelete by remember { mutableStateOf<Brand?>(null) }
+    
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
 
     val brandLogoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
     ) { uri: Uri? ->
-        uri?.let { brandLogoUri = it.toString() }
+        uri?.let {
+            val internalUri = ImageUtils.copyUriToInternalStorage(context, it, "brands")
+            brandLogoUri = internalUri?.toString() ?: it.toString()
+        }
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Marcas") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Volver",
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = uiState.brands.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Marcas") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Volver",
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         },
         modifier = modifier,
     ) { innerPadding ->
@@ -1136,83 +1213,109 @@ fun SettingsBrandsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                         )
                     }
-                    Row(
+                    val isSelected = selectedIds.contains(brand.id)
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .combinedClickable(
+                                onClick = {
+                                    if (selectedIds.isNotEmpty()) {
+                                        selectedIds = if (isSelected) selectedIds - brand.id else selectedIds + brand.id
+                                    }
+                                },
+                                onLongClick = {
+                                    if (selectedIds.isEmpty()) {
+                                        selectedIds = selectedIds + brand.id
+                                    }
+                                }
+                            ),
+                        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent
                     ) {
-                        if (!brand.logoUri.isNullOrBlank()) {
-                            AsyncImage(
-                                model = brand.logoUri,
-                                contentDescription = "Logo de ${brand.name}",
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop,
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = {
+                                    selectedIds = if (isSelected) selectedIds - brand.id else selectedIds + brand.id
+                                }
                             )
-                        } else {
-                            Surface(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape),
-                                color = MaterialTheme.colorScheme.primaryContainer,
+                            Spacer(modifier = Modifier.width(8.dp))
+                            if (!brand.logoUri.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = brand.logoUri,
+                                    contentDescription = "Logo de ${brand.name}",
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else {
+                                Surface(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = brand.name.firstOrNull()?.uppercase() ?: "?",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(
+                                modifier = Modifier.weight(1f),
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = brand.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                if (!brand.description.isNullOrBlank()) {
                                     Text(
-                                        text = brand.name.firstOrNull()?.uppercase() ?: "?",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        text = brand.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(
-                                text = brand.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            if (!brand.description.isNullOrBlank()) {
-                                Text(
-                                    text = brand.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            IconButton(
+                                onClick = {
+                                    brandToEditId = brand.id
+                                    brandName = brand.name
+                                    brandDescription = brand.description ?: ""
+                                    brandLogoUri = brand.logoUri
+                                    brandNameError = false
+                                    showBrandDialog = true
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Editar marca ${brand.name}",
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                        }
-                        IconButton(
-                            onClick = {
-                                brandToEditId = brand.id
-                                brandName = brand.name
-                                brandDescription = brand.description ?: ""
-                                brandLogoUri = brand.logoUri
-                                brandNameError = false
-                                showBrandDialog = true
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Editar marca ${brand.name}",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                brandToDelete = brand
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Eliminar marca ${brand.name}",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
+                            IconButton(
+                                onClick = {
+                                    brandToDelete = brand
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Eliminar marca ${brand.name}",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
@@ -1359,10 +1462,22 @@ fun SettingsBrandsScreen(
                 },
             )
         }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.deleteBrands(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsUnitsScreen(
     viewModel: SettingsViewModel,
@@ -1378,24 +1493,37 @@ fun SettingsUnitsScreen(
     var unitIsPackageOrBox by rememberSaveable { mutableStateOf(value = false) }
     var unitNameError by rememberSaveable { mutableStateOf(value = false) }
     var unitToDelete by remember { mutableStateOf<UnitOfMeasure?>(null) }
+    
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Unidades de Medida") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Volver",
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = uiState.unitsOfMeasure.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Unidades de Medida") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Volver",
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         },
         modifier = modifier,
     ) { innerPadding ->
@@ -1453,72 +1581,98 @@ fun SettingsUnitsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                         )
                     }
-                    Row(
+                    val isSelected = selectedIds.contains(unit.id)
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                val displayName = if (!unit.abbreviation.isNullOrBlank()) {
-                                    "${unit.name} (${unit.abbreviation})"
-                                } else {
-                                    unit.name
+                            .combinedClickable(
+                                onClick = {
+                                    if (selectedIds.isNotEmpty()) {
+                                        selectedIds = if (isSelected) selectedIds - unit.id else selectedIds + unit.id
+                                    }
+                                },
+                                onLongClick = {
+                                    if (selectedIds.isEmpty()) {
+                                        selectedIds = selectedIds + unit.id
+                                    }
                                 }
-                                Text(
-                                    text = displayName,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
+                            ),
+                        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = {
+                                    selectedIds = if (isSelected) selectedIds - unit.id else selectedIds + unit.id
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    val displayName = if (!unit.abbreviation.isNullOrBlank()) {
+                                        "${unit.name} (${unit.abbreviation})"
+                                    } else {
+                                        unit.name
+                                    }
+                                    Text(
+                                        text = displayName,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
 
-                                if (unit.isPackageOrBox) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    ) {
-                                        Text(
-                                            text = "Paquete / Caja",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Medium,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        )
+                                    if (unit.isPackageOrBox) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        ) {
+                                            Text(
+                                                text = "Paquete / Caja",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Medium,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
-                        IconButton(
-                            onClick = {
-                                unitToEditId = unit.id
-                                unitName = unit.name
-                                unitAbbreviation = unit.abbreviation ?: ""
-                                unitIsPackageOrBox = unit.isPackageOrBox
-                                unitNameError = false
-                                showUnitDialog = true
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Editar unidad ${unit.name}",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                unitToDelete = unit
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Eliminar unidad ${unit.name}",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
+                            IconButton(
+                                onClick = {
+                                    unitToEditId = unit.id
+                                    unitName = unit.name
+                                    unitAbbreviation = unit.abbreviation ?: ""
+                                    unitIsPackageOrBox = unit.isPackageOrBox
+                                    unitNameError = false
+                                    showUnitDialog = true
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Editar unidad ${unit.name}",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    unitToDelete = unit
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Eliminar unidad ${unit.name}",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
@@ -1633,10 +1787,22 @@ fun SettingsUnitsScreen(
                 },
             )
         }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.deleteUnitsOfMeasure(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsTaxesScreen(
     viewModel: SettingsViewModel,
@@ -1657,24 +1823,37 @@ fun SettingsTaxesScreen(
     var taxValueError by rememberSaveable { mutableStateOf(value = false) }
     var taxTypeExpanded by remember { mutableStateOf(value = false) }
     var taxToDelete by remember { mutableStateOf<Tax?>(null) }
+    
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Impuestos") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Volver",
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = uiState.taxes.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Impuestos") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Volver",
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         },
         modifier = modifier,
     ) { innerPadding ->
@@ -1734,84 +1913,110 @@ fun SettingsTaxesScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                         )
                     }
-                    Row(
+                    val isSelected = selectedIds.contains(tax.id)
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .combinedClickable(
+                                onClick = {
+                                    if (selectedIds.isNotEmpty()) {
+                                        selectedIds = if (isSelected) selectedIds - tax.id else selectedIds + tax.id
+                                    }
+                                },
+                                onLongClick = {
+                                    if (selectedIds.isEmpty()) {
+                                        selectedIds = selectedIds + tax.id
+                                    }
+                                }
+                            ),
+                        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent
                     ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            val formattedValue = if (tax.valueType == TaxValueType.PERCENTAGE) {
-                                "${if ((tax.value % 1.0) == 0.0) tax.value.toInt().toString() else tax.value.toString()}%"
-                            } else {
-                                formatCurrency(
-                                    tax.value,
-                                    uiState.currencySymbol,
-                                    uiState.defaultDecimalPlaces,
-                                    uiState.allowExtraDecimals,
-                                )
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = {
+                                    selectedIds = if (isSelected) selectedIds - tax.id else selectedIds + tax.id
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(
+                                modifier = Modifier.weight(1f),
                             ) {
-                                Text(
-                                    text = tax.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                val formattedValue = if (tax.valueType == TaxValueType.PERCENTAGE) {
+                                    "${if ((tax.value % 1.0) == 0.0) tax.value.toInt().toString() else tax.value.toString()}%"
+                                } else {
+                                    formatCurrency(
+                                        tax.value,
+                                        uiState.currencySymbol,
+                                        uiState.defaultDecimalPlaces,
+                                        uiState.allowExtraDecimals,
+                                    )
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Text(
-                                        text = formattedValue,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        text = tax.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    ) {
+                                        Text(
+                                            text = formattedValue,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                }
+                                if (!tax.description.isNullOrBlank()) {
+                                    Text(
+                                        text = tax.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
-                            if (!tax.description.isNullOrBlank()) {
-                                Text(
-                                    text = tax.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            IconButton(
+                                onClick = {
+                                    taxToEditId = tax.id
+                                    taxName = tax.name
+                                    taxDescription = tax.description ?: ""
+                                    taxValueType = tax.valueType
+                                    val initialTaxVal = if ((tax.value % 1.0) == 0.0) tax.value.toInt().toString() else tax.value.toString()
+                                    taxValueState = TextFieldValue(initialTaxVal, selection = TextRange(initialTaxVal.length))
+                                    taxNameError = false
+                                    taxValueError = false
+                                    showTaxDialog = true
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Editar impuesto ${tax.name}",
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                        }
-                        IconButton(
-                            onClick = {
-                                taxToEditId = tax.id
-                                taxName = tax.name
-                                taxDescription = tax.description ?: ""
-                                taxValueType = tax.valueType
-                                val initialTaxVal = if ((tax.value % 1.0) == 0.0) tax.value.toInt().toString() else tax.value.toString()
-                                taxValueState = TextFieldValue(initialTaxVal, selection = TextRange(initialTaxVal.length))
-                                taxNameError = false
-                                taxValueError = false
-                                showTaxDialog = true
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Editar impuesto ${tax.name}",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                taxToDelete = tax
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Eliminar impuesto ${tax.name}",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
+                            IconButton(
+                                onClick = {
+                                    taxToDelete = tax
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Eliminar impuesto ${tax.name}",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
@@ -1970,10 +2175,22 @@ fun SettingsTaxesScreen(
                 },
             )
         }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.deleteTaxes(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsPaymentMethodsScreen(
     viewModel: SettingsViewModel,
@@ -1987,24 +2204,37 @@ fun SettingsPaymentMethodsScreen(
     var methodName by rememberSaveable { mutableStateOf("") }
     var methodNameError by rememberSaveable { mutableStateOf(false) }
     var methodToDelete by remember { mutableStateOf<PaymentMethod?>(null) }
+    
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Métodos de Pago") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Volver",
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = uiState.paymentMethods.filter { !it.isSystemDefault }.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Métodos de Pago") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Volver",
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         },
         modifier = modifier,
     ) { innerPadding ->
@@ -2060,72 +2290,102 @@ fun SettingsPaymentMethodsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                         )
                     }
-                    Row(
+                    val isSelected = selectedIds.contains(method.id)
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    text = method.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                if (method.isSystemDefault) {
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
-                                        shape = RoundedCornerShape(4.dp),
-                                    ) {
-                                        Text(
-                                            text = "Sistema",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        )
+                            .combinedClickable(
+                                onClick = {
+                                    if (selectedIds.isNotEmpty()) {
+                                        if (!method.isSystemDefault) {
+                                            selectedIds = if (isSelected) selectedIds - method.id else selectedIds + method.id
+                                        }
+                                    }
+                                },
+                                onLongClick = {
+                                    if (selectedIds.isEmpty() && !method.isSystemDefault) {
+                                        selectedIds = selectedIds + method.id
                                     }
                                 }
-                            }
-                            if (method.isSystemDefault) {
-                                Text(
-                                    text = "Método requerido por el sistema para Ventas a Crédito y Cuentas por Cobrar",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = {
-                                methodToEditId = method.id
-                                methodName = method.name
-                                methodNameError = false
-                                showMethodDialog = true
-                            },
+                            ),
+                        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Editar método de pago ${method.name}",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        if (!method.isSystemDefault) {
+                            if (!method.isSystemDefault) {
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = {
+                                        selectedIds = if (isSelected) selectedIds - method.id else selectedIds + method.id
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Column(
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = method.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    if (method.isSystemDefault) {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                            shape = RoundedCornerShape(4.dp),
+                                        ) {
+                                            Text(
+                                                text = "Sistema",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                                if (method.isSystemDefault) {
+                                    Text(
+                                        text = "Método requerido por el sistema para Ventas a Crédito y Cuentas por Cobrar",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
+                            }
                             IconButton(
                                 onClick = {
-                                    methodToDelete = method
+                                    methodToEditId = method.id
+                                    methodName = method.name
+                                    methodNameError = false
+                                    showMethodDialog = true
                                 },
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Eliminar método de pago ${method.name}",
-                                    tint = MaterialTheme.colorScheme.error,
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Editar método de pago ${method.name}",
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
+                            }
+                            if (!method.isSystemDefault) {
+                                IconButton(
+                                    onClick = {
+                                        methodToDelete = method
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Eliminar método de pago ${method.name}",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
                         }
                     }
@@ -2217,6 +2477,18 @@ fun SettingsPaymentMethodsScreen(
                 },
             )
         }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.deletePaymentMethods(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
     }
 }
 
@@ -2248,7 +2520,10 @@ fun SettingsBusinessInfoScreen(
     val logoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
     ) { uri: Uri? ->
-        uri?.let { logoUri = it.toString() }
+        uri?.let {
+            val internalUri = ImageUtils.copyUriToInternalStorage(context, it, "business")
+            logoUri = internalUri?.toString() ?: it.toString()
+        }
     }
 
     Scaffold(

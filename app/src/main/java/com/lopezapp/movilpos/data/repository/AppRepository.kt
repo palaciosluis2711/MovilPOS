@@ -65,6 +65,7 @@ class AppRepository(
     private val dteApiClient: DteApiClient = DteApiClient.defaultInstance
 ) {
     private var appContext: Context? = null
+    fun getAppContext(): Context? = appContext
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     init {
@@ -278,15 +279,17 @@ class AppRepository(
                     }
                 }
             } else {
-                currentList + BatchLabelItem(
-                    productId = product.id,
-                    productName = product.name,
-                    barcode = product.barcode ?: product.id,
-                    price = product.price,
-                    category = product.category,
-                    brand = product.brand,
-                    quantity = quantity
-                )
+                listOf(
+                    BatchLabelItem(
+                        productId = product.id,
+                        productName = product.name,
+                        barcode = product.barcode ?: product.id,
+                        price = product.price,
+                        category = product.category,
+                        brand = product.brand,
+                        quantity = quantity
+                    )
+                ) + currentList
             }
         }
         saveToDisk()
@@ -407,7 +410,7 @@ class AppRepository(
             UnitOfMeasure(name = "Paquete", abbreviation = "paq", isPackageOrBox = true)
         )
         _taxes.value = listOf(
-            Tax(name = "IVA", description = "Impuesto al Valor Agregado", valueType = TaxValueType.PERCENTAGE, value = 16.0)
+            Tax(id = "tax_iva_default", name = "IVA", description = "Impuesto al Valor Agregado", valueType = TaxValueType.PERCENTAGE, value = 16.0)
         )
         _suppliers.value = listOf(
             Supplier(
@@ -510,15 +513,25 @@ class AppRepository(
     }
 
     fun addProduct(product: Product) {
+        val finalProduct = product.copy(
+            hasIva = product.hasIva || product.appliedTaxIds.isNotEmpty(),
+            priceIncludesTax = product.priceIncludesTax || product.isTaxIncludedInPrice,
+            isTaxIncludedInPrice = product.priceIncludesTax || product.isTaxIncludedInPrice
+        )
         _products.update { currentList ->
-            currentList + product
+            listOf(finalProduct) + currentList
         }
         saveToDisk()
     }
 
     fun updateProduct(product: Product) {
+        val finalProduct = product.copy(
+            hasIva = product.hasIva || product.appliedTaxIds.isNotEmpty(),
+            priceIncludesTax = product.priceIncludesTax || product.isTaxIncludedInPrice,
+            isTaxIncludedInPrice = product.priceIncludesTax || product.isTaxIncludedInPrice
+        )
         _products.update { currentList ->
-            currentList.map { if (it.id == product.id) product else it }
+            currentList.map { if (it.id == finalProduct.id) finalProduct else it }
         }
         saveToDisk()
     }
@@ -526,6 +539,23 @@ class AppRepository(
     fun deleteProduct(productId: String) {
         _products.update { currentList ->
             currentList.filter { it.id != productId }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("products", productId)
+        }
+        saveToDisk()
+    }
+
+    fun deleteProducts(productIds: Collection<String>) {
+        if (productIds.isEmpty()) return
+        val idsSet = productIds.toSet()
+        _products.update { currentList ->
+            currentList.filter { it.id !in idsSet }
+        }
+        repositoryScope.launch {
+            idsSet.forEach { id ->
+                FirebaseSyncService.deleteDocumentFromCloud("products", id)
+            }
         }
         saveToDisk()
     }
@@ -548,6 +578,23 @@ class AppRepository(
         _categories.update { currentList ->
             currentList.filter { it.id != categoryId }
         }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("categories", categoryId)
+        }
+        saveToDisk()
+    }
+
+    fun deleteCategories(categoryIds: Collection<String>) {
+        if (categoryIds.isEmpty()) return
+        val idsSet = categoryIds.toSet()
+        _categories.update { currentList ->
+            currentList.filter { it.id !in idsSet }
+        }
+        repositoryScope.launch {
+            idsSet.forEach { id ->
+                FirebaseSyncService.deleteDocumentFromCloud("categories", id)
+            }
+        }
         saveToDisk()
     }
 
@@ -568,6 +615,23 @@ class AppRepository(
     fun deleteBrand(brandId: String) {
         _brands.update { currentList ->
             currentList.filter { it.id != brandId }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("brands", brandId)
+        }
+        saveToDisk()
+    }
+
+    fun deleteBrands(brandIds: Collection<String>) {
+        if (brandIds.isEmpty()) return
+        val idsSet = brandIds.toSet()
+        _brands.update { currentList ->
+            currentList.filter { it.id !in idsSet }
+        }
+        repositoryScope.launch {
+            idsSet.forEach { id ->
+                FirebaseSyncService.deleteDocumentFromCloud("brands", id)
+            }
         }
         saveToDisk()
     }
@@ -590,6 +654,23 @@ class AppRepository(
         _unitsOfMeasure.update { currentList ->
             currentList.filter { it.id != unitId }
         }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("unitsOfMeasure", unitId)
+        }
+        saveToDisk()
+    }
+
+    fun deleteUnitsOfMeasure(unitIds: Collection<String>) {
+        if (unitIds.isEmpty()) return
+        val idsSet = unitIds.toSet()
+        _unitsOfMeasure.update { currentList ->
+            currentList.filter { it.id !in idsSet }
+        }
+        repositoryScope.launch {
+            idsSet.forEach { id ->
+                FirebaseSyncService.deleteDocumentFromCloud("unitsOfMeasure", id)
+            }
+        }
         saveToDisk()
     }
 
@@ -611,6 +692,23 @@ class AppRepository(
         _taxes.update { currentList ->
             currentList.filter { it.id != taxId }
         }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("taxes", taxId)
+        }
+        saveToDisk()
+    }
+
+    fun deleteTaxes(taxIds: Collection<String>) {
+        if (taxIds.isEmpty()) return
+        val idsSet = taxIds.toSet()
+        _taxes.update { currentList ->
+            currentList.filter { it.id !in idsSet }
+        }
+        repositoryScope.launch {
+            idsSet.forEach { id ->
+                FirebaseSyncService.deleteDocumentFromCloud("taxes", id)
+            }
+        }
         saveToDisk()
     }
 
@@ -631,6 +729,23 @@ class AppRepository(
     fun deleteSupplier(supplierId: String) {
         _suppliers.update { currentList ->
             currentList.filter { it.id != supplierId }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("suppliers", supplierId)
+        }
+        saveToDisk()
+    }
+
+    fun deleteSuppliers(supplierIds: Collection<String>) {
+        if (supplierIds.isEmpty()) return
+        val idsSet = supplierIds.toSet()
+        _suppliers.update { currentList ->
+            currentList.filter { it.id !in idsSet }
+        }
+        repositoryScope.launch {
+            idsSet.forEach { id ->
+                FirebaseSyncService.deleteDocumentFromCloud("suppliers", id)
+            }
         }
         saveToDisk()
     }
@@ -662,6 +777,23 @@ class AppRepository(
     fun deleteCustomer(customerId: String) {
         _customers.update { currentList ->
             currentList.filter { it.id != customerId }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("customers", customerId)
+        }
+        saveToDisk()
+    }
+
+    fun deleteCustomers(customerIds: Collection<String>) {
+        if (customerIds.isEmpty()) return
+        val idsSet = customerIds.toSet()
+        _customers.update { currentList ->
+            currentList.filter { it.id !in idsSet }
+        }
+        repositoryScope.launch {
+            idsSet.forEach { id ->
+                FirebaseSyncService.deleteDocumentFromCloud("customers", id)
+            }
         }
         saveToDisk()
     }
@@ -716,9 +848,121 @@ class AppRepository(
     }
 
     fun deletePurchase(purchaseId: String) {
+        val oldPurchase = _purchases.value.find { it.id == purchaseId }
+        if (oldPurchase != null && !oldPurchase.isAutoSystemPurchase) {
+            val stockDecrements = mutableMapOf<String, Int>()
+            oldPurchase.items.forEach { purchaseItem ->
+                val purchasedProduct = _products.value.find { it.id == purchaseItem.productId }
+                if (purchasedProduct != null) {
+                    if (purchasedProduct.isBundle) {
+                        purchasedProduct.bundleItems.forEach { bundleItem ->
+                            val currentDec = stockDecrements[bundleItem.productId] ?: 0
+                            stockDecrements[bundleItem.productId] = currentDec + (purchaseItem.quantity * bundleItem.quantity)
+                        }
+                    } else {
+                        val currentDec = stockDecrements[purchasedProduct.id] ?: 0
+                        stockDecrements[purchasedProduct.id] = currentDec + purchaseItem.quantity
+                    }
+                }
+            }
+
+            if (stockDecrements.isNotEmpty()) {
+                _products.update { currentProducts ->
+                    currentProducts.map { product ->
+                        val dec = stockDecrements[product.id] ?: 0
+                        if (dec > 0) {
+                            product.copy(stock = maxOf(0, product.stock - dec))
+                        } else {
+                            product
+                        }
+                    }
+                }
+            }
+        }
+
         _purchases.update { currentList ->
             currentList.filter { it.id != purchaseId }
         }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("purchases", purchaseId)
+        }
+        saveToDisk()
+    }
+
+    fun deletePurchases(purchaseIds: Collection<String>) {
+        if (purchaseIds.isEmpty()) return
+        purchaseIds.forEach { purchaseId ->
+            deletePurchase(purchaseId)
+        }
+    }
+
+    fun updatePurchase(updatedPurchase: Purchase) {
+        val oldPurchase = _purchases.value.find { it.id == updatedPurchase.id }
+
+        val stockDecrements = mutableMapOf<String, Int>()
+        if (oldPurchase != null) {
+            oldPurchase.items.forEach { purchaseItem ->
+                val purchasedProduct = _products.value.find { it.id == purchaseItem.productId }
+                if (purchasedProduct != null) {
+                    if (purchasedProduct.isBundle) {
+                        purchasedProduct.bundleItems.forEach { bundleItem ->
+                            val currentDec = stockDecrements[bundleItem.productId] ?: 0
+                            stockDecrements[bundleItem.productId] = currentDec + (purchaseItem.quantity * bundleItem.quantity)
+                        }
+                    } else {
+                        val currentDec = stockDecrements[purchasedProduct.id] ?: 0
+                        stockDecrements[purchasedProduct.id] = currentDec + purchaseItem.quantity
+                    }
+                }
+            }
+        }
+
+        val stockIncrements = mutableMapOf<String, Int>()
+        val costUpdates = mutableMapOf<String, Double>()
+        updatedPurchase.items.forEach { purchaseItem ->
+            val purchasedProduct = _products.value.find { it.id == purchaseItem.productId }
+            if (purchasedProduct != null) {
+                if (purchasedProduct.isBundle) {
+                    purchasedProduct.bundleItems.forEach { bundleItem ->
+                        val currentInc = stockIncrements[bundleItem.productId] ?: 0
+                        stockIncrements[bundleItem.productId] = currentInc + (purchaseItem.quantity * bundleItem.quantity)
+                    }
+                    costUpdates[purchasedProduct.id] = purchaseItem.unitCost
+                } else {
+                    val currentInc = stockIncrements[purchasedProduct.id] ?: 0
+                    stockIncrements[purchasedProduct.id] = currentInc + purchaseItem.quantity
+                    costUpdates[purchasedProduct.id] = purchaseItem.unitCost
+                }
+            }
+        }
+
+        _products.update { currentProducts ->
+            currentProducts.map { product ->
+                val dec = stockDecrements[product.id] ?: 0
+                val inc = stockIncrements[product.id] ?: 0
+                val hasCostUpdate = costUpdates.containsKey(product.id)
+                val newCost = costUpdates[product.id] ?: product.cost
+
+                if (dec > 0 || inc > 0 || hasCostUpdate) {
+                    val stockAfterRevert = maxOf(0, product.stock - dec)
+                    product.copy(
+                        stock = stockAfterRevert + inc,
+                        cost = newCost
+                    )
+                } else {
+                    product
+                }
+            }
+        }
+
+        _purchases.update { currentList ->
+            if (currentList.any { it.id == updatedPurchase.id }) {
+                currentList.map { if (it.id == updatedPurchase.id) updatedPurchase else it }
+            } else {
+                currentList + updatedPurchase
+            }
+        }
+
         saveToDisk()
     }
 
@@ -739,6 +983,9 @@ class AppRepository(
     fun deletePriceRule(ruleId: String) {
         _priceRules.update { currentList ->
             currentList.filter { it.id != ruleId }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("priceRules", ruleId)
         }
         saveToDisk()
     }
@@ -774,6 +1021,35 @@ class AppRepository(
                     true
                 } else {
                     method.id != paymentMethodId
+                }
+            }
+        }
+        repositoryScope.launch {
+            val method = _paymentMethods.value.find { it.id == paymentMethodId }
+            if (method == null || !method.isSystemDefault) {
+                FirebaseSyncService.deleteDocumentFromCloud("paymentMethods", paymentMethodId)
+            }
+        }
+        saveToDisk()
+    }
+
+    fun deletePaymentMethods(paymentMethodIds: Collection<String>) {
+        if (paymentMethodIds.isEmpty()) return
+        val idsSet = paymentMethodIds.toSet()
+        _paymentMethods.update { currentList ->
+            currentList.filter { method ->
+                if (method.id in idsSet && method.isSystemDefault) {
+                    true
+                } else {
+                    method.id !in idsSet
+                }
+            }
+        }
+        repositoryScope.launch {
+            idsSet.forEach { id ->
+                val method = _paymentMethods.value.find { it.id == id }
+                if (method == null || !method.isSystemDefault) {
+                    FirebaseSyncService.deleteDocumentFromCloud("paymentMethods", id)
                 }
             }
         }
@@ -837,6 +1113,9 @@ class AppRepository(
     fun deleteUser(userId: String) {
         _users.update { currentList ->
             currentList.filter { it.id != userId }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("users", userId)
         }
         saveToDisk()
     }
@@ -1070,6 +1349,9 @@ class AppRepository(
         }
         if (deletedSale != null && deletedSale.isCredit) {
             updateCustomerDebt(deletedSale.customerId)
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("sales", saleId)
         }
         saveToDisk()
     }
@@ -1338,6 +1620,9 @@ class AppRepository(
         _quotations.update { currentList ->
             currentList.filter { it.id != quotationId }
         }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("quotations", quotationId)
+        }
         saveToDisk()
     }
 
@@ -1377,6 +1662,9 @@ class AppRepository(
     fun deleteExpense(expenseId: String) {
         _expenses.update { currentList ->
             currentList.filter { it.id != expenseId }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("expenses", expenseId)
         }
         saveToDisk()
     }
@@ -1428,6 +1716,9 @@ class AppRepository(
     fun deleteInventoryOutflow(outflowId: String) {
         _inventoryOutflows.update { currentList ->
             currentList.filter { it.id != outflowId }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("inventoryOutflows", outflowId)
         }
         saveToDisk()
     }
@@ -1499,6 +1790,9 @@ class AppRepository(
                     currentExpenses.filter { !it.description.contains(prefix) }
                 }
             }
+        }
+        repositoryScope.launch {
+            FirebaseSyncService.deleteDocumentFromCloud("productReturns", returnId)
         }
         saveToDisk()
     }
@@ -1614,5 +1908,106 @@ class AppRepository(
         return products.map { p ->
             p.copy(stock = stockMap[p.id] ?: p.stock)
         }
+    }
+
+    // Mass-update setters for cloud restoration
+    fun setProducts(list: List<Product>) {
+        _products.value = list
+        saveToDisk()
+    }
+
+    fun setCategories(list: List<Category>) {
+        _categories.value = list
+        saveToDisk()
+    }
+
+    fun setBrands(list: List<Brand>) {
+        _brands.value = list
+        saveToDisk()
+    }
+
+    fun setUnitsOfMeasure(list: List<UnitOfMeasure>) {
+        _unitsOfMeasure.value = list
+        saveToDisk()
+    }
+
+    fun setTaxes(list: List<Tax>) {
+        _taxes.value = list
+        saveToDisk()
+    }
+
+    fun setSuppliers(list: List<Supplier>) {
+        _suppliers.value = list
+        saveToDisk()
+    }
+
+    fun setCustomers(list: List<Customer>) {
+        _customers.value = list
+        saveToDisk()
+    }
+
+    fun setSales(list: List<Sale>) {
+        _sales.value = list
+        saveToDisk()
+    }
+
+    fun setPurchases(list: List<Purchase>) {
+        _purchases.value = list
+        saveToDisk()
+    }
+
+    fun setInventoryOutflows(list: List<InventoryOutflow>) {
+        _inventoryOutflows.value = list
+        saveToDisk()
+    }
+
+    fun setProductReturns(list: List<ProductReturn>) {
+        _productReturns.value = list
+        saveToDisk()
+    }
+
+    fun setCustomerPayments(list: List<CustomerPayment>) {
+        _customerPayments.value = list
+        saveToDisk()
+    }
+
+    fun setExpenses(list: List<Expense>) {
+        _expenses.value = list
+        saveToDisk()
+    }
+
+    fun setPriceRules(list: List<PriceRule>) {
+        _priceRules.value = list
+        saveToDisk()
+    }
+
+    fun setPaymentMethods(list: List<PaymentMethod>) {
+        _paymentMethods.value = list
+        saveToDisk()
+    }
+
+    fun setUsers(list: List<User>) {
+        _users.value = list
+        saveToDisk()
+    }
+
+    fun setBusinessInfo(info: BusinessInfo) {
+        _businessInfo.value = info
+        saveToDisk()
+    }
+
+    fun setTicketConfig(config: TicketConfig) {
+        _ticketConfig.value = config
+        saveToDisk()
+    }
+
+    fun setElectronicBillingConfig(config: ElectronicBillingConfig) {
+        _electronicBillingConfig.value = config
+        saveToDisk()
+    }
+
+    fun setBluetoothPrinterConfig(config: BluetoothPrinterConfig) {
+        _bluetoothPrinterConfig.value = config
+        saveToDisk()
     }
 }

@@ -831,22 +831,25 @@ fun QuotationEditForm(
         BarcodeScannerDialog(
             onDismissRequest = { showScannerDialog = false },
             onBarcodeScanned = { scannedCode ->
-                showScannerDialog = false
                 val trimmedCode = scannedCode.trim()
-                if (trimmedCode.isNotEmpty()) {
-                    val matchingProduct = allProducts.find { product ->
-                        product.barcode?.trim().equals(trimmedCode, ignoreCase = true)
+                val matchingProduct = if (trimmedCode.isNotEmpty()) {
+                    allProducts.find { product ->
+                        product.barcode?.trim().equals(trimmedCode, ignoreCase = true) ||
+                        product.id.trim().equals(trimmedCode, ignoreCase = true)
                     }
-                    if (matchingProduct != null) {
-                        viewModel.addProductToDraft(matchingProduct)
-                        productSearchText = ""
-                        productDropdownExpanded = false
-                        Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
-                    } else {
-                        productSearchText = trimmedCode
-                        productDropdownExpanded = true
-                        Toast.makeText(context, "Filtrando por código: $trimmedCode", Toast.LENGTH_SHORT).show()
-                    }
+                } else {
+                    null
+                }
+
+                if (matchingProduct != null) {
+                    viewModel.addProductToDraft(matchingProduct)
+                    productSearchText = ""
+                    productDropdownExpanded = false
+                    Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
+                } else {
+                    productSearchText = scannedCode
+                    productDropdownExpanded = true
+                    Toast.makeText(context, "No se encontró producto con el código: $scannedCode", Toast.LENGTH_SHORT).show()
                 }
             }
         )

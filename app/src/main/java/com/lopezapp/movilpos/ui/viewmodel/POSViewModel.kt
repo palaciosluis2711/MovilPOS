@@ -16,6 +16,8 @@ import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.model.Product
+import com.lopezapp.movilpos.data.model.Purchase
+import com.lopezapp.movilpos.data.model.PurchaseItem
 import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.SaleItem
 import com.lopezapp.movilpos.data.model.User
@@ -816,17 +818,19 @@ class POSViewModel(
                 }
             }
         } else {
-            cart + CartItem(
-                product = product,
-                quantity = quantityToAdd,
-                unitPriceOverride = unitPriceOverride,
-                isBundleDiscounted = isBundleDiscounted,
-                isRuleDiscounted = isRuleDiscounted,
-                appliedRuleId = appliedRuleId,
-                appliedRuleName = appliedRuleName,
-                linkedGroupId = linkedGroupId,
-                parentProductId = parentProductId
-            )
+            listOf(
+                CartItem(
+                    product = product,
+                    quantity = quantityToAdd,
+                    unitPriceOverride = unitPriceOverride,
+                    isBundleDiscounted = isBundleDiscounted,
+                    isRuleDiscounted = isRuleDiscounted,
+                    appliedRuleId = appliedRuleId,
+                    appliedRuleName = appliedRuleName,
+                    linkedGroupId = linkedGroupId,
+                    parentProductId = parentProductId
+                )
+            ) + cart
         }
     }
 
@@ -911,6 +915,8 @@ class POSViewModel(
                 return null
             }
         }
+
+        checkAndCreateAutoPurchase(currentCart)
 
         val ebConfig = repository.electronicBillingConfig.value
         val invoiceType = _selectedInvoiceType.value
@@ -1152,6 +1158,46 @@ class POSViewModel(
 
             repository.voidSaleDte(saleId, reason)
             _isDteInvalidating.value = false
+        }
+    }
+
+    private fun checkAndCreateAutoPurchase(currentCart: List<CartItem>) {
+        val autoPurchaseItems = mutableListOf<PurchaseItem>()
+        val currentProducts = repository.products.value
+
+        val itemsByProduct = currentCart.groupBy { it.product.id }
+
+        for ((productId, cartItems) in itemsByProduct) {
+            val product = currentProducts.find { it.id == productId } ?: cartItems.first().product
+            if (!product.isService) {
+                val totalQtySold = cartItems.sumOf { it.quantity }
+                if (totalQtySold > product.stock) {
+                    val deficitQty = totalQtySold - maxOf(0, product.stock)
+                    if (deficitQty > 0) {
+                        autoPurchaseItems.add(
+                            PurchaseItem(
+                                productId = product.id,
+                                productName = product.name,
+                                quantity = deficitQty,
+                                unitCost = product.cost
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        if (autoPurchaseItems.isNotEmpty()) {
+            val totalCost = autoPurchaseItems.sumOf { it.quantity * it.unitCost }.roundToTwoDecimals()
+            val autoPurchase = Purchase(
+                supplierId = "system_auto_purchase",
+                supplierName = "Sistema (Auto-Compra POR VENTA SIN STOCK)",
+                items = autoPurchaseItems,
+                totalCost = totalCost,
+                registeredByUserName = "Sistema",
+                isAutoSystemPurchase = true
+            )
+            repository.addPurchase(autoPurchase)
         }
     }
 

@@ -72,6 +72,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import android.os.SystemClock
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -80,8 +81,9 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.lopezapp.movilpos.util.BeepSoundPlayer
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Dialog composable that presents a live camera feed for scanning barcodes and QR codes.
@@ -151,10 +153,7 @@ fun BarcodeScannerDialog(
 
                 if (cameraPermissionState.status.isGranted) {
                     CameraScanContent(
-                        onBarcodeScanned = { code ->
-                            onBarcodeScanned(code)
-                            onDismissRequest()
-                        },
+                        onBarcodeScanned = onBarcodeScanned,
                         onDismissRequest = onDismissRequest,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -221,7 +220,7 @@ private fun CameraScanContent(
     var hasFlashUnit by remember { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf<String?>(null) }
 
-    val hasScanned = remember { AtomicBoolean(false) }
+    val lastScanTimeMillis = remember { AtomicLong(0L) }
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -259,22 +258,27 @@ private fun CameraScanContent(
                     try {
                         @androidx.annotation.OptIn(ExperimentalGetImage::class)
                         val mediaImage = imageProxy.image
-                        if (mediaImage != null && !hasScanned.get()) {
+                        val now = SystemClock.elapsedRealtime()
+                        if (mediaImage != null && now - lastScanTimeMillis.get() >= 1500L) {
                             val image = InputImage.fromMediaImage(
                                 mediaImage,
                                 imageProxy.imageInfo.rotationDegrees
                             )
                             barcodeScanner.process(image)
                                 .addOnSuccessListener { barcodes ->
-                                    if (hasScanned.get()) return@addOnSuccessListener
                                     for (barcode in barcodes) {
                                         val codeValue = barcode.rawValue ?: barcode.displayValue ?: continue
                                         if (codeValue.isNotBlank()) {
-                                            if (hasScanned.compareAndSet(false, true)) {
-                                                mainExecutor.execute {
-                                                    onBarcodeScanned(codeValue)
+                                            val currentNow = SystemClock.elapsedRealtime()
+                                            val prev = lastScanTimeMillis.get()
+                                            if (currentNow - prev >= 1500L) {
+                                                if (lastScanTimeMillis.compareAndSet(prev, currentNow)) {
+                                                    BeepSoundPlayer.playBeep()
+                                                    mainExecutor.execute {
+                                                        onBarcodeScanned(codeValue)
+                                                    }
+                                                    break
                                                 }
-                                                break
                                             }
                                         }
                                     }

@@ -157,6 +157,8 @@ class InventoryViewModel(
         imageUri: String? = null,
         appliedTaxIds: List<String> = emptyList(),
         isTaxIncludedInPrice: Boolean = false,
+        hasIva: Boolean = appliedTaxIds.isNotEmpty(),
+        priceIncludesTax: Boolean = isTaxIncludedInPrice,
         isBundle: Boolean = false,
         bundleItems: List<BundleItem> = emptyList(),
         isService: Boolean = false,
@@ -176,7 +178,9 @@ class InventoryViewModel(
                 stock = stock,
                 imageUri = imageUri,
                 appliedTaxIds = appliedTaxIds,
-                isTaxIncludedInPrice = isTaxIncludedInPrice,
+                isTaxIncludedInPrice = priceIncludesTax || isTaxIncludedInPrice,
+                hasIva = hasIva || appliedTaxIds.isNotEmpty(),
+                priceIncludesTax = priceIncludesTax || isTaxIncludedInPrice,
                 isBundle = isBundle,
                 bundleItems = bundleItems,
                 isService = isService,
@@ -196,6 +200,12 @@ class InventoryViewModel(
     fun removeProduct(productId: String) {
         viewModelScope.launch {
             repository.deleteProduct(productId)
+        }
+    }
+
+    fun removeProducts(productIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deleteProducts(productIds)
         }
     }
 

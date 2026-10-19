@@ -69,6 +69,12 @@ class CustomerViewModel(
         }
     }
 
+    fun deleteCustomers(customerIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deleteCustomers(customerIds)
+        }
+    }
+
     fun setDefaultCustomer(customerId: String) {
         viewModelScope.launch {
             repository.setDefaultCustomer(customerId)

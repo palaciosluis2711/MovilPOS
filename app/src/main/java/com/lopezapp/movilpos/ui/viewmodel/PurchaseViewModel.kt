@@ -70,6 +70,9 @@ class PurchaseViewModel(
     val purchases: StateFlow<List<Purchase>> = filteredPurchases
 
     // Draft / Edit Form State
+    private val _editingPurchaseId = MutableStateFlow<String?>(null)
+    val editingPurchaseId: StateFlow<String?> = _editingPurchaseId.asStateFlow()
+
     private val _selectedDateMillis = MutableStateFlow(System.currentTimeMillis())
     val selectedDateMillis: StateFlow<Long> = _selectedDateMillis.asStateFlow()
 
@@ -113,23 +116,26 @@ class PurchaseViewModel(
         _selectedSupplier.value = supplier
     }
 
-    fun addProductToDraft(product: Product) {
+    fun addDraftItem(product: Product, quantity: Int = 1, unitCost: Double = product.cost) {
         val currentItems = _draftItems.value.toMutableList()
         val existingIndex = currentItems.indexOfFirst { it.productId == product.id }
         if (existingIndex >= 0) {
             val existing = currentItems[existingIndex]
-            currentItems[existingIndex] = existing.copy(quantity = existing.quantity + 1)
+            currentItems[existingIndex] = existing.copy(quantity = existing.quantity + quantity)
+            _draftItems.value = currentItems
         } else {
-            currentItems.add(
-                PurchaseItem(
-                    productId = product.id,
-                    productName = product.name,
-                    quantity = 1,
-                    unitCost = product.cost
-                )
+            val newItem = PurchaseItem(
+                productId = product.id,
+                productName = product.name,
+                quantity = quantity,
+                unitCost = unitCost
             )
+            _draftItems.value = listOf(newItem) + _draftItems.value
         }
-        _draftItems.value = currentItems
+    }
+
+    fun addProductToDraft(product: Product) {
+        addDraftItem(product, 1, product.cost)
     }
 
     fun updateDraftItemQuantity(productId: String, quantity: Int) {
@@ -161,7 +167,21 @@ class PurchaseViewModel(
         _draftItems.value = _draftItems.value.filter { it.productId != productId }
     }
 
+    fun loadPurchaseForEdit(purchaseId: String) {
+        val purchase = repository.purchases.value.find { it.id == purchaseId }
+        if (purchase != null && !purchase.isAutoSystemPurchase) {
+            _editingPurchaseId.value = purchase.id
+            _selectedDateMillis.value = purchase.dateMillis
+            _selectedSupplier.value = repository.suppliers.value.find { it.id == purchase.supplierId }
+                ?: Supplier(id = purchase.supplierId, name = purchase.supplierName)
+            _draftItems.value = purchase.items
+        } else {
+            resetForm()
+        }
+    }
+
     fun resetForm() {
+        _editingPurchaseId.value = null
         _selectedDateMillis.value = System.currentTimeMillis()
         _selectedSupplier.value = null
         _draftItems.value = emptyList()
@@ -183,16 +203,33 @@ class PurchaseViewModel(
         if (items.isEmpty()) return false
 
         val calculatedTotal = items.sumOf { it.quantity * it.unitCost }
-        val purchase = Purchase(
-            supplierId = supplier.id,
-            supplierName = supplier.name,
-            dateMillis = _selectedDateMillis.value,
-            items = items,
-            totalCost = calculatedTotal
-        )
+        val editId = _editingPurchaseId.value
 
-        viewModelScope.launch {
-            repository.addPurchase(purchase)
+        if (editId != null) {
+            val existingPurchase = repository.purchases.value.find { it.id == editId }
+            val updatedPurchase = Purchase(
+                id = editId,
+                supplierId = supplier.id,
+                supplierName = supplier.name,
+                dateMillis = _selectedDateMillis.value,
+                items = items,
+                totalCost = calculatedTotal,
+                registeredByUserName = existingPurchase?.registeredByUserName ?: ""
+            )
+            viewModelScope.launch {
+                repository.updatePurchase(updatedPurchase)
+            }
+        } else {
+            val purchase = Purchase(
+                supplierId = supplier.id,
+                supplierName = supplier.name,
+                dateMillis = _selectedDateMillis.value,
+                items = items,
+                totalCost = calculatedTotal
+            )
+            viewModelScope.launch {
+                repository.addPurchase(purchase)
+            }
         }
         resetForm()
         return true
@@ -201,6 +238,12 @@ class PurchaseViewModel(
     fun deletePurchase(purchaseId: String) {
         viewModelScope.launch {
             repository.deletePurchase(purchaseId)
+        }
+    }
+
+    fun deletePurchases(purchaseIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deletePurchases(purchaseIds)
         }
     }
 

@@ -1,11 +1,22 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
 import com.lopezapp.movilpos.ui.components.CompactSearchBar
+import com.lopezapp.movilpos.ui.components.MultiSelectionTopAppBar
+import com.lopezapp.movilpos.ui.components.BulkDeleteConfirmationDialog
+import androidx.compose.material3.Checkbox
 
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,12 +43,15 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterAltOff
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
@@ -54,6 +68,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -75,6 +90,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -170,13 +186,15 @@ fun PurchaseScreen(
                 PurchaseReadOnlyView(
                     purchaseId = route.purchaseId,
                     viewModel = viewModel,
-                    onNavigateUp = { backStack.removeLastOrNull() }
+                    onNavigateUp = { backStack.removeLastOrNull() },
+                    onNavigateToEdit = { editId -> backStack.add(PurchaseEditRoute(editId)) }
                 )
             }
             entry<PurchaseEditRoute>(
                 metadata = ListDetailSceneStrategy.extraPane()
-            ) {
+            ) { route ->
                 PurchaseEditForm(
+                    purchaseId = route.purchaseId,
                     viewModel = viewModel,
                     onNavigateUp = { backStack.removeLastOrNull() }
                 )
@@ -185,7 +203,7 @@ fun PurchaseScreen(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PurchaseListScreen(
     viewModel: PurchaseViewModel,
@@ -203,6 +221,9 @@ fun PurchaseListScreen(
 
     var showDatePicker by remember { mutableStateOf(false) }
     var supplierDropdownExpanded by remember { mutableStateOf(false) }
+
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
 
     val isFilterActive = searchQuery.isNotBlank() ||
             selectedSupplierIdFilter != null ||
@@ -249,18 +270,30 @@ fun PurchaseListScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Compras") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = filteredPurchases.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Compras") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onCreatePurchaseClick) {
-                Icon(Icons.Default.Add, contentDescription = "Nueva Compra")
+            if (selectedIds.isEmpty()) {
+                FloatingActionButton(onClick = onCreatePurchaseClick) {
+                    Icon(Icons.Default.Add, contentDescription = "Nueva Compra")
+                }
             }
         },
         modifier = modifier
@@ -383,26 +416,66 @@ fun PurchaseListScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(filteredPurchases, key = { it.id }) { purchase ->
+                        val isSelected = selectedIds.contains(purchase.id)
                         PurchaseItemCard(
                             purchase = purchase,
-                            onClick = { onPurchaseClick(purchase.id) }
+                            isSelected = isSelected,
+                            onClick = {
+                                if (selectedIds.isNotEmpty()) {
+                                    selectedIds = if (isSelected) selectedIds - purchase.id else selectedIds + purchase.id
+                                } else {
+                                    onPurchaseClick(purchase.id)
+                                }
+                            },
+                            onToggleSelect = {
+                                selectedIds = if (isSelected) selectedIds - purchase.id else selectedIds + purchase.id
+                            },
+                            onLongClick = {
+                                if (selectedIds.isEmpty()) {
+                                    selectedIds = selectedIds + purchase.id
+                                }
+                            }
                         )
                     }
                 }
             }
         }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.deletePurchases(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PurchaseItemCard(
     purchase: Purchase,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
+    onToggleSelect: () -> Unit = onClick,
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     ElevatedCard(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CardDefaults.elevatedShape)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+        )
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -417,6 +490,10 @@ fun PurchaseItemCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect() }
+                    )
                     Icon(
                         Icons.Default.LocalShipping,
                         contentDescription = null,
@@ -433,6 +510,22 @@ fun PurchaseItemCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            if (purchase.isAutoSystemPurchase) {
+                Surface(
+                    color = Color(0xFFFFF3E0),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFFB74D))
+                ) {
+                    Text(
+                        text = "Auto-Compra (Sistema)",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFE65100),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             HorizontalDivider()
@@ -464,11 +557,48 @@ fun PurchaseReadOnlyView(
     purchaseId: String,
     viewModel: PurchaseViewModel,
     onNavigateUp: () -> Unit,
+    onNavigateToEdit: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val purchase = viewModel.getPurchaseById(purchaseId)
     val supplier = purchase?.let { viewModel.getSupplierById(it.supplierId) }
+
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog && purchase != null) {
+        val deleteMessage = if (purchase.isAutoSystemPurchase) {
+            "¿Está seguro de eliminar esta auto-compra? \n\nNota: Por ser una auto-compra del sistema, eliminarla no afectará el inventario."
+        } else {
+            "¿Está seguro de eliminar esta compra? \n\nADVERTENCIA: Esta acción descontará del inventario las cantidades que habían sido ingresadas originalmente."
+        }
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text(if (purchase.isAutoSystemPurchase) "Eliminar Auto-Compra" else "Revertir / Eliminar Compra") },
+            text = { Text(deleteMessage) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deletePurchase(purchaseId)
+                        val toastText = if (purchase.isAutoSystemPurchase) "Auto-compra eliminada" else "Compra eliminada y stock revertido"
+                        Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                        onNavigateUp()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(if (purchase.isAutoSystemPurchase) "Sí, Eliminar" else "Sí, Revertir y Eliminar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteDialog = false }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -481,6 +611,25 @@ fun PurchaseReadOnlyView(
                 },
                 actions = {
                     if (purchase != null) {
+                        if (!purchase.isAutoSystemPurchase) {
+                            IconButton(
+                                onClick = { onNavigateToEdit?.invoke(purchaseId) }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Editar Compra"
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = { showDeleteDialog = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Eliminar Compra",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 try {
@@ -573,6 +722,31 @@ fun PurchaseReadOnlyView(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(text = formatPurchaseDate(purchase.dateMillis))
+                        }
+                        if (purchase.isAutoSystemPurchase) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Tipo:",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Surface(
+                                    color = Color(0xFFFFF3E0),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFFFB74D))
+                                ) {
+                                    Text(
+                                        text = "Auto-Compra (Sistema)",
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFFE65100),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -673,6 +847,32 @@ fun PurchaseReadOnlyView(
                         }
                     }
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (!purchase.isAutoSystemPurchase) {
+                        OutlinedButton(
+                            onClick = { onNavigateToEdit?.invoke(purchaseId) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Editar Compra")
+                        }
+                    }
+
+                    Button(
+                        onClick = { showDeleteDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Eliminar Compra")
+                    }
+                }
             }
         }
     }
@@ -683,8 +883,20 @@ fun PurchaseReadOnlyView(
 fun PurchaseEditForm(
     viewModel: PurchaseViewModel,
     onNavigateUp: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    purchaseId: String? = null
 ) {
+    val context = LocalContext.current
+    val editingPurchaseId by viewModel.editingPurchaseId.collectAsState()
+
+    LaunchedEffect(purchaseId) {
+        if (purchaseId != null) {
+            viewModel.loadPurchaseForEdit(purchaseId)
+        } else if (editingPurchaseId == null) {
+            viewModel.resetForm()
+        }
+    }
+
     val selectedDateMillis by viewModel.selectedDateMillis.collectAsState()
     val selectedSupplier by viewModel.selectedSupplier.collectAsState()
     val draftItems by viewModel.draftItems.collectAsState()
@@ -694,6 +906,7 @@ fun PurchaseEditForm(
     val allProducts by viewModel.allProducts.collectAsState()
 
     var showDatePicker by remember { mutableStateOf(false) }
+    var showBarcodeScanner by remember { mutableStateOf(false) }
     var supplierDropdownExpanded by remember { mutableStateOf(false) }
 
     var productSearchText by remember { mutableStateOf("") }
@@ -752,10 +965,40 @@ fun PurchaseEditForm(
         }
     }
 
+    if (showBarcodeScanner) {
+        BarcodeScannerDialog(
+            onDismissRequest = { showBarcodeScanner = false },
+            onBarcodeScanned = { scannedCode ->
+                val trimmedCode = scannedCode.trim()
+                val matchingProduct = if (trimmedCode.isNotEmpty()) {
+                    allProducts.find { product ->
+                        !product.isService && (
+                            product.barcode?.trim().equals(trimmedCode, ignoreCase = true) ||
+                            product.id.trim().equals(trimmedCode, ignoreCase = true)
+                        )
+                    }
+                } else {
+                    null
+                }
+
+                if (matchingProduct != null) {
+                    viewModel.addProductToDraft(matchingProduct)
+                    productSearchText = ""
+                    productDropdownExpanded = false
+                    Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
+                } else {
+                    productSearchText = scannedCode
+                    productDropdownExpanded = true
+                    Toast.makeText(context, "No se encontró producto con el código: $scannedCode", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Nueva Compra") },
+                title = { Text(if (editingPurchaseId != null || purchaseId != null) "Editar Compra" else "Nueva Compra") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateUp) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
@@ -832,20 +1075,21 @@ fun PurchaseEditForm(
 
             // Selector de Productos
             ExposedDropdownMenuBox(
-                expanded = productDropdownExpanded,
+                expanded = productDropdownExpanded && filteredProducts.isNotEmpty(),
                 onExpandedChange = { productDropdownExpanded = it }
             ) {
-                OutlinedTextField(
-                    value = productSearchText,
-                    onValueChange = {
+                CompactSearchBar(
+                    query = productSearchText,
+                    onQueryChange = {
                         productSearchText = it
                         productDropdownExpanded = true
                     },
-                    label = { Text("Agregar Producto") },
-                    placeholder = { Text("Buscar producto para agregar...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = productDropdownExpanded) },
-                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                    placeholder = "Buscar producto para agregar...",
+                    onClear = {
+                        productSearchText = ""
+                        productDropdownExpanded = false
+                    },
+                    onScanBarcodeClick = { showBarcodeScanner = true },
                     modifier = Modifier
                         .menuAnchor(MenuAnchorType.PrimaryEditable)
                         .fillMaxWidth()
@@ -953,7 +1197,7 @@ fun PurchaseEditForm(
             ) {
                 Icon(Icons.Default.ShoppingBag, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Guardar Compra")
+                Text(if (editingPurchaseId != null || purchaseId != null) "Actualizar Compra" else "Guardar Compra")
             }
         }
     }

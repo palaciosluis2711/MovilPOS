@@ -45,8 +45,8 @@ class FirebaseSyncServiceTest {
     }
 
     @Test
-    fun testSyncAllCollectionsProducesCompletePayload() = runBlocking {
-        val result = FirebaseSyncService.syncAllCollections(repository)
+    fun testUploadLocalDataProducesCompletePayload() = runBlocking {
+        val result = FirebaseSyncService.uploadLocalDataToCloud(repository)
 
         assertTrue(result.isSuccess)
         val payload = result.getOrNull()
@@ -243,7 +243,7 @@ class FirebaseSyncServiceTest {
         assertTrue(initialPending > 0)
 
         runBlocking {
-            FirebaseSyncService.syncAllCollections(repository)
+            FirebaseSyncService.uploadLocalDataToCloud(repository)
         }
         assertEquals(0, FirebaseSyncService.getPendingItemsCount(repository))
     }

@@ -504,15 +504,23 @@ fun InventoryOutflowEditForm(
         BarcodeScannerDialog(
             onDismissRequest = { showBarcodeScanner = false },
             onBarcodeScanned = { scannedCode ->
-                showBarcodeScanner = false
-                val matchingProduct = allProducts.find {
-                    it.barcode == scannedCode || it.id == scannedCode
+                val trimmedCode = scannedCode.trim()
+                val matchingProduct = if (trimmedCode.isNotEmpty()) {
+                    allProducts.find {
+                        it.barcode?.trim().equals(trimmedCode, ignoreCase = true) ||
+                        it.id.trim().equals(trimmedCode, ignoreCase = true)
+                    }
+                } else {
+                    null
                 }
+
                 if (matchingProduct != null) {
                     viewModel.addDraftItem(matchingProduct, 1)
-                    Toast.makeText(context, "Producto ${matchingProduct.name} agregado", Toast.LENGTH_SHORT).show()
+                    productSearchText = ""
+                    Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Producto con código '$scannedCode' no encontrado", Toast.LENGTH_SHORT).show()
+                    productSearchText = scannedCode
+                    Toast.makeText(context, "No se encontró producto con el código: $scannedCode", Toast.LENGTH_SHORT).show()
                 }
             }
         )

@@ -33,6 +33,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -226,6 +227,23 @@ class POSViewModelTest {
         assertNull(state.cartItems[0].unitPriceOverride)
         assertFalse(state.cartItems[0].isBundleDiscounted)
         assertEquals(2.5, state.total, 0.001)
+    }
+
+    @Test
+    fun addToCart_prependsNewItemsToCart() = runTest {
+        val p1 = Product(name = "Product 1", price = 10.0, stock = 10)
+        val p2 = Product(name = "Product 2", price = 20.0, stock = 10)
+        repository.addProduct(p1)
+        repository.addProduct(p2)
+
+        viewModel.addToCart(p1)
+        viewModel.addToCart(p2)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val cartItems = viewModel.uiState.value.cartItems
+        assertEquals(2, cartItems.size)
+        assertEquals(p2.id, cartItems[0].product.id)
+        assertEquals(p1.id, cartItems[1].product.id)
     }
 
     @Test
@@ -1412,5 +1430,41 @@ class POSViewModelTest {
         // After successful sale, cart is cleared and isCreditSale resets to false
         assertTrue(viewModel.uiState.value.cartItems.isEmpty())
         assertFalse(viewModel.isCreditSale.value)
+    }
+
+    @Test
+    fun processSale_insufficientStock_generatesAutoSystemPurchase() = runTest {
+        repository.updateElectronicBillingConfig(ElectronicBillingConfig(isEnabled = false))
+        viewModel.selectInvoiceType(InvoiceType.TICKET)
+
+        val product = Product(id = "p_low_stock", name = "Sofa", price = 100.0, cost = 50.0, stock = 2, isService = false)
+        repository.addProduct(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Add product and set quantity to 5 (stock is 2, so deficit is 3)
+        viewModel.addToCart(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val itemInCart = viewModel.uiState.value.cartItems.first()
+        viewModel.updateCartItemQuantity(itemInCart, 5)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val initialPurchasesCount = repository.purchases.value.size
+        val sale = viewModel.processSale()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNotNull(sale)
+        assertEquals(initialPurchasesCount + 1, repository.purchases.value.size)
+
+        val autoPurchase = repository.purchases.value.last()
+        assertTrue(autoPurchase.isAutoSystemPurchase)
+        assertEquals("Sistema (Auto-Compra POR VENTA SIN STOCK)", autoPurchase.supplierName)
+        assertEquals(1, autoPurchase.items.size)
+        assertEquals("p_low_stock", autoPurchase.items.first().productId)
+        assertEquals(3, autoPurchase.items.first().quantity)
+        assertEquals(150.0, autoPurchase.totalCost, 0.001)
+
+        // Final product stock should be 0
+        val updatedProduct = repository.products.value.first { it.id == "p_low_stock" }
+        assertEquals(0, updatedProduct.stock)
     }
 }

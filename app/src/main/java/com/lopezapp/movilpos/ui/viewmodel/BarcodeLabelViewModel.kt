@@ -36,8 +36,12 @@ class BarcodeLabelViewModel(
         repository.preloadSingleProduct(product)
     }
 
-    fun addProductToBatch(product: Product, quantity: Int = 1) {
+    fun addBatchItem(product: Product, quantity: Int = 1) {
         repository.addProductToBatch(product, quantity)
+    }
+
+    fun addProductToBatch(product: Product, quantity: Int = 1) {
+        addBatchItem(product, quantity)
     }
 
     fun updateItemQuantity(productId: String, quantity: Int) {

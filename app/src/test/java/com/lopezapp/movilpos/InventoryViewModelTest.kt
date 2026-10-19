@@ -415,4 +415,50 @@ class InventoryViewModelTest {
         assertEquals(1, filtered.size)
         assertEquals("Lote $0.01", filtered.first().differentiator)
     }
+
+    @Test
+    fun removeProducts_bulkRemovesProducts() = runTest {
+        val initialProducts = viewModel.allProducts.value
+        val idsToDelete = initialProducts.map { it.id }.toSet()
+
+        viewModel.removeProducts(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val products = viewModel.allProducts.value
+        assertEquals(0, products.size)
+    }
+
+    @Test
+    fun updateProduct_preservesHasIvaAndPriceIncludesTax() = runTest {
+        val taxId = repository.taxes.value.first().id
+        viewModel.addProduct(
+            name = "Taxed Item",
+            price = 15.0,
+            appliedTaxIds = listOf(taxId),
+            isTaxIncludedInPrice = true,
+            hasIva = true,
+            priceIncludesTax = true
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val savedProduct = repository.products.value.find { it.name == "Taxed Item" }!!
+        assertTrue(savedProduct.hasIva)
+        assertTrue(savedProduct.priceIncludesTax)
+        assertTrue(savedProduct.isTaxIncludedInPrice)
+
+        val updatedProduct = savedProduct.copy(
+            price = 18.0,
+            hasIva = true,
+            priceIncludesTax = true
+        )
+        viewModel.updateProduct(updatedProduct)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val reloadedProduct = repository.products.value.find { it.id == savedProduct.id }!!
+        assertEquals(18.0, reloadedProduct.price, 0.001)
+        assertTrue(reloadedProduct.hasIva)
+        assertTrue(reloadedProduct.priceIncludesTax)
+        assertTrue(reloadedProduct.isTaxIncludedInPrice)
+        assertEquals(listOf(taxId), reloadedProduct.appliedTaxIds)
+    }
 }

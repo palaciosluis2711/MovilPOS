@@ -77,6 +77,16 @@ class AuthViewModel(
 
         _isLoading.value = true
         _errorMessage.value = null
+        _loadingMessage.value = "Verificando y descargando datos de la nube..."
+
+        try {
+            withContext(Dispatchers.IO) {
+                FirebaseSyncService.performInitialSync(repository)
+            }
+        } catch (_: Exception) {
+            // Ignore or handle sync exception during login
+        }
+
         _loadingMessage.value = "Iniciando sesión..."
 
         val result = withContext(Dispatchers.IO) {
@@ -84,15 +94,6 @@ class AuthViewModel(
         }
             
         if (result.isSuccess) {
-            _loadingMessage.value = "Sincronizando datos iniciales con la nube..."
-            try {
-                withContext(Dispatchers.IO) {
-                    FirebaseSyncService.syncAllCollections(repository)
-                }
-            } catch (_: Exception) {
-                // Ignore or handle sync exception during login
-            }
-
             _loginUsernameStr.value = ""
             _loginPasswordStr.value = ""
             _errorMessage.value = null

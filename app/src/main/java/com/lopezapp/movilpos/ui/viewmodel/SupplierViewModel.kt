@@ -83,6 +83,12 @@ class SupplierViewModel(
         }
     }
 
+    fun deleteSuppliers(supplierIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deleteSuppliers(supplierIds)
+        }
+    }
+
     class Factory(private val repository: AppRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {

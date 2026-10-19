@@ -60,7 +60,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -297,11 +296,12 @@ fun POSScreen(
 
                 if (matchingProduct != null) {
                     handleAddToCart(matchingProduct)
+                    viewModel.setSearchQuery("")
+                    Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
                 } else {
-                    viewModel.onSearchQueryChanged(scannedCode)
+                    viewModel.setSearchQuery(scannedCode)
                     Toast.makeText(context, "No se encontró producto con el código: $scannedCode", Toast.LENGTH_SHORT).show()
                 }
-                showScannerDialog = false
             }
         )
     }
@@ -830,50 +830,66 @@ fun ProductGrid(
             modifier = modifier.fillMaxSize()
         ) {
             items(products, key = { it.id }) { product ->
-                Card(
-                    onClick = { onAddClick(product) },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.Start
-                    ) {
-                        Text(
-                            text = product.displayName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Stock: ${product.stock}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { onAddClick(product) },
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(8.dp)
-                        ) {
-                            Icon(Icons.Default.AddShoppingCart, contentDescription = "Agregar")
-                            Spacer(Modifier.width(8.dp))
-                            Text("Agregar")
-                        }
-                    }
-                }
+                ProductGridItem(
+                    product = product,
+                    onAddClick = onAddClick,
+                    currencySymbol = currencySymbol,
+                    defaultDecimalPlaces = defaultDecimalPlaces,
+                    allowExtraDecimals = allowExtraDecimals
+                )
             }
+        }
+    }
+}
+
+@Composable
+fun ProductGridItem(
+    product: Product,
+    onAddClick: (Product) -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+    val containerColor = when {
+        product.isService -> if (isDark) Color(0xFF3E2723) else Color(0xFFFFF3E0)
+        product.isBundle -> if (isDark) Color(0xFF1B5E20) else Color(0xFFE8F5E9)
+        else -> MaterialTheme.colorScheme.surface
+    }
+
+    Card(
+        onClick = { onAddClick(product) },
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = product.displayName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Stock: ${product.stock}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -1467,6 +1483,14 @@ fun CartItemRow(
                         text = "($formattedUnitPrice c/u)",
                         style = MaterialTheme.typography.bodySmall,
                         color = priceColor
+                    )
+                }
+                if (!item.product.isService && item.quantity > item.product.stock) {
+                    Text(
+                        text = "Stock: ${item.product.stock} (Insuficiente)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 if (item.isRuleDiscounted) {

@@ -192,6 +192,12 @@ class SettingsViewModel(
         }
     }
 
+    fun deleteCategories(categoryIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deleteCategories(categoryIds)
+        }
+    }
+
     fun addBrand(brand: Brand) {
         viewModelScope.launch {
             repository.addBrand(brand)
@@ -228,6 +234,12 @@ class SettingsViewModel(
     fun deleteBrand(brandId: String) {
         viewModelScope.launch {
             repository.deleteBrand(brandId)
+        }
+    }
+
+    fun deleteBrands(brandIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deleteBrands(brandIds)
         }
     }
 
@@ -270,6 +282,12 @@ class SettingsViewModel(
         }
     }
 
+    fun deleteUnitsOfMeasure(unitIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deleteUnitsOfMeasure(unitIds)
+        }
+    }
+
     fun addTax(tax: Tax) {
         viewModelScope.launch {
             repository.addTax(tax)
@@ -308,6 +326,12 @@ class SettingsViewModel(
     fun deleteTax(taxId: String) {
         viewModelScope.launch {
             repository.deleteTax(taxId)
+        }
+    }
+
+    fun deleteTaxes(taxIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deleteTaxes(taxIds)
         }
     }
 
@@ -363,6 +387,12 @@ class SettingsViewModel(
     fun deletePaymentMethod(paymentMethodId: String) {
         viewModelScope.launch {
             repository.deletePaymentMethod(paymentMethodId)
+        }
+    }
+
+    fun deletePaymentMethods(paymentMethodIds: Collection<String>) {
+        viewModelScope.launch {
+            repository.deletePaymentMethods(paymentMethodIds)
         }
     }
 

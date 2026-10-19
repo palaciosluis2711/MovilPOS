@@ -219,4 +219,16 @@ class CustomerViewModelTest {
         assertTrue(districts.contains("San Salvador"))
         assertTrue(districts.contains("Mejicanos"))
     }
+
+    @Test
+    fun deleteCustomers_bulkDeletesCustomers() = runTest {
+        val initialCustomers = viewModel.allCustomers.value
+        val idsToDelete = initialCustomers.map { it.id }.toSet()
+
+        viewModel.deleteCustomers(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val customers = viewModel.allCustomers.value
+        assertEquals(0, customers.size)
+    }
 }

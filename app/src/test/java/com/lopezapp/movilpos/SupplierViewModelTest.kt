@@ -99,6 +99,18 @@ class SupplierViewModelTest {
     }
 
     @Test
+    fun deleteSuppliers_bulkDeletesSuppliersFromRepository() = runTest {
+        val initialSuppliers = viewModel.allSuppliers.value
+        val idsToDelete = initialSuppliers.map { it.id }.toSet()
+
+        viewModel.deleteSuppliers(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val suppliers = viewModel.allSuppliers.value
+        assertEquals(0, suppliers.size)
+    }
+
+    @Test
     fun searchQuery_filtersSuppliersByName() = runTest {
         viewModel.onSearchQueryChanged("del Norte")
         testDispatcher.scheduler.advanceUntilIdle()

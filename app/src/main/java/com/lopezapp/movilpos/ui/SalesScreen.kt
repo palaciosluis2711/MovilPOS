@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.FilterAltOff
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -598,6 +599,41 @@ fun SaleReadOnlyView(
     var showEmitDteDialog by remember { mutableStateOf(false) }
     var showDisabledDteDialog by remember { mutableStateOf(false) }
     var showIncompleteDteConfigDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirmDialog && sale != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = {
+                Text("Eliminar Registro de Venta")
+            },
+            text = {
+                Text(
+                    "¿Está seguro de eliminar esta venta de los registros? \n\nADVERTENCIA: Esta acción eliminará el registro del historial de ventas. Si lo que desea es un reembolso o devolución de productos, hágalo desde la sección de Devoluciones."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmDialog = false
+                        salesViewModel.deleteSale(sale.id)
+                        Toast.makeText(context, "Venta eliminada del registro", Toast.LENGTH_SHORT).show()
+                        onNavigateUp()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Sí, Eliminar", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 
     if (showDisabledDteDialog) {
         AlertDialog(
@@ -918,6 +954,13 @@ fun SaleReadOnlyView(
                             Icon(
                                 imageVector = Icons.Default.PictureAsPdf,
                                 contentDescription = "Factura Formal PDF"
+                            )
+                        }
+                        IconButton(onClick = { showDeleteConfirmDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Eliminar Venta",
+                                tint = MaterialTheme.colorScheme.error
                             )
                         }
                     }
@@ -1392,6 +1435,30 @@ fun SaleReadOnlyView(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Ver / Imprimir Ticket",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Button: Eliminar Venta
+                OutlinedButton(
+                    onClick = { showDeleteConfirmDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Eliminar Venta",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )

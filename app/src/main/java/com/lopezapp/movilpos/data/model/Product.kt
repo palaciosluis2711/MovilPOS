@@ -16,6 +16,8 @@ data class Product(
     val imageUri: String? = null,
     val appliedTaxIds: List<String> = emptyList(),
     val isTaxIncludedInPrice: Boolean = false,
+    val hasIva: Boolean = appliedTaxIds.isNotEmpty(),
+    val priceIncludesTax: Boolean = isTaxIncludedInPrice,
     val isBundle: Boolean = false,
     val bundleItems: List<BundleItem> = emptyList(),
     val isService: Boolean = false,

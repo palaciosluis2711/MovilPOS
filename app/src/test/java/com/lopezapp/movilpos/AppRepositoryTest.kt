@@ -225,6 +225,29 @@ class AppRepositoryTest {
     }
 
     @Test
+    fun deleteSale_removesSaleFromSalesAndContingency() {
+        val sale = Sale(
+            id = "sale_to_delete",
+            customerId = "c1",
+            customerName = "Cliente",
+            paymentMethodId = "pm1",
+            paymentMethodName = "Efectivo",
+            items = emptyList(),
+            totalAmount = 50.0
+        )
+        repository.addSale(sale)
+        repository.addToContingencyQueue(sale)
+
+        assertNotNull(repository.sales.value.find { it.id == "sale_to_delete" })
+        assertNotNull(repository.contingencyDtes.value.find { it.id == "sale_to_delete" })
+
+        repository.deleteSale("sale_to_delete")
+
+        assertNull(repository.sales.value.find { it.id == "sale_to_delete" })
+        assertNull(repository.contingencyDtes.value.find { it.id == "sale_to_delete" })
+    }
+
+    @Test
     fun upgradeSaleToDte_updatesSaleAndGeneratesDteMetadata() {
         val originalSale = Sale(
             id = "sale_ticket_1",
@@ -940,5 +963,153 @@ class AppRepositoryTest {
         val fetched = repository.users.value.find { it.id == "u_email" }
         assertNotNull(fetched)
         assertEquals("testuser@minegocio.com", fetched?.email)
+    }
+
+    @Test
+    fun deletePurchase_revertsStockForRegularAndBundleProducts() {
+        val regularProduct = Product(id = "p1", name = "Regular Product", stock = 10, price = 10.0, cost = 5.0)
+        val component1 = Product(id = "c1", name = "Component 1", stock = 20, price = 5.0, cost = 2.0)
+        val component2 = Product(id = "c2", name = "Component 2", stock = 15, price = 6.0, cost = 3.0)
+        val bundleProduct = Product(
+            id = "b1",
+            name = "Bundle Product",
+            price = 15.0,
+            isBundle = true,
+            bundleItems = listOf(BundleItem("c1", 2), BundleItem("c2", 1)),
+            stock = 0,
+            cost = 7.0
+        )
+
+        repository.addProduct(regularProduct)
+        repository.addProduct(component1)
+        repository.addProduct(component2)
+        repository.addProduct(bundleProduct)
+
+        val purchase = Purchase(
+            id = "pur_1",
+            supplierId = "sup_1",
+            supplierName = "Supplier 1",
+            items = listOf(
+                PurchaseItem(productId = "p1", productName = "Regular Product", quantity = 5, unitCost = 6.0),
+                PurchaseItem(productId = "b1", productName = "Bundle Product", quantity = 3, unitCost = 8.0)
+            ),
+            totalCost = 54.0
+        )
+
+        repository.addPurchase(purchase)
+
+        // Verify stock increments:
+        // p1: 10 + 5 = 15
+        // c1: 20 + (3 * 2) = 26
+        // c2: 15 + (3 * 1) = 18
+        assertEquals(15, repository.products.value.find { it.id == "p1" }?.stock)
+        assertEquals(26, repository.products.value.find { it.id == "c1" }?.stock)
+        assertEquals(18, repository.products.value.find { it.id == "c2" }?.stock)
+
+        // Delete purchase
+        repository.deletePurchase("pur_1")
+
+        // Purchase should be removed
+        assertNull(repository.purchases.value.find { it.id == "pur_1" })
+
+        // Stock should revert:
+        // p1: maxOf(0, 15 - 5) = 10
+        // c1: maxOf(0, 26 - 6) = 20
+        // c2: maxOf(0, 18 - 3) = 15
+        assertEquals(10, repository.products.value.find { it.id == "p1" }?.stock)
+        assertEquals(20, repository.products.value.find { it.id == "c1" }?.stock)
+        assertEquals(15, repository.products.value.find { it.id == "c2" }?.stock)
+    }
+
+    @Test
+    fun deletePurchase_autoSystemPurchase_doesNotDeductStock() {
+        val product = Product(id = "p_auto", name = "Auto Product", stock = 10, price = 10.0, cost = 5.0)
+        repository.addProduct(product)
+
+        val autoPurchase = Purchase(
+            id = "auto_pur_1",
+            supplierId = "sys",
+            supplierName = "Sistema (Auto-Compra)",
+            items = listOf(PurchaseItem(productId = "p_auto", productName = "Auto Product", quantity = 5, unitCost = 5.0)),
+            totalCost = 25.0,
+            isAutoSystemPurchase = true
+        )
+        repository.addPurchase(autoPurchase)
+
+        // After adding purchase, stock increased by 5 (10 + 5 = 15)
+        assertEquals(15, repository.products.value.find { it.id == "p_auto" }?.stock)
+
+        // Delete auto purchase
+        repository.deletePurchase("auto_pur_1")
+
+        // Purchase is removed from purchases list
+        assertNull(repository.purchases.value.find { it.id == "auto_pur_1" })
+
+        // Stock should NOT be deducted because it is an auto system purchase
+        assertEquals(15, repository.products.value.find { it.id == "p_auto" }?.stock)
+    }
+
+    @Test
+    fun updatePurchase_revertsOldStockAndAppliesNewStockAndCost() {
+        val product = Product(id = "p1", name = "Test Product", stock = 10, price = 10.0, cost = 5.0)
+        repository.addProduct(product)
+
+        val initialPurchase = Purchase(
+            id = "pur_1",
+            supplierId = "sup_1",
+            supplierName = "Supplier 1",
+            items = listOf(
+                PurchaseItem(productId = "p1", productName = "Test Product", quantity = 5, unitCost = 6.0)
+            ),
+            totalCost = 30.0
+        )
+        repository.addPurchase(initialPurchase)
+
+        assertEquals(15, repository.products.value.find { it.id == "p1" }?.stock)
+        assertEquals(6.0, repository.products.value.find { it.id == "p1" }?.cost ?: 0.0, 0.001)
+
+        val updatedPurchase = initialPurchase.copy(
+            items = listOf(
+                PurchaseItem(productId = "p1", productName = "Test Product", quantity = 8, unitCost = 7.50)
+            ),
+            totalCost = 60.0
+        )
+
+        repository.updatePurchase(updatedPurchase)
+
+        // Stock: 15 - 5 (revert) + 8 (new) = 18
+        // Cost: 7.50
+        assertEquals(18, repository.products.value.find { it.id == "p1" }?.stock)
+        assertEquals(7.50, repository.products.value.find { it.id == "p1" }?.cost ?: 0.0, 0.001)
+
+        val savedPurchase = repository.purchases.value.find { it.id == "pur_1" }
+        assertNotNull(savedPurchase)
+        assertEquals(60.0, savedPurchase?.totalCost ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun addProduct_prependsNewProductToTop() {
+        val p1 = Product(id = "p1", name = "Product 1", price = 10.0, stock = 10)
+        val p2 = Product(id = "p2", name = "Product 2", price = 20.0, stock = 10)
+
+        repository.addProduct(p1)
+        repository.addProduct(p2)
+
+        val products = repository.products.value
+        assertEquals("p2", products.first().id)
+        assertEquals("p1", products[1].id)
+    }
+
+    @Test
+    fun addProductToBatch_prependsNewBatchItemsToTop() {
+        val p1 = Product(id = "p1", name = "Product 1", price = 10.0, stock = 10)
+        val p2 = Product(id = "p2", name = "Product 2", price = 20.0, stock = 10)
+
+        repository.addProductToBatch(p1, 1)
+        repository.addProductToBatch(p2, 1)
+
+        val batchItems = repository.batchItems.value
+        assertEquals("p2", batchItems.first().productId)
+        assertEquals("p1", batchItems[1].productId)
     }
 }

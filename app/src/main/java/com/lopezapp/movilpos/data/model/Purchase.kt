@@ -17,4 +17,5 @@ data class Purchase(
     val items: List<PurchaseItem> = emptyList(),
     val totalCost: Double = 0.0,
     val registeredByUserName: String = "",
+    val isAutoSystemPurchase: Boolean = false,
 )

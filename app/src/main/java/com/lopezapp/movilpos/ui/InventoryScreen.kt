@@ -1,7 +1,11 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.util.ImageUtils
 import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
 import com.lopezapp.movilpos.ui.components.CompactSearchBar
+import com.lopezapp.movilpos.ui.components.MultiSelectionTopAppBar
+import com.lopezapp.movilpos.ui.components.BulkDeleteConfirmationDialog
+import androidx.compose.material3.Checkbox
 
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
@@ -26,6 +30,12 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -269,7 +279,7 @@ fun InventoryScreen(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ProductListScreen(
     viewModel: InventoryViewModel,
@@ -292,6 +302,9 @@ fun ProductListScreen(
 
     var showScannerDialog by remember { mutableStateOf(false) }
 
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
+
     if (showScannerDialog) {
         BarcodeScannerDialog(
             onDismissRequest = { showScannerDialog = false },
@@ -304,18 +317,30 @@ fun ProductListScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Inventario") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Regresar")
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = products.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Inventario") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Regresar")
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddProduct) {
-                Icon(Icons.Default.Add, contentDescription = "Agregar Producto")
+            if (selectedIds.isEmpty()) {
+                FloatingActionButton(onClick = onAddProduct) {
+                    Icon(Icons.Default.Add, contentDescription = "Agregar Producto")
+                }
             }
         }
     ) { innerPadding ->
@@ -518,57 +543,127 @@ fun ProductListScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(products, key = { it.id }) { product ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clickable { onProductClick(product) }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (!product.imageUri.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = product.imageUri,
-                                        contentDescription = "Foto de ${product.name}",
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
+                        val isSelected = selectedIds.contains(product.id)
+                        ProductItemCard(
+                            product = product,
+                            isSelected = isSelected,
+                            onProductClick = { p ->
+                                if (selectedIds.isNotEmpty()) {
+                                    selectedIds = if (selectedIds.contains(p.id)) selectedIds - p.id else selectedIds + p.id
+                                } else {
+                                    onProductClick(p)
                                 }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = product.displayName,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = if (product.isService && product.bundleItems.isEmpty()) "Stock: Ilimitado" else "Stock: ${product.stock}",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    if (product.tags.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = product.tags.joinToString(" • "),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
+                            },
+                            onToggleSelection = { id ->
+                                selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
+                            },
+                            onLongClick = { p ->
+                                if (selectedIds.isEmpty()) {
+                                    selectedIds = selectedIds + p.id
                                 }
-                                Text(
-                                    text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                            }
-                        }
+                            },
+                            currencySymbol = currencySymbol,
+                            defaultDecimalPlaces = defaultDecimalPlaces,
+                            allowExtraDecimals = allowExtraDecimals
+                        )
                     }
                 }
             }
+        }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.removeProducts(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ProductItemCard(
+    product: Product,
+    isSelected: Boolean,
+    onProductClick: (Product) -> Unit,
+    onToggleSelection: (String) -> Unit,
+    onLongClick: (Product) -> Unit,
+    currencySymbol: String = "$",
+    defaultDecimalPlaces: Int = 2,
+    allowExtraDecimals: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+    val containerColor = when {
+        isSelected -> MaterialTheme.colorScheme.secondaryContainer
+        product.isService -> if (isDark) Color(0xFF3E2723) else Color(0xFFFFF3E0)
+        product.isBundle -> if (isDark) Color(0xFF1B5E20) else Color(0xFFE8F5E9)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(CardDefaults.shape)
+            .combinedClickable(
+                onClick = { onProductClick(product) },
+                onLongClick = { onLongClick(product) }
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggleSelection(product.id) }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            if (!product.imageUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = product.imageUri,
+                    contentDescription = "Foto de ${product.name}",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = product.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = if (product.isService && product.bundleItems.isEmpty()) "Stock: Ilimitado" else "Stock: ${product.stock}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (product.tags.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = product.tags.joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Text(
+                text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                style = MaterialTheme.typography.titleMedium
+            )
         }
     }
 }
@@ -1385,8 +1480,25 @@ fun ProductEditForm(
     var imageUri by remember(product) { mutableStateOf(product?.imageUri) }
 
     val taxesList by viewModel.taxes.collectAsState()
-    var selectedTaxIds by remember(product) { mutableStateOf(product?.appliedTaxIds?.toSet() ?: emptySet()) }
-    var isTaxIncludedInPrice by remember(product) { mutableStateOf(product?.isTaxIncludedInPrice ?: false) }
+    var hasIvaState by remember(product) {
+        mutableStateOf(product?.hasIva ?: (product?.appliedTaxIds?.isNotEmpty() == true))
+    }
+    var priceIncludesTaxState by remember(product) {
+        mutableStateOf(product?.priceIncludesTax ?: (product?.isTaxIncludedInPrice == true))
+    }
+    var selectedTaxIds by remember(product, taxesList, hasIvaState) {
+        val initialSet = product?.appliedTaxIds?.toSet() ?: emptySet()
+        val ivaTaxId = taxesList.find { it.name.contains("IVA", ignoreCase = true) }?.id ?: taxesList.firstOrNull()?.id
+        if (hasIvaState && initialSet.isEmpty() && ivaTaxId != null) {
+            mutableStateOf(setOf(ivaTaxId))
+        } else if (hasIvaState && ivaTaxId != null && taxesList.none { initialSet.contains(it.id) }) {
+            mutableStateOf(setOf(ivaTaxId))
+        } else if (!hasIvaState) {
+            mutableStateOf(emptySet())
+        } else {
+            mutableStateOf(initialSet)
+        }
+    }
 
     var differentiator by remember(product) { mutableStateOf(product?.differentiator ?: "") }
     var activeTags by remember(product) { mutableStateOf(product?.tags ?: emptyList()) }
@@ -1444,7 +1556,8 @@ fun ProductEditForm(
             imageUri = pendingCropUri!!,
             onDismiss = { pendingCropUri = null },
             onImageCropped = { croppedUri ->
-                imageUri = croppedUri
+                val internalUri = ImageUtils.copyUriToInternalStorage(context, Uri.parse(croppedUri), "products")
+                imageUri = internalUri?.toString() ?: croppedUri
                 pendingCropUri = null
             }
         )
@@ -2451,11 +2564,13 @@ fun ProductEditForm(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        selectedTaxIds = if (isSelected) {
+                                        val newSelected = if (isSelected) {
                                             selectedTaxIds - tax.id
                                         } else {
                                             selectedTaxIds + tax.id
                                         }
+                                        selectedTaxIds = newSelected
+                                        hasIvaState = newSelected.isNotEmpty()
                                     }
                                     .padding(vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -2463,11 +2578,13 @@ fun ProductEditForm(
                                 Checkbox(
                                     checked = isSelected,
                                     onCheckedChange = { checked ->
-                                        selectedTaxIds = if (checked) {
+                                        val newSelected = if (checked) {
                                             selectedTaxIds + tax.id
                                         } else {
                                             selectedTaxIds - tax.id
                                         }
+                                        selectedTaxIds = newSelected
+                                        hasIvaState = newSelected.isNotEmpty()
                                     }
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -2494,13 +2611,13 @@ fun ProductEditForm(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { isTaxIncludedInPrice = !isTaxIncludedInPrice }
+                            .clickable { priceIncludesTaxState = !priceIncludesTaxState }
                             .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
-                            checked = isTaxIncludedInPrice,
-                            onCheckedChange = { isTaxIncludedInPrice = it }
+                            checked = priceIncludesTaxState,
+                            onCheckedChange = { priceIncludesTaxState = it }
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -2530,6 +2647,14 @@ fun ProductEditForm(
                     val finalBrand = if (isBundle) "" else if (isService) (brand.takeIf { it.isNotBlank() } ?: "General") else brand
 
                     if (name.isNotBlank()) {
+                        val finalTaxIds = if (hasIvaState && selectedTaxIds.isEmpty()) {
+                            taxesList.find { it.name.contains("IVA", ignoreCase = true) }?.id?.let { listOf(it) } ?: emptyList()
+                        } else if (!hasIvaState) {
+                            emptyList()
+                        } else {
+                            selectedTaxIds.toList()
+                        }
+
                         if (product != null) {
                             viewModel.updateProduct(
                                 product.copy(
@@ -2543,8 +2668,10 @@ fun ProductEditForm(
                                     alertQuantity = finalAlertQuantity,
                                     stock = if (isService && bundleItems.isEmpty()) 9999 else if (isBundle || isService) 0 else (stockStr.toIntOrNull() ?: product.stock),
                                     imageUri = imageUri,
-                                    appliedTaxIds = selectedTaxIds.toList(),
-                                    isTaxIncludedInPrice = isTaxIncludedInPrice,
+                                    appliedTaxIds = finalTaxIds,
+                                    isTaxIncludedInPrice = priceIncludesTaxState,
+                                    hasIva = hasIvaState,
+                                    priceIncludesTax = priceIncludesTaxState,
                                     isBundle = isBundle,
                                     bundleItems = if (isBundle || isService) bundleItems else emptyList(),
                                     isService = isService,
@@ -2563,8 +2690,10 @@ fun ProductEditForm(
                                 price = price,
                                 alertQuantity = finalAlertQuantity,
                                 imageUri = imageUri,
-                                appliedTaxIds = selectedTaxIds.toList(),
-                                isTaxIncludedInPrice = isTaxIncludedInPrice,
+                                appliedTaxIds = finalTaxIds,
+                                isTaxIncludedInPrice = priceIncludesTaxState,
+                                hasIva = hasIvaState,
+                                priceIncludesTax = priceIncludesTaxState,
                                 isBundle = isBundle,
                                 bundleItems = if (isBundle || isService) bundleItems else emptyList(),
                                 isService = isService,

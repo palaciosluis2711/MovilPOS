@@ -1,27 +1,9 @@
 package com.lopezapp.movilpos.util
 
+import android.content.Context
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.firestore.FirebaseFirestore
-import com.lopezapp.movilpos.data.model.BluetoothPrinterConfig
-import com.lopezapp.movilpos.data.model.Brand
-import com.lopezapp.movilpos.data.model.BusinessInfo
-import com.lopezapp.movilpos.data.model.Category
-import com.lopezapp.movilpos.data.model.Customer
-import com.lopezapp.movilpos.data.model.CustomerPayment
-import com.lopezapp.movilpos.data.model.ElectronicBillingConfig
-import com.lopezapp.movilpos.data.model.Expense
-import com.lopezapp.movilpos.data.model.InventoryOutflow
-import com.lopezapp.movilpos.data.model.PaymentMethod
-import com.lopezapp.movilpos.data.model.PriceRule
-import com.lopezapp.movilpos.data.model.Product
-import com.lopezapp.movilpos.data.model.ProductReturn
-import com.lopezapp.movilpos.data.model.Purchase
-import com.lopezapp.movilpos.data.model.Sale
-import com.lopezapp.movilpos.data.model.Supplier
-import com.lopezapp.movilpos.data.model.Tax
-import com.lopezapp.movilpos.data.model.TicketConfig
-import com.lopezapp.movilpos.data.model.UnitOfMeasure
-import com.lopezapp.movilpos.data.model.User
+import com.lopezapp.movilpos.data.model.*
 import com.lopezapp.movilpos.data.repository.AppRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -78,7 +60,7 @@ object FirebaseSyncService {
                 delay(intervalMs)
                 if (_isAutoSyncEnabled.value && !_isSyncing.value) {
                     runCatching {
-                        syncAllCollections(repository)
+                        uploadLocalDataToCloud(repository)
                     }
                 }
             }
@@ -138,17 +120,18 @@ object FirebaseSyncService {
         return pending
     }
 
-    suspend fun syncAllCollections(repository: AppRepository): Result<Map<String, Any>> =
+    suspend fun uploadLocalDataToCloud(repository: AppRepository, context: Context? = null): Result<Map<String, Any>> =
         withContext(Dispatchers.IO) {
             _isSyncing.value = true
             try {
+                val ctx = context ?: repository.getAppContext()
                 // Collect and serialize all collections
-                val productsList = repository.products.value.map { serializeProduct(it) }
+                val productsList = repository.products.value.map { serializeProduct(it, ctx) }
                 val categoriesList = repository.categories.value.map { serializeCategory(it) }
-                val brandsList = repository.brands.value.map { serializeBrand(it) }
+                val brandsList = repository.brands.value.map { serializeBrand(it, ctx) }
                 val unitsOfMeasureList = repository.unitsOfMeasure.value.map { serializeUnitOfMeasure(it) }
                 val taxesList = repository.taxes.value.map { serializeTax(it) }
-                val suppliersList = repository.suppliers.value.map { serializeSupplier(it) }
+                val suppliersList = repository.suppliers.value.map { serializeSupplier(it, ctx) }
                 val customersList = repository.customers.value.map { serializeCustomer(it) }
                 val salesList = repository.sales.value.map { serializeSale(it) }
                 val purchasesList = repository.purchases.value.map { serializePurchase(it) }
@@ -159,7 +142,7 @@ object FirebaseSyncService {
                 val priceRulesList = repository.priceRules.value.map { serializePriceRule(it) }
                 val paymentMethodsList = repository.paymentMethods.value.map { serializePaymentMethod(it) }
                 val usersList = repository.users.value.map { serializeUser(it) }
-                val businessInfoMap = serializeBusinessInfo(repository.businessInfo.value)
+                val businessInfoMap = serializeBusinessInfo(repository.businessInfo.value, ctx)
                 val ticketConfigMap = serializeTicketConfig(repository.ticketConfig.value)
                 val electronicBillingConfigMap = serializeElectronicBillingConfig(repository.electronicBillingConfig.value)
                 val bluetoothPrinterConfigMap = serializeBluetoothPrinterConfig(repository.bluetoothPrinterConfig.value)
@@ -286,7 +269,13 @@ object FirebaseSyncService {
             }
         }
 
-    fun serializeProduct(product: Product): Map<String, Any?> {
+    fun serializeProduct(product: Product, context: Context? = null): Map<String, Any?> {
+        val finalImageUri = if (context != null && !product.imageUri.isNullOrBlank()) {
+            ImageUtils.uriToBase64(context, product.imageUri) ?: product.imageUri
+        } else {
+            product.imageUri
+        }
+
         return mapOf(
             "id" to product.id,
             "name" to product.name,
@@ -298,9 +287,11 @@ object FirebaseSyncService {
             "price" to product.price,
             "alertQuantity" to product.alertQuantity,
             "stock" to product.stock,
-            "imageUri" to product.imageUri,
+            "imageUri" to finalImageUri,
             "appliedTaxIds" to product.appliedTaxIds,
             "isTaxIncludedInPrice" to product.isTaxIncludedInPrice,
+            "hasIva" to product.hasIva,
+            "priceIncludesTax" to product.priceIncludesTax,
             "isBundle" to product.isBundle,
             "bundleItems" to product.bundleItems.map { mapOf("productId" to it.productId, "quantity" to it.quantity) },
             "isService" to product.isService,
@@ -317,12 +308,18 @@ object FirebaseSyncService {
         )
     }
 
-    fun serializeBrand(brand: Brand): Map<String, Any?> {
+    fun serializeBrand(brand: Brand, context: Context? = null): Map<String, Any?> {
+        val finalLogoUri = if (context != null && !brand.logoUri.isNullOrBlank()) {
+            ImageUtils.uriToBase64(context, brand.logoUri) ?: brand.logoUri
+        } else {
+            brand.logoUri
+        }
+
         return mapOf(
             "id" to brand.id,
             "name" to brand.name,
             "description" to brand.description,
-            "logoUri" to brand.logoUri
+            "logoUri" to finalLogoUri
         )
     }
 
@@ -367,11 +364,17 @@ object FirebaseSyncService {
         )
     }
 
-    fun serializeSupplier(supplier: Supplier): Map<String, Any?> {
+    fun serializeSupplier(supplier: Supplier, context: Context? = null): Map<String, Any?> {
+        val finalLogoUri = if (context != null && !supplier.logoUri.isNullOrBlank()) {
+            ImageUtils.uriToBase64(context, supplier.logoUri) ?: supplier.logoUri
+        } else {
+            supplier.logoUri
+        }
+
         return mapOf(
             "id" to supplier.id,
             "name" to supplier.name,
-            "logoUri" to supplier.logoUri,
+            "logoUri" to finalLogoUri,
             "address" to supplier.address,
             "email" to supplier.email,
             "phone" to supplier.phone
@@ -434,7 +437,8 @@ object FirebaseSyncService {
                 )
             },
             "totalCost" to purchase.totalCost,
-            "registeredByUserName" to purchase.registeredByUserName
+            "registeredByUserName" to purchase.registeredByUserName,
+            "isAutoSystemPurchase" to purchase.isAutoSystemPurchase
         )
     }
 
@@ -550,7 +554,13 @@ object FirebaseSyncService {
         )
     }
 
-    fun serializeBusinessInfo(info: BusinessInfo): Map<String, Any?> {
+    fun serializeBusinessInfo(info: BusinessInfo, context: Context? = null): Map<String, Any?> {
+        val finalLogoUri = if (context != null && !info.logoUri.isNullOrBlank()) {
+            ImageUtils.uriToBase64(context, info.logoUri) ?: info.logoUri
+        } else {
+            info.logoUri
+        }
+
         return mapOf(
             "name" to info.name,
             "nit" to info.nit,
@@ -560,7 +570,7 @@ object FirebaseSyncService {
             "email" to info.email,
             "socialMedia" to info.socialMedia,
             "commercialName" to info.commercialName,
-            "logoUri" to info.logoUri
+            "logoUri" to finalLogoUri
         )
     }
 
@@ -601,6 +611,500 @@ object FirebaseSyncService {
             "isConnected" to config.isConnected,
             "autoPrintSales" to config.autoPrintSales
         )
+    }
+
+    private fun getDouble(map: Map<String, Any?>, key: String, default: Double = 0.0): Double {
+        val v = map[key]
+        return if (v is Number) v.toDouble() else default
+    }
+    private fun getInt(map: Map<String, Any?>, key: String, default: Int = 0): Int {
+        val v = map[key]
+        return if (v is Number) v.toInt() else default
+    }
+    private fun getLong(map: Map<String, Any?>, key: String, default: Long = 0L): Long {
+        val v = map[key]
+        return if (v is Number) v.toLong() else default
+    }
+    private fun getString(map: Map<String, Any?>, key: String, default: String = ""): String {
+        return map[key] as? String ?: default
+    }
+    private fun getBoolean(map: Map<String, Any?>, key: String, default: Boolean = false): Boolean {
+        return map[key] as? Boolean ?: default
+    }
+
+    fun deserializeProduct(map: Map<String, Any?>, context: Context? = null): Product {
+        val rawImageUri = map["imageUri"] as? String
+        val prodId = getString(map, "id", java.util.UUID.randomUUID().toString())
+        val finalImageUri = if (context != null && !rawImageUri.isNullOrBlank()) {
+            if (!rawImageUri.startsWith("file://") && !rawImageUri.startsWith("content://")) {
+                ImageUtils.base64ToInternalFileUri(context, rawImageUri, "product_${prodId}.jpg") ?: rawImageUri
+            } else {
+                rawImageUri
+            }
+        } else {
+            rawImageUri
+        }
+
+        return Product(
+            id = prodId,
+            name = getString(map, "name"),
+            barcode = map["barcode"] as? String,
+            category = getString(map, "category", "General"),
+            brand = getString(map, "brand"),
+            unitOfMeasure = getString(map, "unitOfMeasure", "unidad"),
+            cost = getDouble(map, "cost"),
+            price = getDouble(map, "price"),
+            alertQuantity = getInt(map, "alertQuantity"),
+            stock = getInt(map, "stock"),
+            imageUri = finalImageUri,
+            appliedTaxIds = (map["appliedTaxIds"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+            isTaxIncludedInPrice = getBoolean(map, "isTaxIncludedInPrice") || getBoolean(map, "priceIncludesTax"),
+            hasIva = getBoolean(map, "hasIva") || ((map["appliedTaxIds"] as? List<*>)?.isNotEmpty() == true),
+            priceIncludesTax = getBoolean(map, "priceIncludesTax") || getBoolean(map, "isTaxIncludedInPrice"),
+            isBundle = getBoolean(map, "isBundle"),
+            bundleItems = (map["bundleItems"] as? List<*>)?.mapNotNull { itemMap ->
+                if (itemMap is Map<*, *>) {
+                    BundleItem(
+                        productId = itemMap["productId"] as? String ?: "",
+                        quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 1
+                    )
+                } else null
+            } ?: emptyList(),
+            isService = getBoolean(map, "isService"),
+            tags = (map["tags"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+            differentiator = map["differentiator"] as? String
+        )
+    }
+
+    fun deserializeCategory(map: Map<String, Any?>): Category = Category(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        name = getString(map, "name"),
+        description = map["description"] as? String
+    )
+    
+    fun deserializeBrand(map: Map<String, Any?>, context: Context? = null): Brand {
+        val rawLogoUri = map["logoUri"] as? String
+        val brandId = getString(map, "id", java.util.UUID.randomUUID().toString())
+        val finalLogoUri = if (context != null && !rawLogoUri.isNullOrBlank()) {
+            if (!rawLogoUri.startsWith("file://") && !rawLogoUri.startsWith("content://")) {
+                ImageUtils.base64ToInternalFileUri(context, rawLogoUri, "brand_${brandId}.jpg") ?: rawLogoUri
+            } else {
+                rawLogoUri
+            }
+        } else {
+            rawLogoUri
+        }
+
+        return Brand(
+            id = brandId,
+            name = getString(map, "name"),
+            description = map["description"] as? String,
+            logoUri = finalLogoUri
+        )
+    }
+
+    fun deserializeUnitOfMeasure(map: Map<String, Any?>): UnitOfMeasure = UnitOfMeasure(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        name = getString(map, "name"),
+        abbreviation = map["abbreviation"] as? String,
+        isPackageOrBox = getBoolean(map, "isPackageOrBox")
+    )
+
+    fun deserializeTax(map: Map<String, Any?>): Tax = Tax(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        name = getString(map, "name"),
+        description = map["description"] as? String,
+        valueType = try { TaxValueType.valueOf(getString(map, "valueType", "PERCENTAGE")) } catch(e: Exception) { TaxValueType.PERCENTAGE },
+        value = getDouble(map, "value")
+    )
+
+    fun deserializeCustomer(map: Map<String, Any?>): Customer = Customer(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        name = getString(map, "name"),
+        documentType = try { DocumentType.valueOf(getString(map, "documentType", "DUI")) } catch(e: Exception) { DocumentType.DUI },
+        documentNumber = getString(map, "documentNumber"),
+        nrc = map["nrc"] as? String,
+        phone = map["phone"] as? String,
+        email = map["email"] as? String,
+        country = getString(map, "country", "El Salvador"),
+        department = getString(map, "department"),
+        municipality = getString(map, "municipality"),
+        district = getString(map, "district"),
+        address = map["address"] as? String,
+        isLargeContributor = getBoolean(map, "isLargeContributor"),
+        commercialActivity = map["commercialActivity"] as? String,
+        commercialName = getString(map, "commercialName"),
+        isDefault = getBoolean(map, "isDefault"),
+        currentDebt = getDouble(map, "currentDebt")
+    )
+
+    fun deserializeSupplier(map: Map<String, Any?>, context: Context? = null): Supplier {
+        val rawLogoUri = map["logoUri"] as? String
+        val supplierId = getString(map, "id", java.util.UUID.randomUUID().toString())
+        val finalLogoUri = if (context != null && !rawLogoUri.isNullOrBlank()) {
+            if (!rawLogoUri.startsWith("file://") && !rawLogoUri.startsWith("content://")) {
+                ImageUtils.base64ToInternalFileUri(context, rawLogoUri, "supplier_${supplierId}.jpg") ?: rawLogoUri
+            } else {
+                rawLogoUri
+            }
+        } else {
+            rawLogoUri
+        }
+
+        return Supplier(
+            id = supplierId,
+            name = getString(map, "name"),
+            logoUri = finalLogoUri,
+            address = map["address"] as? String,
+            email = map["email"] as? String,
+            phone = map["phone"] as? String
+        )
+    }
+
+    fun deserializeSale(map: Map<String, Any?>): Sale = Sale(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        customerId = getString(map, "customerId"),
+        customerName = getString(map, "customerName"),
+        invoiceType = try { InvoiceType.valueOf(getString(map, "invoiceType", "CONSUMIDOR_FINAL")) } catch(e: Exception) { InvoiceType.CONSUMIDOR_FINAL },
+        paymentMethodId = getString(map, "paymentMethodId"),
+        paymentMethodName = getString(map, "paymentMethodName"),
+        items = (map["items"] as? List<*>)?.mapNotNull { itemMap ->
+            if (itemMap is Map<*, *>) {
+                SaleItem(
+                    productId = itemMap["productId"] as? String ?: "",
+                    productName = itemMap["productName"] as? String ?: "",
+                    quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 1,
+                    unitPrice = (itemMap["unitPrice"] as? Number)?.toDouble() ?: 0.0,
+                    subtotal = (itemMap["subtotal"] as? Number)?.toDouble() ?: 0.0
+                )
+            } else null
+        } ?: emptyList(),
+        totalAmount = getDouble(map, "totalAmount"),
+        cashReceived = getDouble(map, "cashReceived"),
+        changeAmount = getDouble(map, "changeAmount"),
+        dateMillis = getLong(map, "dateMillis", System.currentTimeMillis()),
+        isDteIssued = getBoolean(map, "isDteIssued"),
+        dteGenerationCode = map["dteGenerationCode"] as? String,
+        dteReceptionSeal = map["dteReceptionSeal"] as? String,
+        dteControlNumber = map["dteControlNumber"] as? String,
+        dteType = map["dteType"] as? String,
+        shiftId = map["shiftId"] as? String,
+        cashierId = getString(map, "cashierId"),
+        cashierName = getString(map, "cashierName"),
+        isVoided = getBoolean(map, "isVoided"),
+        voidReason = map["voidReason"] as? String,
+        voidedAtMillis = map["voidedAtMillis"] as? Long,
+        contingencyMode = getBoolean(map, "contingencyMode"),
+        isCredit = getBoolean(map, "isCredit"),
+        creditDueDateMillis = map["creditDueDateMillis"] as? Long,
+        paidAmount = getDouble(map, "paidAmount"),
+        remainingBalance = getDouble(map, "remainingBalance"),
+        creditStatus = try { CreditStatus.valueOf(getString(map, "creditStatus", "UNPAID")) } catch(e: Exception) { CreditStatus.UNPAID }
+    )
+
+    fun deserializePurchase(map: Map<String, Any?>): Purchase = Purchase(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        supplierId = getString(map, "supplierId"),
+        supplierName = getString(map, "supplierName"),
+        dateMillis = getLong(map, "dateMillis", System.currentTimeMillis()),
+        items = (map["items"] as? List<*>)?.mapNotNull { itemMap ->
+            if (itemMap is Map<*, *>) {
+                PurchaseItem(
+                    productId = itemMap["productId"] as? String ?: "",
+                    productName = itemMap["productName"] as? String ?: "",
+                    quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 1,
+                    unitCost = (itemMap["unitCost"] as? Number)?.toDouble() ?: 0.0
+                )
+            } else null
+        } ?: emptyList(),
+        totalCost = getDouble(map, "totalCost"),
+        registeredByUserName = getString(map, "registeredByUserName"),
+        isAutoSystemPurchase = getBoolean(map, "isAutoSystemPurchase")
+    )
+
+    fun deserializeInventoryOutflow(map: Map<String, Any?>): InventoryOutflow = InventoryOutflow(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        reason = try { OutflowReason.valueOf(getString(map, "reason", "CONSUMO_INTERNO")) } catch(e: Exception) { OutflowReason.CONSUMO_INTERNO },
+        registeredByUserId = getString(map, "registeredByUserId"),
+        registeredByUserName = getString(map, "registeredByUserName"),
+        notes = getString(map, "notes"),
+        items = (map["items"] as? List<*>)?.mapNotNull { itemMap ->
+            if (itemMap is Map<*, *>) {
+                OutflowItem(
+                    productId = itemMap["productId"] as? String ?: "",
+                    productName = itemMap["productName"] as? String ?: "",
+                    quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 1,
+                    unitCost = (itemMap["unitCost"] as? Number)?.toDouble() ?: 0.0
+                )
+            } else null
+        } ?: emptyList(),
+        totalCost = getDouble(map, "totalCost"),
+        dateMillis = getLong(map, "dateMillis", System.currentTimeMillis())
+    )
+
+    fun deserializeProductReturn(map: Map<String, Any?>): ProductReturn = ProductReturn(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        originalSaleId = getString(map, "originalSaleId"),
+        customerId = map["customerId"] as? String,
+        customerName = getString(map, "customerName"),
+        reason = try { ReturnReason.valueOf(getString(map, "reason", "DEFECTIVE")) } catch(e: Exception) { ReturnReason.DEFECTIVE },
+        notes = getString(map, "notes"),
+        items = (map["items"] as? List<*>)?.mapNotNull { itemMap ->
+            if (itemMap is Map<*, *>) {
+                ReturnItem(
+                    productId = itemMap["productId"] as? String ?: "",
+                    productName = itemMap["productName"] as? String ?: "",
+                    quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 1,
+                    unitPrice = (itemMap["unitPrice"] as? Number)?.toDouble() ?: 0.0,
+                    refundSubtotal = (itemMap["refundSubtotal"] as? Number)?.toDouble() ?: 0.0
+                )
+            } else null
+        } ?: emptyList(),
+        totalRefundAmount = getDouble(map, "totalRefundAmount"),
+        refundMethod = getString(map, "refundMethod", "Efectivo"),
+        cashierId = getString(map, "cashierId"),
+        cashierName = getString(map, "cashierName"),
+        dateMillis = getLong(map, "dateMillis", System.currentTimeMillis())
+    )
+
+    fun deserializeCustomerPayment(map: Map<String, Any?>): CustomerPayment = CustomerPayment(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        customerId = getString(map, "customerId"),
+        customerName = getString(map, "customerName"),
+        saleId = map["saleId"] as? String,
+        amount = getDouble(map, "amount"),
+        paymentMethodName = getString(map, "paymentMethodName", "Efectivo"),
+        notes = map["notes"] as? String,
+        dateMillis = getLong(map, "dateMillis", System.currentTimeMillis())
+    )
+
+    fun deserializeExpense(map: Map<String, Any?>): Expense = Expense(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        shiftId = map["shiftId"] as? String,
+        cashierId = getString(map, "cashierId"),
+        cashierName = getString(map, "cashierName"),
+        category = getString(map, "category"),
+        description = getString(map, "description"),
+        amount = getDouble(map, "amount"),
+        dateMillis = getLong(map, "dateMillis", System.currentTimeMillis())
+    )
+
+    fun deserializePriceRule(map: Map<String, Any?>): PriceRule = PriceRule(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        name = getString(map, "name"),
+        baseVariable = try { BaseVariable.valueOf(getString(map, "baseVariable", "PRICE")) } catch(e: Exception) { BaseVariable.PRICE },
+        operator = try { ArithmeticOperator.valueOf(getString(map, "operator", "MULTIPLY")) } catch(e: Exception) { ArithmeticOperator.MULTIPLY },
+        value = getDouble(map, "value"),
+        applyToAllCategories = getBoolean(map, "applyToAllCategories", true),
+        categoryNames = (map["categoryNames"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+        applyToAllCustomers = getBoolean(map, "applyToAllCustomers", true),
+        customerIds = (map["customerIds"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+        applyToBundles = getBoolean(map, "applyToBundles"),
+        applyToServices = getBoolean(map, "applyToServices"),
+        applyToAlreadyDiscounted = getBoolean(map, "applyToAlreadyDiscounted"),
+        isActive = getBoolean(map, "isActive", true)
+    )
+
+    fun deserializePaymentMethod(map: Map<String, Any?>): PaymentMethod = PaymentMethod(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        name = getString(map, "name"),
+        isDefault = getBoolean(map, "isDefault"),
+        isSystemDefault = getBoolean(map, "isSystemDefault")
+    )
+
+    fun deserializeUser(map: Map<String, Any?>): User = User(
+        id = getString(map, "id", java.util.UUID.randomUUID().toString()),
+        name = getString(map, "name"),
+        username = getString(map, "username"),
+        email = getString(map, "email"),
+        pin = getString(map, "pin"),
+        passwordHash = getString(map, "passwordHash"),
+        role = try { Role.valueOf(getString(map, "role", "CASHIER")) } catch(e: Exception) { Role.CASHIER },
+        isActive = getBoolean(map, "isActive", true)
+    )
+
+    fun deserializeBusinessInfo(map: Map<String, Any?>, context: Context? = null): BusinessInfo {
+        val rawLogoUri = map["logoUri"] as? String
+        val finalLogoUri = if (context != null && !rawLogoUri.isNullOrBlank()) {
+            if (!rawLogoUri.startsWith("file://") && !rawLogoUri.startsWith("content://")) {
+                ImageUtils.base64ToInternalFileUri(context, rawLogoUri, "business_logo.jpg") ?: rawLogoUri
+            } else {
+                rawLogoUri
+            }
+        } else {
+            rawLogoUri
+        }
+
+        return BusinessInfo(
+            name = getString(map, "name", "Mi Negocio"),
+            nit = getString(map, "nit"),
+            nrc = getString(map, "nrc"),
+            address = getString(map, "address"),
+            phone = getString(map, "phone"),
+            email = getString(map, "email"),
+            socialMedia = getString(map, "socialMedia"),
+            commercialName = getString(map, "commercialName"),
+            logoUri = finalLogoUri
+        )
+    }
+
+    fun deserializeTicketConfig(map: Map<String, Any?>): TicketConfig = TicketConfig(
+        showBusinessName = getBoolean(map, "showBusinessName", true),
+        showNit = getBoolean(map, "showNit", true),
+        showNrc = getBoolean(map, "showNrc", true),
+        showAddress = getBoolean(map, "showAddress", true),
+        showPhone = getBoolean(map, "showPhone", true),
+        showSocialMedia = getBoolean(map, "showSocialMedia", true),
+        showLogo = getBoolean(map, "showLogo", true),
+        footerMessage = getString(map, "footerMessage", "¡Gracias por su compra! Vuelva pronto."),
+        paperSize = try { TicketPaperSize.valueOf(getString(map, "paperSize", "SIZE_80MM")) } catch(e: Exception) { TicketPaperSize.SIZE_80MM }
+    )
+
+    fun deserializeElectronicBillingConfig(map: Map<String, Any?>): ElectronicBillingConfig = ElectronicBillingConfig(
+        isEnabled = getBoolean(map, "isEnabled", true),
+        environment = try { DteEnvironment.valueOf(getString(map, "environment", "SANDBOX")) } catch(e: Exception) { DteEnvironment.SANDBOX },
+        nit = getString(map, "nit"),
+        apiToken = getString(map, "apiToken"),
+        establishmentCode = getString(map, "establishmentCode", "0001"),
+        posCode = getString(map, "posCode", "0001"),
+        economicActivity = getString(map, "economicActivity"),
+        certificatePassword = getString(map, "certificatePassword"),
+        certificateUri = map["certificateUri"] as? String,
+        certificateFileName = map["certificateFileName"] as? String,
+        isSimulationMode = getBoolean(map, "isSimulationMode")
+    )
+
+    fun deserializeBluetoothPrinterConfig(map: Map<String, Any?>): BluetoothPrinterConfig = BluetoothPrinterConfig(
+        macAddress = map["macAddress"] as? String,
+        deviceName = map["deviceName"] as? String,
+        paperWidthMm = getInt(map, "paperWidthMm", 80),
+        isConnected = getBoolean(map, "isConnected"),
+        autoPrintSales = getBoolean(map, "autoPrintSales", true)
+    )
+
+    suspend fun fetchInitialDataFromCloud(repository: AppRepository, context: Context? = null): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            _isSyncing.value = true
+            try {
+                val ctx = context ?: repository.getAppContext()
+                val db = FirebaseFirestore.getInstance()
+
+                val productsDoc = Tasks.await(db.collection("products").get())
+                repository.setProducts(productsDoc.documents.mapNotNull { it.data?.let { data -> deserializeProduct(data, ctx) } })
+
+                val categoriesDoc = Tasks.await(db.collection("categories").get())
+                repository.setCategories(categoriesDoc.documents.mapNotNull { it.data?.let { data -> deserializeCategory(data) } })
+
+                val brandsDoc = Tasks.await(db.collection("brands").get())
+                repository.setBrands(brandsDoc.documents.mapNotNull { it.data?.let { data -> deserializeBrand(data, ctx) } })
+
+                val unitsDoc = Tasks.await(db.collection("unitsOfMeasure").get())
+                repository.setUnitsOfMeasure(unitsDoc.documents.mapNotNull { it.data?.let { data -> deserializeUnitOfMeasure(data) } })
+
+                val taxesDoc = Tasks.await(db.collection("taxes").get())
+                repository.setTaxes(taxesDoc.documents.mapNotNull { it.data?.let { data -> deserializeTax(data) } })
+
+                val suppliersDoc = Tasks.await(db.collection("suppliers").get())
+                repository.setSuppliers(suppliersDoc.documents.mapNotNull { it.data?.let { data -> deserializeSupplier(data, ctx) } })
+
+                val customersDoc = Tasks.await(db.collection("customers").get())
+                repository.setCustomers(customersDoc.documents.mapNotNull { it.data?.let { data -> deserializeCustomer(data) } })
+
+                val salesDoc = Tasks.await(db.collection("sales").get())
+                repository.setSales(salesDoc.documents.mapNotNull { it.data?.let { data -> deserializeSale(data) } })
+
+                val purchasesDoc = Tasks.await(db.collection("purchases").get())
+                repository.setPurchases(purchasesDoc.documents.mapNotNull { it.data?.let { data -> deserializePurchase(data) } })
+
+                val inventoryOutflowsDoc = Tasks.await(db.collection("inventoryOutflows").get())
+                repository.setInventoryOutflows(inventoryOutflowsDoc.documents.mapNotNull { it.data?.let { data -> deserializeInventoryOutflow(data) } })
+
+                val productReturnsDoc = Tasks.await(db.collection("productReturns").get())
+                repository.setProductReturns(productReturnsDoc.documents.mapNotNull { it.data?.let { data -> deserializeProductReturn(data) } })
+
+                val customerPaymentsDoc = Tasks.await(db.collection("customerPayments").get())
+                repository.setCustomerPayments(customerPaymentsDoc.documents.mapNotNull { it.data?.let { data -> deserializeCustomerPayment(data) } })
+
+                val expensesDoc = Tasks.await(db.collection("expenses").get())
+                repository.setExpenses(expensesDoc.documents.mapNotNull { it.data?.let { data -> deserializeExpense(data) } })
+
+                val priceRulesDoc = Tasks.await(db.collection("priceRules").get())
+                repository.setPriceRules(priceRulesDoc.documents.mapNotNull { it.data?.let { data -> deserializePriceRule(data) } })
+
+                val paymentMethodsDoc = Tasks.await(db.collection("paymentMethods").get())
+                repository.setPaymentMethods(paymentMethodsDoc.documents.mapNotNull { it.data?.let { data -> deserializePaymentMethod(data) } })
+
+                val usersDoc = Tasks.await(db.collection("users").get())
+                repository.setUsers(usersDoc.documents.mapNotNull { it.data?.let { data -> deserializeUser(data) } })
+
+                val settingsBusiness = Tasks.await(db.collection("settings").document("businessInfo").get())
+                if (settingsBusiness.exists()) {
+                    settingsBusiness.data?.let { repository.setBusinessInfo(deserializeBusinessInfo(it, ctx)) }
+                }
+
+                val settingsTicket = Tasks.await(db.collection("settings").document("ticketConfig").get())
+                if (settingsTicket.exists()) {
+                    settingsTicket.data?.let { repository.setTicketConfig(deserializeTicketConfig(it)) }
+                }
+
+                val settingsElectronic = Tasks.await(db.collection("settings").document("electronicBillingConfig").get())
+                if (settingsElectronic.exists()) {
+                    settingsElectronic.data?.let { repository.setElectronicBillingConfig(deserializeElectronicBillingConfig(it)) }
+                }
+
+                val settingsBluetooth = Tasks.await(db.collection("settings").document("bluetoothPrinterConfig").get())
+                if (settingsBluetooth.exists()) {
+                    settingsBluetooth.data?.let { repository.setBluetoothPrinterConfig(deserializeBluetoothPrinterConfig(it)) }
+                }
+
+                _lastSyncTimestampMillis.value = System.currentTimeMillis()
+                _syncStatus.value = SyncStatus.SYNCED
+                _isSyncing.value = false
+                Result.success(Unit)
+            } catch (e: Exception) {
+                _syncStatus.value = SyncStatus.SYNC_ERROR
+                _isSyncing.value = false
+                Result.failure(e)
+            }
+        }
+
+    suspend fun performInitialSync(repository: AppRepository, context: Context? = null): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            _isSyncing.value = true
+            try {
+                val ctx = context ?: repository.getAppContext()
+                val db = FirebaseFirestore.getInstance()
+                
+                val usersDoc = Tasks.await(db.collection("users").limit(1).get())
+                val businessDoc = Tasks.await(db.collection("settings").document("businessInfo").get())
+                
+                val hasCloudData = !usersDoc.isEmpty || businessDoc.exists()
+                
+                if (hasCloudData) {
+                    val fetchResult = fetchInitialDataFromCloud(repository, ctx)
+                    if (fetchResult.isFailure) throw fetchResult.exceptionOrNull()!!
+                } else {
+                    val uploadResult = uploadLocalDataToCloud(repository, ctx)
+                    if (uploadResult.isFailure) throw uploadResult.exceptionOrNull()!!
+                }
+                
+                Result.success(Unit)
+            } catch (e: Exception) {
+                // Ignore test fallback if needed, but normally handled in uploadLocalDataToCloud/fetchInitialDataFromCloud
+                _syncStatus.value = SyncStatus.SYNC_ERROR
+                _isSyncing.value = false
+                Result.failure(e)
+            }
+        }
+
+    suspend fun deleteDocumentFromCloud(collectionName: String, documentId: String) = withContext(Dispatchers.IO) {
+        try {
+            val db = FirebaseFirestore.getInstance()
+            Tasks.await(db.collection(collectionName).document(documentId).delete())
+            println("FirebaseSyncService: Deleted $documentId from $collectionName in Cloud Firestore")
+        } catch (e: Exception) {
+            println("FirebaseSyncService: Failed to delete document from cloud: ${e.message}")
+        }
     }
 
     fun resetState() {

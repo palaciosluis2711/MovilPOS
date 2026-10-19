@@ -1,6 +1,7 @@
 package com.lopezapp.movilpos.ui
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,7 +11,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -29,9 +29,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.PopupProperties
 import com.lopezapp.movilpos.data.model.BatchLabelItem
 import com.lopezapp.movilpos.data.model.LabelSize
 import com.lopezapp.movilpos.data.model.PrintMode
+import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
+import com.lopezapp.movilpos.ui.components.CompactSearchBar
 import com.lopezapp.movilpos.ui.viewmodel.BarcodeLabelViewModel
 import com.lopezapp.movilpos.ui.viewmodel.SettingsViewModel
 import com.lopezapp.movilpos.util.formatCurrency
@@ -59,7 +62,8 @@ fun BarcodeLabelScreen(
     val coroutineScope = rememberCoroutineScope()
 
     var currentStep by remember { mutableStateOf(1) }
-    var showProductPicker by remember { mutableStateOf(false) }
+    var showBarcodeScanner by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     var showSaveCustomSizeDialog by remember { mutableStateOf(false) }
     var showClearBatchDialog by remember { mutableStateOf(false) }
     var customSizeNameInput by remember { mutableStateOf("") }
@@ -245,72 +249,153 @@ fun BarcodeLabelScreen(
                     // Step 1: Product Selection & Quantities
                     Column(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Selección de Productos",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Button(
-                                    onClick = { showProductPicker = true }
-                                ) {
-                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Añadir")
+                        // Search bar with compact dropdown popup
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            CompactSearchBar(
+                                query = searchQuery,
+                                onQueryChange = { searchQuery = it },
+                                placeholder = "Buscar producto por nombre o código...",
+                                onScanBarcodeClick = { showBarcodeScanner = true },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            val matchingProducts = remember(products, searchQuery) {
+                                if (searchQuery.isBlank()) emptyList()
+                                else products.filter { product ->
+                                    product.name.contains(searchQuery, ignoreCase = true) ||
+                                            (product.barcode?.contains(searchQuery, ignoreCase = true) == true) ||
+                                            (product.differentiator?.contains(searchQuery, ignoreCase = true) == true) ||
+                                            product.tags.any { tag -> tag.contains(searchQuery, ignoreCase = true) }
                                 }
                             }
 
-                            if (batchItems.isEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "No hay productos en el lote. Haga clic en 'Añadir' para seleccionar productos del inventario.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign = TextAlign.Center
+                            DropdownMenu(
+                                expanded = searchQuery.isNotBlank(),
+                                onDismissRequest = { searchQuery = "" },
+                                properties = PopupProperties(focusable = false),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 280.dp)
+                            ) {
+                                if (matchingProducts.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "No se encontraron productos",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        onClick = { }
                                     )
-                                }
-                            } else {
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(batchItems) { item ->
-                                        BatchItemRow(
-                                            item = item,
-                                            onQuantityChange = { qty -> viewModel.updateItemQuantity(item.productId, qty) },
-                                            onDeleteClick = { viewModel.removeItem(item.productId) }
+                                } else {
+                                    matchingProducts.forEach { product ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(
+                                                        text = product.displayName,
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                    Text(
+                                                        text = "Cod: ${product.barcode ?: "N/D"} | Stock: ${product.stock} | ${formatCurrency(product.price)}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            },
+                                            trailingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Add,
+                                                    contentDescription = "Añadir a lote",
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            },
+                                            onClick = {
+                                                viewModel.addProductToBatch(product, 1)
+                                                snackbarMessage = "Agregado: ${product.displayName}"
+                                                searchQuery = ""
+                                            }
                                         )
                                     }
                                 }
                             }
                         }
+
+                        // Selected Batch Items (Main body)
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Productos en el Lote (${batchItems.sumOf { it.quantity }})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                if (batchItems.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.padding(16.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.QrCode2,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(48.dp),
+                                                tint = MaterialTheme.colorScheme.outline
+                                            )
+                                            Text(
+                                                text = "El lote está vacío",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            Text(
+                                                text = "Use el buscador arriba o escanee un código de barras para agregar productos al lote de impresión.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.outline,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(batchItems, key = { it.productId }) { item ->
+                                            BatchItemRow(
+                                                item = item,
+                                                onQuantityChange = { qty -> viewModel.updateItemQuantity(item.productId, qty) },
+                                                onDeleteClick = { viewModel.removeItem(item.productId) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
-            } else {
+                } else {
                 // Step 2: Label Configuration (Clean view without live preview)
                 Column(
                     modifier = Modifier
@@ -597,110 +682,34 @@ fun BarcodeLabelScreen(
         }
     }
 
-    // Product Picker Dialog
-    if (showProductPicker) {
-        var searchQuery by remember { mutableStateOf("") }
-        Dialog(onDismissRequest = { showProductPicker = false }) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.8f),
-                shape = RoundedCornerShape(16.dp),
-                tonalElevation = 8.dp
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Seleccionar Producto",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        IconButton(onClick = { showProductPicker = false }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Cerrar")
-                        }
+    // Barcode Scanner Dialog
+    if (showBarcodeScanner) {
+        BarcodeScannerDialog(
+            onDismissRequest = { showBarcodeScanner = false },
+            onBarcodeScanned = { scannedCode ->
+                val trimmedCode = scannedCode.trim()
+                val matchingProduct = if (trimmedCode.isNotEmpty()) {
+                    products.find { product ->
+                        product.barcode?.trim().equals(trimmedCode, ignoreCase = true) ||
+                                product.id.trim().equals(trimmedCode, ignoreCase = true)
                     }
+                } else {
+                    null
+                }
 
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        label = { Text("Buscar producto...") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    val filteredProducts = remember(products, searchQuery) {
-                        if (searchQuery.isBlank()) products
-                        else products.filter {
-                            it.name.contains(searchQuery, ignoreCase = true) ||
-                                    (it.barcode?.contains(searchQuery, ignoreCase = true) == true) ||
-                                    (it.differentiator?.contains(searchQuery, ignoreCase = true) == true) ||
-                                    it.tags.any { tag -> tag.contains(searchQuery, ignoreCase = true) }
-                        }
-                    }
-
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(filteredProducts) { product ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.addProductToBatch(product, 1)
-                                        snackbarMessage = "Agregado: ${product.displayName}"
-                                    },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                                )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = product.displayName, fontWeight = FontWeight.Bold)
-                                        Text(
-                                            text = "Cod: ${product.barcode ?: "N/D"} | Stock: ${product.stock}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Text(
-                                        text = formatCurrency(product.price),
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = { showProductPicker = false },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Listo")
-                    }
+                if (matchingProduct != null) {
+                    viewModel.addProductToBatch(matchingProduct, 1)
+                    searchQuery = ""
+                    Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
+                } else {
+                    searchQuery = scannedCode
+                    Toast.makeText(context, "No se encontró producto con el código: $scannedCode", Toast.LENGTH_SHORT).show()
                 }
             }
-        }
+        )
     }
+
+
 
     // Save Custom Size Dialog
     if (showSaveCustomSizeDialog) {

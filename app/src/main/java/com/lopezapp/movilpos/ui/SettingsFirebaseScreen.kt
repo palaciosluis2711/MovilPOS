@@ -19,7 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
@@ -388,21 +389,21 @@ fun SettingsFirebaseScreen(
                 }
             }
 
-            // 4. Button "Sincronizar Ahora"
+            // 4. Button "Descargar de la Nube"
             Button(
                 onClick = {
                     coroutineScope.launch {
-                        val result = FirebaseSyncService.syncAllCollections(repository)
+                        val result = FirebaseSyncService.fetchInitialDataFromCloud(repository)
                         if (result.isSuccess) {
                             Toast.makeText(
                                 context,
-                                "Sincronización con la Nube completada exitosamente",
+                                "Datos descargados de la nube exitosamente",
                                 Toast.LENGTH_SHORT
                             ).show()
                         } else {
                             Toast.makeText(
                                 context,
-                                "Error al sincronizar con la Nube: ${result.exceptionOrNull()?.localizedMessage ?: "Error desconocido"}",
+                                "Error al descargar datos: ${result.exceptionOrNull()?.localizedMessage ?: "Error desconocido"}",
                                 Toast.LENGTH_LONG
                             ).show()
                         }
@@ -428,13 +429,68 @@ fun SettingsFirebaseScreen(
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Default.CloudSync,
-                        contentDescription = "Sincronizar Ahora",
+                        imageVector = Icons.Default.CloudDownload,
+                        contentDescription = "Descargar de la Nube",
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Sincronizar Ahora",
+                        text = "Descargar de la Nube",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 5. Button "Subir a la Nube"
+            Button(
+                onClick = {
+                    coroutineScope.launch {
+                        val result = FirebaseSyncService.uploadLocalDataToCloud(repository)
+                        if (result.isSuccess) {
+                            Toast.makeText(
+                                context,
+                                "Datos subidos a la nube exitosamente",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Error al subir datos: ${result.exceptionOrNull()?.localizedMessage ?: "Error desconocido"}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                },
+                enabled = !isSyncing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                if (isSyncing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.5.dp
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Sincronizando...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.CloudUpload,
+                        contentDescription = "Subir a la Nube",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Subir a la Nube",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )

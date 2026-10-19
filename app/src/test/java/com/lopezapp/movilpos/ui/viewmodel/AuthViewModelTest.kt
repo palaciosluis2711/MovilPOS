@@ -107,11 +107,14 @@ class AuthViewModelTest {
         assertNotNull(viewModel.authSession.value)
 
         viewModel.logout()
-        var timeout = 0
-        while(viewModel.authSession.value != null && timeout < 200) {
-            kotlinx.coroutines.delay(10)
-            timeout++
+        // Wait for IO dispatcher
+        testScheduler.advanceUntilIdle()
+        var attempts = 0
+        while (viewModel.isLoggingOut.value && attempts < 100) {
+            Thread.sleep(10)
+            attempts++
         }
+        testScheduler.advanceUntilIdle()
 
         assertNull(viewModel.authSession.value)
         assertEquals("", viewModel.loginUsernameStr.value)

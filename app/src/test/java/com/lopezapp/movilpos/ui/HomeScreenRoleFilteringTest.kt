@@ -108,11 +108,13 @@ class HomeScreenRoleFilteringTest {
         assertNotNull(authViewModel.authSession.value)
 
         authViewModel.logout()
-        var timeout = 0
-        while(authViewModel.authSession.value != null && timeout < 200) {
-            kotlinx.coroutines.delay(10)
-            timeout++
+        var attempts = 0
+        testScheduler.advanceUntilIdle()
+        while (authViewModel.isLoggingOut.value && attempts < 100) {
+            Thread.sleep(10)
+            attempts++
         }
+        testScheduler.advanceUntilIdle()
 
         assertNull(authViewModel.authSession.value)
     }

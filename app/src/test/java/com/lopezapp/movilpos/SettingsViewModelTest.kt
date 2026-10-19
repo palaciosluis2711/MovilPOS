@@ -654,4 +654,61 @@ class SettingsViewModelTest {
             assertNotNull(popTransition)
         }
     }
+
+    @Test
+    fun deleteCategories_bulkDeletesCategories() = runTest {
+        val initialCategories = viewModel.uiState.value.categories
+        val idsToDelete = initialCategories.map { it.id }.toSet()
+
+        viewModel.deleteCategories(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.categories.size)
+    }
+
+    @Test
+    fun deleteBrands_bulkDeletesBrands() = runTest {
+        val initialBrands = viewModel.uiState.value.brands
+        val idsToDelete = initialBrands.map { it.id }.toSet()
+
+        viewModel.deleteBrands(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.brands.size)
+    }
+
+    @Test
+    fun deleteUnitsOfMeasure_bulkDeletesUnits() = runTest {
+        val initialUnits = viewModel.uiState.value.unitsOfMeasure
+        val idsToDelete = initialUnits.map { it.id }.toSet()
+
+        viewModel.deleteUnitsOfMeasure(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.unitsOfMeasure.size)
+    }
+
+    @Test
+    fun deleteTaxes_bulkDeletesTaxes() = runTest {
+        val initialTaxes = viewModel.uiState.value.taxes
+        val idsToDelete = initialTaxes.map { it.id }.toSet()
+
+        viewModel.deleteTaxes(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.taxes.size)
+    }
+
+    @Test
+    fun deletePaymentMethods_bulkDeletesNonSystemDefaultPaymentMethods() = runTest {
+        val initialMethods = viewModel.uiState.value.paymentMethods
+        val idsToDelete = initialMethods.map { it.id }.toSet()
+
+        viewModel.deletePaymentMethods(idsToDelete)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // System default payment methods are preserved
+        val remainingMethods = viewModel.uiState.value.paymentMethods
+        assertTrue(remainingMethods.all { it.isSystemDefault })
+    }
 }

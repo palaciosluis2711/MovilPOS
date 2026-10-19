@@ -1,12 +1,19 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.util.ImageUtils
+import androidx.compose.ui.platform.LocalContext
 import com.lopezapp.movilpos.ui.components.CompactSearchBar
+import com.lopezapp.movilpos.ui.components.MultiSelectionTopAppBar
+import com.lopezapp.movilpos.ui.components.BulkDeleteConfirmationDialog
+import androidx.compose.material3.Checkbox
 
 import android.net.Uri
 import com.lopezapp.movilpos.util.PhoneVisualTransformation
 import com.lopezapp.movilpos.util.formatPhone
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
@@ -54,6 +62,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
@@ -65,6 +74,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -159,7 +169,7 @@ fun SupplierScreen(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SupplierListScreen(
     viewModel: SupplierViewModel,
@@ -170,31 +180,46 @@ fun SupplierListScreen(
 ) {
     val suppliers by viewModel.suppliers.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Proveedores") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver"
-                        )
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = suppliers.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Proveedores") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver"
+                            )
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddSupplier,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Agregar Proveedor"
-                )
+            if (selectedIds.isEmpty()) {
+                FloatingActionButton(
+                    onClick = onAddSupplier,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Agregar Proveedor"
+                    )
+                }
             }
         },
         modifier = modifier
@@ -246,9 +271,25 @@ fun SupplierListScreen(
                         .weight(1f)
                 ) {
                     items(suppliers, key = { it.id }) { supplier ->
+                        val isSelected = selectedIds.contains(supplier.id)
                         SupplierCard(
                             supplier = supplier,
-                            onClick = { onSupplierClick(supplier) }
+                            isSelected = isSelected,
+                            onClick = {
+                                if (selectedIds.isNotEmpty()) {
+                                    selectedIds = if (isSelected) selectedIds - supplier.id else selectedIds + supplier.id
+                                } else {
+                                    onSupplierClick(supplier)
+                                }
+                            },
+                            onToggleSelect = {
+                                selectedIds = if (isSelected) selectedIds - supplier.id else selectedIds + supplier.id
+                            },
+                            onLongClick = {
+                                if (selectedIds.isEmpty()) {
+                                    selectedIds = selectedIds + supplier.id
+                                }
+                            }
                         )
                     }
                     item {
@@ -257,18 +298,42 @@ fun SupplierListScreen(
                 }
             }
         }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.deleteSuppliers(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SupplierCard(
     supplier: Supplier,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
+    onToggleSelect: () -> Unit = onClick,
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     ElevatedCard(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CardDefaults.elevatedShape)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+        )
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -276,6 +341,11 @@ fun SupplierCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggleSelect() }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             SupplierAvatar(
                 logoUri = supplier.logoUri,
                 supplierName = supplier.name,
@@ -537,12 +607,14 @@ fun SupplierEditForm(
     }
 
     var isNameError by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            logoUri = uri.toString()
+            val internalUri = ImageUtils.copyUriToInternalStorage(context, uri, "suppliers")
+            logoUri = internalUri?.toString() ?: uri.toString()
         }
     }
 

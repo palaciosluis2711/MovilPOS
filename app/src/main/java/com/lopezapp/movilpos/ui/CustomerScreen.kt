@@ -1,12 +1,21 @@
 package com.lopezapp.movilpos.ui
 
 import com.lopezapp.movilpos.ui.components.CompactSearchBar
+import com.lopezapp.movilpos.ui.components.MultiSelectionTopAppBar
+import com.lopezapp.movilpos.ui.components.BulkDeleteConfirmationDialog
+import androidx.compose.material3.Checkbox
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,7 +56,9 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -185,7 +196,7 @@ fun CustomerScreen(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun CustomerListScreen(
     viewModel: CustomerViewModel,
@@ -197,30 +208,45 @@ fun CustomerListScreen(
     val customers by viewModel.customers.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
 
+    var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Clientes") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver"
-                        )
+            if (selectedIds.isNotEmpty()) {
+                MultiSelectionTopAppBar(
+                    selectedCount = selectedIds.size,
+                    onClearSelection = { selectedIds = emptySet() },
+                    onSelectAll = { selectedIds = customers.map { it.id }.toSet() },
+                    onDeselectAll = { selectedIds = emptySet() },
+                    onDeleteSelected = { showBulkDeleteDialog = true }
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Clientes") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver"
+                            )
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddCustomer,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Agregar Cliente"
-                )
+            if (selectedIds.isEmpty()) {
+                FloatingActionButton(
+                    onClick = onAddCustomer,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Agregar Cliente"
+                    )
+                }
             }
         },
         modifier = modifier
@@ -272,9 +298,25 @@ fun CustomerListScreen(
                         .weight(1f)
                 ) {
                     items(customers, key = { it.id }) { customer ->
+                        val isSelected = selectedIds.contains(customer.id)
                         CustomerCard(
                             customer = customer,
-                            onClick = { onCustomerClick(customer) }
+                            isSelected = isSelected,
+                            onClick = {
+                                if (selectedIds.isNotEmpty()) {
+                                    selectedIds = if (isSelected) selectedIds - customer.id else selectedIds + customer.id
+                                } else {
+                                    onCustomerClick(customer)
+                                }
+                            },
+                            onToggleSelect = {
+                                selectedIds = if (isSelected) selectedIds - customer.id else selectedIds + customer.id
+                            },
+                            onLongClick = {
+                                if (selectedIds.isEmpty()) {
+                                    selectedIds = selectedIds + customer.id
+                                }
+                            }
                         )
                     }
                     item {
@@ -283,18 +325,42 @@ fun CustomerListScreen(
                 }
             }
         }
+        
+        if (showBulkDeleteDialog) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = selectedIds.size,
+                onConfirm = {
+                    viewModel.deleteCustomers(selectedIds)
+                    selectedIds = emptySet()
+                    showBulkDeleteDialog = false
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CustomerCard(
     customer: Customer,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
+    onToggleSelect: () -> Unit = onClick,
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     ElevatedCard(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CardDefaults.elevatedShape)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+        )
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -302,6 +368,11 @@ fun CustomerCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggleSelect() }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             CustomerAvatar(
                 name = customer.name,
                 size = 48

@@ -77,6 +77,22 @@ class QuotationViewModelTest {
     }
 
     @Test
+    fun addDraftItem_prependsNewItemsToDraftList() = runTest {
+        val products = repository.products.value
+        val p1 = products[0]
+        val p2 = products[1]
+
+        viewModel.addDraftItem(p1, 1)
+        viewModel.addDraftItem(p2, 1)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val draftItems = viewModel.draftItems.value
+        assertEquals(2, draftItems.size)
+        assertEquals(p2.id, draftItems[0].productId)
+        assertEquals(p1.id, draftItems[1].productId)
+    }
+
+    @Test
     fun updateDraftItemQuantityAndUnitPrice_calculatesTotalAmountCorrectly() = runTest {
         val product = repository.products.value.first()
         viewModel.addProductToDraft(product)

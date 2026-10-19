@@ -286,25 +286,28 @@ class QuotationViewModel(
         _expirationDateMillis.value = calendar.timeInMillis
     }
 
-    fun addProductToDraft(product: Product) {
+    fun addDraftItem(product: Product, quantity: Int = 1) {
         val currentItems = _draftItems.value.toMutableList()
         val existingIndex = currentItems.indexOfFirst { it.productId == product.id }
         if (existingIndex >= 0) {
             val existing = currentItems[existingIndex]
-            currentItems[existingIndex] = existing.copy(quantity = existing.quantity + 1)
+            currentItems[existingIndex] = existing.copy(quantity = existing.quantity + quantity)
+            _draftItems.value = currentItems
         } else {
-            currentItems.add(
-                QuotationItem(
-                    productId = product.id,
-                    productName = product.name,
-                    quantity = 1,
-                    unitPrice = product.price,
-                    isDiscounted = false,
-                    appliedRuleName = null
-                )
+            val newItem = QuotationItem(
+                productId = product.id,
+                productName = product.name,
+                quantity = quantity,
+                unitPrice = product.price,
+                isDiscounted = false,
+                appliedRuleName = null
             )
+            _draftItems.value = listOf(newItem) + _draftItems.value
         }
-        _draftItems.value = currentItems
+    }
+
+    fun addProductToDraft(product: Product) {
+        addDraftItem(product, 1)
     }
 
     fun updateDraftItemQuantity(productId: String, quantity: Int) {
