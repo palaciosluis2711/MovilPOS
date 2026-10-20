@@ -154,4 +154,21 @@ object ImageUtils {
             }
         }
     }
+
+    /**
+     * Returns a safe model object (`File` for file:// URIs or local paths, `Uri` for content:// or web URLs)
+     * for Coil's AsyncImage to ensure local files load reliably across app restarts.
+     */
+    fun getModel(uriString: String?): Any? {
+        if (uriString.isNullOrBlank()) return null
+        return if (uriString.startsWith("file://")) {
+            File(uriString.removePrefix("file://"))
+        } else {
+            try {
+                Uri.parse(uriString)
+            } catch (e: Throwable) {
+                uriString
+            }
+        }
+    }
 }

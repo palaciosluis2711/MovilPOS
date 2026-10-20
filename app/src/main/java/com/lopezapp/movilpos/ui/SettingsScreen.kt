@@ -1246,7 +1246,7 @@ fun SettingsBrandsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             if (!brand.logoUri.isNullOrBlank()) {
                                 AsyncImage(
-                                    model = brand.logoUri,
+                                    model = ImageUtils.getModel(brand.logoUri),
                                     contentDescription = "Logo de ${brand.name}",
                                     modifier = Modifier
                                         .size(40.dp)
@@ -1339,7 +1339,7 @@ fun SettingsBrandsScreen(
                         ) {
                             if (!brandLogoUri.isNullOrBlank()) {
                                 AsyncImage(
-                                    model = brandLogoUri,
+                                    model = ImageUtils.getModel(brandLogoUri),
                                     contentDescription = "Logo de la marca",
                                     modifier = Modifier
                                         .size(56.dp)
@@ -2578,7 +2578,7 @@ fun SettingsBusinessInfoScreen(
 
                     if (!logoUri.isNullOrBlank()) {
                         AsyncImage(
-                            model = logoUri,
+                            model = ImageUtils.getModel(logoUri),
                             contentDescription = "Logo del Negocio",
                             modifier = Modifier
                                 .size(100.dp)
@@ -3035,7 +3035,7 @@ fun SettingsTicketScreen(
                             if (showLogo) {
                                 if (!businessInfo.logoUri.isNullOrBlank()) {
                                     AsyncImage(
-                                        model = businessInfo.logoUri,
+                                        model = ImageUtils.getModel(businessInfo.logoUri),
                                         contentDescription = "Logo Ticket",
                                         modifier = Modifier
                                             .size(48.dp)

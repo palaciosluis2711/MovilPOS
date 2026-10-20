@@ -65,4 +65,24 @@ class ImageUtilsTest {
         assertEquals("Test Shop", deserialized.name)
         assertEquals("content://media/external/images/media/888", deserialized.logoUri)
     }
+
+    @Test
+    fun testGetModel_nullOrBlank_returnsNull() {
+        assertNull(ImageUtils.getModel(null))
+        assertNull(ImageUtils.getModel(""))
+        assertNull(ImageUtils.getModel("   "))
+    }
+
+    @Test
+    fun testGetModel_fileUri_returnsFile() {
+        val model = ImageUtils.getModel("file:///data/user/0/com.lopezapp.movilpos/files/app_images/products/img_123.jpg")
+        org.junit.Assert.assertTrue(model is File)
+        assertEquals(File("/data/user/0/com.lopezapp.movilpos/files/app_images/products/img_123.jpg"), model)
+    }
+
+    @Test
+    fun testGetModel_otherUri_returnsStringOrUri() {
+        val model = ImageUtils.getModel("content://media/external/images/media/123")
+        org.junit.Assert.assertNotNull(model)
+    }
 }

@@ -1,5 +1,6 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.util.ImageUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -157,7 +158,7 @@ fun LoginScreenContent(
                     ) {
                         if (!businessInfo.logoUri.isNullOrBlank()) {
                             AsyncImage(
-                                model = businessInfo.logoUri,
+                                model = ImageUtils.getModel(businessInfo.logoUri),
                                 contentDescription = "Logo del negocio",
                                 modifier = Modifier
                                     .size(80.dp)

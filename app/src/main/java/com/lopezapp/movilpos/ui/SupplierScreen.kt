@@ -867,7 +867,7 @@ fun SupplierAvatar(
 ) {
     if (!logoUri.isNullOrBlank()) {
         AsyncImage(
-            model = logoUri,
+            model = ImageUtils.getModel(logoUri),
             contentDescription = supplierName,
             contentScale = ContentScale.Crop,
             modifier = modifier

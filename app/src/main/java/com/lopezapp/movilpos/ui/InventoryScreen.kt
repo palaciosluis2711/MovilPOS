@@ -632,7 +632,7 @@ fun ProductItemCard(
             Spacer(modifier = Modifier.width(8.dp))
             if (!product.imageUri.isNullOrBlank()) {
                 AsyncImage(
-                    model = product.imageUri,
+                    model = ImageUtils.getModel(product.imageUri),
                     contentDescription = "Foto de ${product.name}",
                     modifier = Modifier
                         .size(48.dp)
@@ -833,7 +833,7 @@ fun ProductReadOnlyView(
                 ) {
                     if (!product.imageUri.isNullOrBlank()) {
                         AsyncImage(
-                            model = product.imageUri,
+                            model = ImageUtils.getModel(product.imageUri),
                             contentDescription = "Foto de ${product.name}",
                             modifier = Modifier
                                 .size(76.dp)
@@ -1620,6 +1620,18 @@ fun ProductEditForm(
 
     val allProducts by viewModel.allProducts.collectAsState()
 
+    val isBarcodeDuplicate = remember(barcode, barcodeNotApplicable, allProducts, productId, product) {
+        if (barcodeNotApplicable || barcode.isBlank()) {
+            false
+        } else {
+            val trimmed = barcode.trim()
+            val currentId = product?.id ?: productId
+            allProducts.any { p ->
+                p.id != currentId && !p.barcode.isNullOrBlank() && p.barcode.trim().equals(trimmed, ignoreCase = true)
+            }
+        }
+    }
+
     var categoryExpanded by remember { mutableStateOf(false) }
     var brandExpanded by remember { mutableStateOf(false) }
     var unitExpanded by remember { mutableStateOf(false) }
@@ -1735,7 +1747,7 @@ fun ProductEditForm(
                             contentAlignment = Alignment.Center
                         ) {
                             AsyncImage(
-                                model = imageUri,
+                                model = ImageUtils.getModel(imageUri),
                                 contentDescription = "Vista previa de la imagen",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
@@ -1863,6 +1875,15 @@ fun ProductEditForm(
                     onValueChange = { barcode = it },
                     label = { Text("Código de barras") },
                     enabled = !barcodeNotApplicable,
+                    isError = isBarcodeDuplicate,
+                    supportingText = {
+                        if (isBarcodeDuplicate) {
+                            Text(
+                                text = "⚠️ Este código de barras ya está registrado en otro producto.",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
                     trailingIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(

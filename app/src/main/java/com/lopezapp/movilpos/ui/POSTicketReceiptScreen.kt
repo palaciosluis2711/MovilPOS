@@ -1,5 +1,6 @@
 package com.lopezapp.movilpos.ui
 
+import com.lopezapp.movilpos.util.ImageUtils
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -221,7 +222,7 @@ fun POSTicketReceiptScreen(
                             if (ticketConfig.showLogo) {
                                 if (!businessInfo.logoUri.isNullOrBlank()) {
                                     AsyncImage(
-                                        model = businessInfo.logoUri,
+                                        model = ImageUtils.getModel(businessInfo.logoUri),
                                         contentDescription = "Logo",
                                         modifier = Modifier
                                             .size(48.dp)
