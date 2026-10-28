@@ -20,6 +20,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class BarcodeScannerTest {
 
@@ -32,7 +34,7 @@ class BarcodeScannerTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = POSViewModel(repository)
+        viewModel = POSViewModel(repository, defaultDispatcher = UnconfinedTestDispatcher(testDispatcher.scheduler))
         collectJob = CoroutineScope(testDispatcher).launch {
             viewModel.uiState.collect {}
         }

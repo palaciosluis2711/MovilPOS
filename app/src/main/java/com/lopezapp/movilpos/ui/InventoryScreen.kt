@@ -61,6 +61,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.BrandingWatermark
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -81,13 +82,16 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Percent
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.rounded.QrCode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.TrendingUp
 import java.util.Locale
@@ -107,6 +111,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import com.lopezapp.movilpos.ui.viewmodel.ProductTypeFilter
+import com.lopezapp.movilpos.ui.viewmodel.ProductSortOption
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -296,6 +301,7 @@ fun ProductListScreen(
     val selectedBrandFilter by viewModel.selectedBrandFilter.collectAsState()
     val selectedTypeFilter by viewModel.selectedTypeFilter.collectAsState()
     val lowStockOnlyFilter by viewModel.lowStockOnlyFilter.collectAsState()
+    val selectedSortOption by viewModel.selectedSortOption.collectAsState()
 
     val categories by viewModel.categories.collectAsState()
     val brands by viewModel.brands.collectAsState()
@@ -460,34 +466,145 @@ fun ProductListScreen(
                     }
                 }
 
-                // Tipo Chips: Normal, Bundle, Servicio
-                FilterChip(
-                    selected = selectedTypeFilter == ProductTypeFilter.NORMAL,
-                    onClick = {
-                        viewModel.setSelectedTypeFilter(
-                            if (selectedTypeFilter == ProductTypeFilter.NORMAL) null else ProductTypeFilter.NORMAL
+                // Tipo Dropdown Menu
+                var typeDropdownExpanded by remember { mutableStateOf(false) }
+                Box {
+                    FilterChip(
+                        selected = selectedTypeFilter != null,
+                        onClick = { typeDropdownExpanded = true },
+                        label = {
+                            Text(
+                                when (selectedTypeFilter) {
+                                    ProductTypeFilter.NORMAL -> "Tipo: Productos Físicos"
+                                    ProductTypeFilter.BUNDLE -> "Tipo: Bundles"
+                                    ProductTypeFilter.SERVICE -> "Tipo: Servicios"
+                                    else -> "Tipo"
+                                }
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Category,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    DropdownMenu(
+                        expanded = typeDropdownExpanded,
+                        onDismissRequest = { typeDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Todos los tipos") },
+                            onClick = {
+                                viewModel.setSelectedTypeFilter(null)
+                                typeDropdownExpanded = false
+                            }
                         )
-                    },
-                    label = { Text("Normal") }
-                )
-                FilterChip(
-                    selected = selectedTypeFilter == ProductTypeFilter.BUNDLE,
-                    onClick = {
-                        viewModel.setSelectedTypeFilter(
-                            if (selectedTypeFilter == ProductTypeFilter.BUNDLE) null else ProductTypeFilter.BUNDLE
+                        DropdownMenuItem(
+                            text = { Text("Productos Físicos") },
+                            onClick = {
+                                viewModel.setSelectedTypeFilter(ProductTypeFilter.NORMAL)
+                                typeDropdownExpanded = false
+                            }
                         )
-                    },
-                    label = { Text("Bundle") }
-                )
-                FilterChip(
-                    selected = selectedTypeFilter == ProductTypeFilter.SERVICE,
-                    onClick = {
-                        viewModel.setSelectedTypeFilter(
-                            if (selectedTypeFilter == ProductTypeFilter.SERVICE) null else ProductTypeFilter.SERVICE
+                        DropdownMenuItem(
+                            text = { Text("Bundles") },
+                            onClick = {
+                                viewModel.setSelectedTypeFilter(ProductTypeFilter.BUNDLE)
+                                typeDropdownExpanded = false
+                            }
                         )
-                    },
-                    label = { Text("Servicio") }
-                )
+                        DropdownMenuItem(
+                            text = { Text("Servicios") },
+                            onClick = {
+                                viewModel.setSelectedTypeFilter(ProductTypeFilter.SERVICE)
+                                typeDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+
+                // Ordenamiento Sort Dropdown Menu
+                var sortDropdownExpanded by remember { mutableStateOf(false) }
+                Box {
+                    FilterChip(
+                        selected = selectedSortOption != ProductSortOption.NEWEST,
+                        onClick = { sortDropdownExpanded = true },
+                        label = {
+                            Text(
+                                when (selectedSortOption) {
+                                    ProductSortOption.NEWEST -> "Orden: Más recientes"
+                                    ProductSortOption.NAME_ASC -> "Orden: A - Z"
+                                    ProductSortOption.NAME_DESC -> "Orden: Z - A"
+                                    ProductSortOption.OLDEST -> "Orden: Más antiguos"
+                                    ProductSortOption.BEST_SELLERS -> "Orden: Más vendidos"
+                                }
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Sort,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    DropdownMenu(
+                        expanded = sortDropdownExpanded,
+                        onDismissRequest = { sortDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("🕒  Más recientes") },
+                            onClick = {
+                                viewModel.setSelectedSortOption(ProductSortOption.NEWEST)
+                                sortDropdownExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🔤  A - Z") },
+                            onClick = {
+                                viewModel.setSelectedSortOption(ProductSortOption.NAME_ASC)
+                                sortDropdownExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🔠  Z - A") },
+                            onClick = {
+                                viewModel.setSelectedSortOption(ProductSortOption.NAME_DESC)
+                                sortDropdownExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("📜  Más antiguos") },
+                            onClick = {
+                                viewModel.setSelectedSortOption(ProductSortOption.OLDEST)
+                                sortDropdownExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🔥  Más vendidos") },
+                            onClick = {
+                                viewModel.setSelectedSortOption(ProductSortOption.BEST_SELLERS)
+                                sortDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
 
                 // Stock Bajo Filter Chip
                 FilterChip(
@@ -508,7 +625,8 @@ fun ProductListScreen(
                         selectedCategoryFilter != null ||
                         selectedBrandFilter != null ||
                         selectedTypeFilter != null ||
-                        lowStockOnlyFilter
+                        lowStockOnlyFilter ||
+                        selectedSortOption != ProductSortOption.NEWEST
 
                 if (isFilterActive) {
                     IconButton(onClick = { viewModel.resetFilters() }) {
@@ -562,6 +680,9 @@ fun ProductListScreen(
                                     selectedIds = selectedIds + p.id
                                 }
                             },
+                            onTogglePin = { p ->
+                                viewModel.updateProduct(p.copy(isPinnedInPos = !p.isPinnedInPos))
+                            },
                             currencySymbol = currencySymbol,
                             defaultDecimalPlaces = defaultDecimalPlaces,
                             allowExtraDecimals = allowExtraDecimals
@@ -593,14 +714,17 @@ fun ProductItemCard(
     onProductClick: (Product) -> Unit,
     onToggleSelection: (String) -> Unit,
     onLongClick: (Product) -> Unit,
+    onTogglePin: ((Product) -> Unit)? = null,
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val isDark = isSystemInDarkTheme()
+    val isLowStock = !product.isService && product.stock <= product.alertQuantity
     val containerColor = when {
         isSelected -> MaterialTheme.colorScheme.secondaryContainer
+        isLowStock -> if (isDark) Color(0xFF3C181A) else Color(0xFFFFEBEE)
         product.isService -> if (isDark) Color(0xFF3E2723) else Color(0xFFFFF3E0)
         product.isBundle -> if (isDark) Color(0xFF1B5E20) else Color(0xFFE8F5E9)
         else -> MaterialTheme.colorScheme.surfaceVariant
@@ -660,10 +784,28 @@ fun ProductItemCard(
                     )
                 }
             }
-            Text(
-                text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
-                style = MaterialTheme.typography.titleMedium
-            )
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                if (onTogglePin != null) {
+                    IconButton(
+                        onClick = { onTogglePin(product) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (product.isPinnedInPos) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                            contentDescription = if (product.isPinnedInPos) "Desfijar de POS" else "Fijar en POS",
+                            tint = if (product.isPinnedInPos) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -694,6 +836,9 @@ fun ProductDetailScreen(
             onDeleteClick = {
                 viewModel.removeProduct(product.id)
                 onNavigateUp()
+            },
+            onTogglePinClick = {
+                viewModel.updateProduct(product.copy(isPinnedInPos = !product.isPinnedInPos))
             },
             onNavigateUp = onNavigateUp,
             onPrintLabelsClick = {
@@ -755,6 +900,7 @@ fun ProductReadOnlyView(
     allProducts: List<Product> = emptyList(),
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onTogglePinClick: () -> Unit = {},
     onNavigateUp: () -> Unit,
     onPrintLabelsClick: () -> Unit = {},
     currencySymbol: String = "$",
@@ -800,6 +946,13 @@ fun ProductReadOnlyView(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onTogglePinClick) {
+                        Icon(
+                            imageVector = if (product.isPinnedInPos) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                            contentDescription = if (product.isPinnedInPos) "Desfijar de POS" else "Fijar en POS",
+                            tint = if (product.isPinnedInPos) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     IconButton(onClick = onPrintLabelsClick) {
                         Icon(Icons.Rounded.QrCode, contentDescription = "Imprimir Etiquetas")
                     }
@@ -894,6 +1047,23 @@ fun ProductReadOnlyView(
                         }
                     }
                 }
+            }
+
+            // Pin to POS Action Button
+            OutlinedButton(
+                onClick = onTogglePinClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = if (product.isPinnedInPos) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                    contentDescription = null,
+                    tint = if (product.isPinnedInPos) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (product.isPinnedInPos) "Desfijar de POS" else "Fijar en POS"
+                )
             }
 
             // Price & Cost Row

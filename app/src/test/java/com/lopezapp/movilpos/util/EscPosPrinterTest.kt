@@ -87,6 +87,17 @@ class EscPosPrinterTest {
     }
 
     @Test
+    fun testSaleReceiptBytes_withCommercialName() {
+        val info = businessInfo.copy(commercialName = "Commercial Store Name")
+        val config = TicketConfig(paperSize = TicketPaperSize.SIZE_80MM)
+        val bytes = EscPosPrinter.buildSaleReceiptBytes(sale, info, config)
+        assertNotNull(bytes)
+        assertTrue(bytes.isNotEmpty())
+        val text = String(bytes, Charsets.ISO_8859_1)
+        assertTrue(text.contains("Commercial Store Name"))
+    }
+
+    @Test
     fun testPaymentReceiptBytes_58mm() {
         val config = TicketConfig(paperSize = TicketPaperSize.SIZE_57MM)
         val bytes = EscPosPrinter.buildPaymentReceiptBytes(payment, customer, businessInfo, config)

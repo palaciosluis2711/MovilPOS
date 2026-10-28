@@ -6,6 +6,7 @@ import com.lopezapp.movilpos.data.model.AuthSession
 import com.lopezapp.movilpos.data.model.User
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.util.FirebaseSyncService
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +16,8 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.viewModelScope
 
 class AuthViewModel(
-    private val repository: AppRepository
+    private val repository: AppRepository,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
 
     val authSession: StateFlow<AuthSession?> = repository.authSession
@@ -36,6 +38,9 @@ class AuthViewModel(
     
     private val _isLoggingOut = MutableStateFlow(false)
     val isLoggingOut: StateFlow<Boolean> = _isLoggingOut.asStateFlow()
+
+    private val _logoutLoadingMessage = MutableStateFlow("Guardando y respaldando datos en la nube...")
+    val logoutLoadingMessage: StateFlow<String> = _logoutLoadingMessage.asStateFlow()
 
     private val _loadingMessage = MutableStateFlow("Iniciando sesión...")
     val loadingMessage: StateFlow<String> = _loadingMessage.asStateFlow()
@@ -80,7 +85,7 @@ class AuthViewModel(
         _loadingMessage.value = "Verificando y descargando datos de la nube..."
 
         try {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 FirebaseSyncService.performInitialSync(repository)
             }
         } catch (_: Exception) {
@@ -89,7 +94,7 @@ class AuthViewModel(
 
         _loadingMessage.value = "Iniciando sesión..."
 
-        val result = withContext(Dispatchers.IO) {
+        val result = withContext(ioDispatcher) {
             repository.login(usernameOrEmail, password, remember)
         }
             
@@ -109,7 +114,15 @@ class AuthViewModel(
     fun logout() {
         viewModelScope.launch {
             _isLoggingOut.value = true
-            withContext(Dispatchers.IO) {
+            _logoutLoadingMessage.value = "Guardando y respaldando datos en la nube..."
+            try {
+                withContext(ioDispatcher) {
+                    FirebaseSyncService.uploadLocalDataToCloud(repository)
+                }
+            } catch (_: Exception) {
+                // Ignore sync exception during logout
+            }
+            withContext(ioDispatcher) {
                 repository.logout()
             }
             _loginUsernameStr.value = ""
@@ -123,11 +136,14 @@ class AuthViewModel(
         _errorMessage.value = null
     }
 
-    class Factory(private val repository: AppRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: AppRepository,
+        private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
-                return AuthViewModel(repository) as T
+                return AuthViewModel(repository, ioDispatcher) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }

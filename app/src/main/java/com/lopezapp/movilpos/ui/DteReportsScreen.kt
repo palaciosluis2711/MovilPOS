@@ -204,7 +204,7 @@ fun DteReportsListScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(issuedDtes) { sale ->
+                    items(issuedDtes, key = { it.id }) { sale ->
                         DteReportItemCard(
                             sale = sale,
                             currencySymbol = currencySymbol,

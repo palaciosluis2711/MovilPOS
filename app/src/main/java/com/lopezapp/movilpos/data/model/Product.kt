@@ -22,7 +22,9 @@ data class Product(
     val bundleItems: List<BundleItem> = emptyList(),
     val isService: Boolean = false,
     val tags: List<String> = emptyList(),
-    val differentiator: String? = null
+    val differentiator: String? = null,
+    val isPinnedInPos: Boolean = false,
+    val salesCount: Int = 0,
 ) {
     val displayName: String
         get() = if (!differentiator.isNullOrBlank()) "$name [$differentiator]" else name

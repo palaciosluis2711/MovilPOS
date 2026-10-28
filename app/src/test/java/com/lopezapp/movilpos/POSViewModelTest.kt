@@ -52,7 +52,7 @@ class POSViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = POSViewModel(repository)
+        viewModel = POSViewModel(repository, defaultDispatcher = testDispatcher)
         collectJob = CoroutineScope(testDispatcher).launch {
             viewModel.uiState.collect {}
         }
@@ -92,6 +92,52 @@ class POSViewModelTest {
         assertEquals(8.0, cartItem.unitPriceOverride ?: 0.0, 0.001)
         assertTrue(cartItem.isBundleDiscounted)
         assertFalse(cartItem.isRuleDiscounted)
+    }
+
+    @Test
+    fun cartItem_customUnitPrice_overridesCalculatedUnitPriceAndCalculatesSubtotal() {
+        val product = Product(name = "Test Product", price = 10.0, stock = 10)
+        val cartItem = CartItem(product = product, quantity = 2, customUnitPrice = 15.0)
+
+        assertEquals(15.0, cartItem.unitPrice, 0.001)
+        assertEquals(15.0, cartItem.effectiveUnitPrice, 0.001)
+        assertEquals(30.0, cartItem.subtotal, 0.001)
+        assertEquals(10.0, cartItem.calculatedUnitPrice, 0.001)
+    }
+
+    @Test
+    fun setCartItemCustomPrice_updatesCustomPriceAndRecalculatesTotals() = runTest {
+        val product = Product(name = "Widget", price = 10.0, stock = 10)
+        repository.addProduct(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.addToCart(product)
+        viewModel.addToCart(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        var state = viewModel.uiState.value
+        assertEquals(20.0, state.total, 0.001)
+
+        val itemInCart = state.cartItems.first()
+        viewModel.setCartItemCustomPrice(itemInCart, 12.50)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        state = viewModel.uiState.value
+        val updatedItem = state.cartItems.first()
+        assertEquals(12.50, updatedItem.customUnitPrice ?: 0.0, 0.001)
+        assertEquals(12.50, updatedItem.unitPrice, 0.001)
+        assertEquals(25.0, updatedItem.subtotal, 0.001)
+        assertEquals(25.0, state.total, 0.001)
+
+        // Reset custom price back to null
+        viewModel.setCartItemCustomPrice(updatedItem, null)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        state = viewModel.uiState.value
+        val resetItem = state.cartItems.first()
+        assertNull(resetItem.customUnitPrice)
+        assertEquals(10.0, resetItem.unitPrice, 0.001)
+        assertEquals(20.0, state.total, 0.001)
     }
 
     @Test
@@ -539,6 +585,31 @@ class POSViewModelTest {
         viewModel.clearSelection()
         testDispatcher.scheduler.advanceUntilIdle()
 
+        assertTrue(viewModel.selectedCartItemIds.value.isEmpty())
+    }
+
+    @Test
+    fun deleteSelectedCartItems_deletesOnlySelectedItemsAndClearsSelection() = runTest {
+        val products = repository.products.value.take(3)
+        products.forEach { viewModel.addToCart(it) }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val cartItems = viewModel.uiState.value.cartItems
+        assertEquals(3, cartItems.size)
+
+        // Select the first item only
+        val itemToDelete = cartItems.first()
+        viewModel.toggleItemSelection(itemToDelete.id)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, viewModel.selectedCartItemIds.value.size)
+
+        viewModel.deleteSelectedCartItems()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val remainingItems = viewModel.uiState.value.cartItems
+        assertEquals(2, remainingItems.size)
+        assertFalse(remainingItems.any { it.id == itemToDelete.id })
         assertTrue(viewModel.selectedCartItemIds.value.isEmpty())
     }
 
@@ -1466,5 +1537,33 @@ class POSViewModelTest {
         // Final product stock should be 0
         val updatedProduct = repository.products.value.first { it.id == "p_low_stock" }
         assertEquals(0, updatedProduct.stock)
+    }
+
+    @Test
+    fun uiState_products_sortedByPinnedFirstThenSalesCountThenName() = runTest {
+        val initialIds = repository.products.value.map { it.id }
+        repository.deleteProducts(initialIds)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val pA = Product(id = "pA", name = "Product A", price = 10.0, stock = 10, isPinnedInPos = false, salesCount = 10)
+        val pB = Product(id = "pB", name = "Product B", price = 10.0, stock = 10, isPinnedInPos = true, salesCount = 2)
+        val pC = Product(id = "pC", name = "Product C", price = 10.0, stock = 10, isPinnedInPos = false, salesCount = 50)
+        val pD = Product(id = "pD", name = "Product D", price = 10.0, stock = 10, isPinnedInPos = true, salesCount = 100)
+
+        repository.addProduct(pA)
+        repository.addProduct(pB)
+        repository.addProduct(pC)
+        repository.addProduct(pD)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val productsInState = viewModel.uiState.value.products
+        assertEquals(4, productsInState.size)
+
+        // Expected order:
+        // 1. Pinned: pD (salesCount = 100)
+        // 2. Pinned: pB (salesCount = 2)
+        // 3. Unpinned: pC (salesCount = 50)
+        // 4. Unpinned: pA (salesCount = 10)
+        assertEquals(listOf("pD", "pB", "pC", "pA"), productsInState.map { it.id })
     }
 }

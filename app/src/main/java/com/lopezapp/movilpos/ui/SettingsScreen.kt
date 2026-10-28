@@ -3054,9 +3054,9 @@ fun SettingsTicketScreen(
                                 }
                             }
 
-                            if (showBusinessName && businessInfo.name.isNotBlank()) {
+                            if (showBusinessName && businessInfo.displayName.isNotBlank()) {
                                 Text(
-                                    text = businessInfo.name,
+                                    text = businessInfo.displayName,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.Black,

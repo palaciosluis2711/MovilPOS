@@ -8,17 +8,21 @@ import com.lopezapp.movilpos.data.model.OutflowItem
 import com.lopezapp.movilpos.data.model.OutflowReason
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.repository.AppRepository
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class InventoryOutflowViewModel(
-    private val repository: AppRepository
+    private val repository: AppRepository,
+    defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -48,9 +52,11 @@ class InventoryOutflowViewModel(
 
             matchesQuery && matchesReason
         }.sortedByDescending { it.dateMillis }
-    }.stateIn(
+    }
+    .flowOn(defaultDispatcher)
+    .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
 

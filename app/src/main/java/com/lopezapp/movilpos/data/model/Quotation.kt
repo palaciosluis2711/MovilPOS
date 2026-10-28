@@ -7,6 +7,7 @@ data class QuotationItem(
     val productName: String,
     val quantity: Int = 1,
     val unitPrice: Double = 0.0,
+    val customUnitPrice: Double? = null,
     val isDiscounted: Boolean = false,
     val appliedRuleName: String? = null
 )

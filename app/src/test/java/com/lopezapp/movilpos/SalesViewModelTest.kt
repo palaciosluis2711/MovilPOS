@@ -6,9 +6,13 @@ import com.lopezapp.movilpos.data.model.Sale
 import com.lopezapp.movilpos.data.model.SaleItem
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.SalesViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -27,16 +31,21 @@ class SalesViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: AppRepository
     private lateinit var viewModel: SalesViewModel
+    private lateinit var collectJob: kotlinx.coroutines.Job
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = SalesViewModel(repository)
+        viewModel = SalesViewModel(repository, defaultDispatcher = UnconfinedTestDispatcher(testDispatcher.scheduler))
+        collectJob = CoroutineScope(testDispatcher).launch {
+            viewModel.filteredSales.collect {}
+        }
     }
 
     @After
     fun tearDown() {
+        collectJob.cancel()
         Dispatchers.resetMain()
     }
 

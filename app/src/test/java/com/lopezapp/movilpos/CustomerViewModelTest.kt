@@ -5,9 +5,13 @@ import com.lopezapp.movilpos.data.model.DocumentType
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.CustomerViewModel
 import com.lopezapp.movilpos.util.ElSalvadorGeography
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -26,16 +30,21 @@ class CustomerViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: AppRepository
     private lateinit var viewModel: CustomerViewModel
+    private lateinit var collectJob: Job
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = CustomerViewModel(repository)
+        viewModel = CustomerViewModel(repository, defaultDispatcher = UnconfinedTestDispatcher(testDispatcher.scheduler))
+        collectJob = CoroutineScope(testDispatcher).launch {
+            viewModel.customers.collect {}
+        }
     }
 
     @After
     fun tearDown() {
+        collectJob.cancel()
         Dispatchers.resetMain()
     }
 

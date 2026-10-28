@@ -7,6 +7,7 @@ data class CartItem(
     val product: Product,
     val quantity: Int,
     val unitPriceOverride: Double? = null,
+    val customUnitPrice: Double? = null,
     val isBundleDiscounted: Boolean = false,
     val isRuleDiscounted: Boolean = false,
     val appliedRuleId: String? = null,
@@ -15,10 +16,16 @@ data class CartItem(
     val parentProductId: String? = null,
     val id: String = UUID.randomUUID().toString(),
 ) {
-    val effectiveUnitPrice: Double
+    val calculatedUnitPrice: Double
         get() = unitPriceOverride ?: product.price
 
+    val unitPrice: Double
+        get() = customUnitPrice ?: calculatedUnitPrice
+
+    val effectiveUnitPrice: Double
+        get() = unitPrice
+
     val subtotal: Double
-        get() = (effectiveUnitPrice * quantity).roundToTwoDecimals()
+        get() = (unitPrice * quantity).roundToTwoDecimals()
 }
 

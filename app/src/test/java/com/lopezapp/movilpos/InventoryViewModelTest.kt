@@ -1,8 +1,10 @@
 package com.lopezapp.movilpos
 
 import com.lopezapp.movilpos.data.model.BundleItem
+import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.InventoryViewModel
+import com.lopezapp.movilpos.ui.viewmodel.ProductSortOption
 import com.lopezapp.movilpos.ui.viewmodel.ProductTypeFilter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,7 +34,7 @@ class InventoryViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = InventoryViewModel(repository)
+        viewModel = InventoryViewModel(repository, defaultDispatcher = UnconfinedTestDispatcher(testDispatcher.scheduler))
     }
 
     @After
@@ -460,5 +462,96 @@ class InventoryViewModelTest {
         assertTrue(reloadedProduct.priceIncludesTax)
         assertTrue(reloadedProduct.isTaxIncludedInPrice)
         assertEquals(listOf(taxId), reloadedProduct.appliedTaxIds)
+    }
+
+    @Test
+    fun setSelectedSortOption_sortsProductsCorrectly() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        val initialIds = repository.products.value.map { it.id }
+        viewModel.removeProducts(initialIds)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val p1 = Product(id = "p1", name = "Banana", price = 1.0, stock = 10, salesCount = 5)
+        val p2 = Product(id = "p2", name = "Apple", price = 2.0, stock = 10, salesCount = 50)
+        val p3 = Product(id = "p3", name = "Cherry", price = 3.0, stock = 10, salesCount = 20)
+
+        repository.addProduct(p1)
+        repository.addProduct(p2)
+        repository.addProduct(p3)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Test NAME_ASC (A-Z)
+        viewModel.setSelectedSortOption(ProductSortOption.NAME_ASC)
+        testDispatcher.scheduler.advanceUntilIdle()
+        var list = viewModel.filteredProducts.value
+        assertEquals(listOf("Apple", "Banana", "Cherry"), list.map { it.name })
+
+        // Test NAME_DESC (Z-A)
+        viewModel.setSelectedSortOption(ProductSortOption.NAME_DESC)
+        testDispatcher.scheduler.advanceUntilIdle()
+        list = viewModel.filteredProducts.value
+        assertEquals(listOf("Cherry", "Banana", "Apple"), list.map { it.name })
+
+        // Test BEST_SELLERS (salesCount desc)
+        viewModel.setSelectedSortOption(ProductSortOption.BEST_SELLERS)
+        testDispatcher.scheduler.advanceUntilIdle()
+        list = viewModel.filteredProducts.value
+        assertEquals(listOf("Apple", "Cherry", "Banana"), list.map { it.name })
+    }
+
+    @Test
+    fun setSelectedTypeFilter_filtersProductsByDropdownSelection() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.filteredProducts.collect() }
+        val initialIds = repository.products.value.map { it.id }
+        viewModel.removeProducts(initialIds)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val p1 = Product(id = "p1", name = "Normal Product", price = 10.0, stock = 10, isService = false, isBundle = false)
+        val p2 = Product(id = "p2", name = "Service Product", price = 15.0, stock = 0, isService = true, isBundle = false)
+        val p3 = Product(id = "p3", name = "Bundle Product", price = 20.0, stock = 5, isService = false, isBundle = true)
+
+        repository.addProduct(p1)
+        repository.addProduct(p2)
+        repository.addProduct(p3)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Filter NORMAL
+        viewModel.setSelectedTypeFilter(ProductTypeFilter.NORMAL)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, viewModel.filteredProducts.value.size)
+        assertEquals("Normal Product", viewModel.filteredProducts.value.first().name)
+
+        // Filter SERVICE
+        viewModel.setSelectedTypeFilter(ProductTypeFilter.SERVICE)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, viewModel.filteredProducts.value.size)
+        assertEquals("Service Product", viewModel.filteredProducts.value.first().name)
+
+        // Filter BUNDLE
+        viewModel.setSelectedTypeFilter(ProductTypeFilter.BUNDLE)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, viewModel.filteredProducts.value.size)
+        assertEquals("Bundle Product", viewModel.filteredProducts.value.first().name)
+
+        // Reset (ALL)
+        viewModel.setSelectedTypeFilter(null)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(3, viewModel.filteredProducts.value.size)
+    }
+
+    @Test
+    fun updateProduct_togglesIsPinnedInPos() = runTest {
+        val prod = Product(id = "pin_test", name = "Pin Test Product", price = 5.0, stock = 10, isPinnedInPos = false)
+        repository.addProduct(prod)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val saved = repository.products.value.find { it.id == "pin_test" }!!
+        assertFalse(saved.isPinnedInPos)
+
+        viewModel.updateProduct(saved.copy(isPinnedInPos = true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updated = repository.products.value.find { it.id == "pin_test" }!!
+        assertTrue(updated.isPinnedInPos)
     }
 }

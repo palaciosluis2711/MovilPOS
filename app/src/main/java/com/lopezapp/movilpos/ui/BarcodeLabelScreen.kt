@@ -56,6 +56,7 @@ fun BarcodeLabelScreen(
     val labelSizes by viewModel.labelSizes.collectAsState()
     val config by viewModel.config.collectAsState()
     val batchItems by viewModel.batchItems.collectAsState()
+    val matchingProducts by viewModel.matchingProducts.collectAsState()
     val isGeneratingPdf by viewModel.isGeneratingPdf.collectAsState()
     val settingsUiState by settingsViewModel.uiState.collectAsState()
 
@@ -64,6 +65,7 @@ fun BarcodeLabelScreen(
     var currentStep by remember { mutableStateOf(1) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var productDropdownExpanded by remember { mutableStateOf(false) }
     var showSaveCustomSizeDialog by remember { mutableStateOf(false) }
     var showClearBatchDialog by remember { mutableStateOf(false) }
     var customSizeNameInput by remember { mutableStateOf("") }
@@ -252,29 +254,33 @@ fun BarcodeLabelScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         // Search bar with compact dropdown popup
-                        Box(modifier = Modifier.fillMaxWidth()) {
+                        ExposedDropdownMenuBox(
+                            expanded = productDropdownExpanded && searchQuery.isNotBlank(),
+                            onExpandedChange = { productDropdownExpanded = it },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             CompactSearchBar(
                                 query = searchQuery,
-                                onQueryChange = { searchQuery = it },
+                                onQueryChange = {
+                                    searchQuery = it
+                                    viewModel.onSearchQueryChanged(it)
+                                    productDropdownExpanded = true
+                                },
                                 placeholder = "Buscar producto por nombre o código...",
+                                onClear = {
+                                    searchQuery = ""
+                                    viewModel.onSearchQueryChanged("")
+                                    productDropdownExpanded = false
+                                },
                                 onScanBarcodeClick = { showBarcodeScanner = true },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .menuAnchor(MenuAnchorType.PrimaryEditable)
+                                    .fillMaxWidth()
                             )
 
-                            val matchingProducts = remember(products, searchQuery) {
-                                if (searchQuery.isBlank()) emptyList()
-                                else products.filter { product ->
-                                    product.name.contains(searchQuery, ignoreCase = true) ||
-                                            (product.barcode?.contains(searchQuery, ignoreCase = true) == true) ||
-                                            (product.differentiator?.contains(searchQuery, ignoreCase = true) == true) ||
-                                            product.tags.any { tag -> tag.contains(searchQuery, ignoreCase = true) }
-                                }
-                            }
-
-                            DropdownMenu(
-                                expanded = searchQuery.isNotBlank(),
-                                onDismissRequest = { searchQuery = "" },
-                                properties = PopupProperties(focusable = false),
+                            ExposedDropdownMenu(
+                                expanded = productDropdownExpanded && searchQuery.isNotBlank(),
+                                onDismissRequest = { productDropdownExpanded = false },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(max = 280.dp)
@@ -288,7 +294,7 @@ fun BarcodeLabelScreen(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         },
-                                        onClick = { }
+                                        onClick = { productDropdownExpanded = false }
                                     )
                                 } else {
                                     matchingProducts.forEach { product ->
@@ -318,6 +324,7 @@ fun BarcodeLabelScreen(
                                                 viewModel.addProductToBatch(product, 1)
                                                 snackbarMessage = "Agregado: ${product.displayName}"
                                                 searchQuery = ""
+                                                productDropdownExpanded = false
                                             }
                                         )
                                     }
@@ -700,9 +707,11 @@ fun BarcodeLabelScreen(
                 if (matchingProduct != null) {
                     viewModel.addProductToBatch(matchingProduct, 1)
                     searchQuery = ""
+                    viewModel.onSearchQueryChanged("")
                     Toast.makeText(context, "Agregado: ${matchingProduct.name}", Toast.LENGTH_SHORT).show()
                 } else {
                     searchQuery = scannedCode
+                    viewModel.onSearchQueryChanged(scannedCode)
                     Toast.makeText(context, "No se encontró producto con el código: $scannedCode", Toast.LENGTH_SHORT).show()
                 }
             }

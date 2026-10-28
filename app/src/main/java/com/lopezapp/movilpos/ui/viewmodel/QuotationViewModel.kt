@@ -14,11 +14,14 @@ import com.lopezapp.movilpos.data.model.TaxValueType
 import com.lopezapp.movilpos.data.model.calculatePriceWithoutTax
 import com.lopezapp.movilpos.data.model.getFormattedTaxLabel
 import com.lopezapp.movilpos.data.repository.AppRepository
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -26,7 +29,8 @@ import kotlinx.coroutines.launch
 import java.util.Calendar
 
 class QuotationViewModel(
-    private val repository: AppRepository
+    private val repository: AppRepository,
+    defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -71,9 +75,11 @@ class QuotationViewModel(
 
             matchesQuery && matchesCustomer && matchesDate
         }
-    }.stateIn(
+    }
+    .flowOn(defaultDispatcher)
+    .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
 
@@ -165,9 +171,11 @@ class QuotationViewModel(
         } else {
             calculateTaxAmountInternal(items, products, taxes)
         }
-    }.stateIn(
+    }
+    .flowOn(defaultDispatcher)
+    .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        started = SharingStarted.WhileSubscribed(5000),
         initialValue = 0.0
     )
 
@@ -329,12 +337,46 @@ class QuotationViewModel(
         _draftItems.value = _draftItems.value.map { item ->
             if (item.productId == productId) {
                 item.copy(
+                    customUnitPrice = safePrice,
                     unitPrice = safePrice,
                     isDiscounted = false,
                     appliedRuleName = null
                 )
             } else {
                 item
+            }
+        }
+    }
+
+    fun setDraftItemCustomPrice(item: QuotationItem, customPrice: Double?) {
+        setDraftItemCustomPrice(item.productId, customPrice)
+    }
+
+    fun setDraftItemCustomPrice(productId: String, customPrice: Double?) {
+        val product = repository.products.value.find { it.id == productId }
+        _draftItems.update { currentItems ->
+            currentItems.map { draftItem ->
+                if (draftItem.productId == productId) {
+                    if (customPrice != null) {
+                        val safePrice = if (customPrice < 0.0) 0.0 else customPrice
+                        draftItem.copy(
+                            customUnitPrice = safePrice,
+                            unitPrice = safePrice,
+                            isDiscounted = false,
+                            appliedRuleName = null
+                        )
+                    } else {
+                        val defaultPrice = product?.price ?: draftItem.unitPrice
+                        draftItem.copy(
+                            customUnitPrice = null,
+                            unitPrice = defaultPrice,
+                            isDiscounted = false,
+                            appliedRuleName = null
+                        )
+                    }
+                } else {
+                    draftItem
+                }
             }
         }
     }
@@ -499,6 +541,16 @@ class QuotationViewModel(
     fun removeDraftItem(productId: String) {
         _draftItems.value = _draftItems.value.filter { it.productId != productId }
         _selectedQuotationItemIds.update { it - productId }
+    }
+
+    fun removeSelectedDraftItems() {
+        val selectedIds = _selectedQuotationItemIds.value
+        if (selectedIds.isNotEmpty()) {
+            _draftItems.update { items ->
+                items.filter { it.productId !in selectedIds }
+            }
+            _selectedQuotationItemIds.value = emptySet()
+        }
     }
 
     fun loadQuotationForEdit(quotation: Quotation) {

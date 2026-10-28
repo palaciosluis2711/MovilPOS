@@ -347,7 +347,6 @@ fun POSCheckoutScreen(
                         expanded = customerDropdownExpanded,
                         onDismissRequest = {
                             customerDropdownExpanded = false
-                            handleCustomerFallback()
                         }
                     ) {
                         if (filteredCustomers.isEmpty()) {

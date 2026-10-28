@@ -12,9 +12,13 @@ import com.lopezapp.movilpos.util.TestDteUtils
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.ByteArrayInputStream
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -32,16 +36,21 @@ class DteReportsViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: AppRepository
     private lateinit var viewModel: DteReportsViewModel
+    private lateinit var collectJob: Job
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = DteReportsViewModel(repository)
+        viewModel = DteReportsViewModel(repository, defaultDispatcher = UnconfinedTestDispatcher(testDispatcher.scheduler))
+        collectJob = CoroutineScope(testDispatcher).launch {
+            viewModel.issuedDtes.collect {}
+        }
     }
 
     @After
     fun tearDown() {
+        collectJob.cancel()
         Dispatchers.resetMain()
     }
 

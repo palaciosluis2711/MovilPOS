@@ -48,6 +48,7 @@ object PdfReportGenerator {
         context: Context,
         purchase: Purchase,
         supplier: Supplier? = null,
+        businessInfo: BusinessInfo? = null,
     ): File {
         val pdfDocument = PdfDocument()
 
@@ -109,7 +110,8 @@ object PdfReportGenerator {
         var yPos = 40f
 
         // Document Header
-        canvas.drawText("MOVILPOS - REPORTE DE COMPRA", margin, yPos + 18f, paintTitle)
+        val storeName = businessInfo?.displayName?.ifBlank { "MOVILPOS" } ?: "MOVILPOS"
+        canvas.drawText("${storeName.uppercase(Locale.getDefault())} - REPORTE DE COMPRA", margin, yPos + 18f, paintTitle)
         yPos += 30f
 
         val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
@@ -356,7 +358,7 @@ object PdfReportGenerator {
         // Measure page height
         var estimatedHeight = margin * 2 + 10f
         if (logoBitmap != null) estimatedHeight += logoBitmap.height + 6f
-        if (ticketConfig.showBusinessName && businessInfo.name.isNotBlank()) estimatedHeight += 14f
+        if (ticketConfig.showBusinessName && businessInfo.displayName.isNotBlank()) estimatedHeight += 14f
         if (ticketConfig.showNit && businessInfo.nit.isNotBlank()) estimatedHeight += 12f
         if (ticketConfig.showNrc && businessInfo.nrc.isNotBlank()) estimatedHeight += 12f
         if (ticketConfig.showAddress && businessInfo.address.isNotBlank()) estimatedHeight += 12f
@@ -397,8 +399,8 @@ object PdfReportGenerator {
             yPos += bmp.height + 6f
         }
 
-        if (ticketConfig.showBusinessName && businessInfo.name.isNotBlank()) {
-            canvas.drawText(businessInfo.name, centerX, yPos + 10f, paintTitleCenter)
+        if (ticketConfig.showBusinessName && businessInfo.displayName.isNotBlank()) {
+            canvas.drawText(businessInfo.displayName, centerX, yPos + 10f, paintTitleCenter)
             yPos += 14f
         }
         if (ticketConfig.showNit && businessInfo.nit.isNotBlank()) {
@@ -685,7 +687,7 @@ object PdfReportGenerator {
             leftY += bmp.height + 8f
         }
 
-        val businessName = businessInfo.name.ifBlank { "MI NEGOCIO" }
+        val businessName = businessInfo.displayName.ifBlank { "MI NEGOCIO" }
         canvas.drawText(businessName, leftMargin, leftY + 14f, paintMainTitle)
         leftY += 22f
 
@@ -1096,7 +1098,7 @@ object PdfReportGenerator {
             leftY += bmp.height + 8f
         }
 
-        val businessName = businessInfo.name.ifBlank { "MI NEGOCIO" }
+        val businessName = businessInfo.displayName.ifBlank { "MI NEGOCIO" }
         canvas.drawText(businessName, leftMargin, leftY + 14f, paintMainTitle)
         leftY += 22f
 
@@ -1403,7 +1405,7 @@ object PdfReportGenerator {
                 var cY = actualYPos + 10f
                 canvas.drawText("Información de Contacto:", contactX, cY, paintTextBold)
                 cY += 14f
-                val nameToPrint = businessInfo.name.ifBlank { "N/A" }
+                val nameToPrint = businessInfo.displayName.ifBlank { "N/A" }
                 var truncatedName = nameToPrint
                 if (paintText.measureText(truncatedName) > 150f) {
                     while (truncatedName.isNotEmpty() && paintText.measureText("$truncatedName..") > 150f) {
@@ -1643,7 +1645,6 @@ object PdfReportGenerator {
         val emisorDir = businessInfo.address.takeIf { it.isNotBlank() } ?: "-"
         val emisorTel = businessInfo.phone.takeIf { it.isNotBlank() } ?: "-"
         val emisorCorreo = businessInfo.email.takeIf { it.isNotBlank() } ?: "-"
-        val emisorComercial = businessInfo.commercialName.takeIf { it.isNotBlank() } ?: "-"
 
         val custName = customer?.name?.takeIf { it.isNotBlank() } ?: sale.customerName.takeIf { it.isNotBlank() } ?: "-"
         val custNit = customer?.documentNumber?.takeIf { it.isNotBlank() } ?: "-"
@@ -1654,16 +1655,19 @@ object PdfReportGenerator {
         val custCorreo = customer?.email?.takeIf { it.isNotBlank() } ?: "-"
         val custComercial = customer?.commercialName?.takeIf { it.isNotBlank() } ?: "-"
 
-        val emisorLines = listOf(
-            "Nombre: $emisorNombre",
-            "NIT: $emisorNit",
-            "NRC: $emisorNrc",
-            "Actividad: $emisorAct",
-            "Dirección: $emisorDir",
-            "Teléfono: $emisorTel",
-            "Correo: $emisorCorreo",
-            "Nombre Comercial: $emisorComercial"
-        )
+        val emisorLines = mutableListOf(
+            "Nombre: $emisorNombre"
+        ).apply {
+            if (businessInfo.commercialName.isNotBlank()) {
+                add("Nombre Comercial: ${businessInfo.commercialName}")
+            }
+            add("NIT: $emisorNit")
+            add("NRC: $emisorNrc")
+            add("Actividad: $emisorAct")
+            add("Dirección: $emisorDir")
+            add("Teléfono: $emisorTel")
+            add("Correo: $emisorCorreo")
+        }
         val receptorLines = listOf(
             "Nombre: $custName",
             "NIT: $custNit",
@@ -2045,7 +2049,7 @@ object PdfReportGenerator {
 
         var yPos = margin
 
-        val busName = businessInfo?.name?.ifBlank { "MOVILPOS" } ?: "MOVILPOS"
+        val busName = businessInfo?.displayName?.ifBlank { "MOVILPOS" } ?: "MOVILPOS"
         canvas.drawText(busName.uppercase(Locale.getDefault()), margin, yPos + 18f, paintTitle)
         yPos += 24f
 
@@ -2224,7 +2228,7 @@ object PdfReportGenerator {
         yPos += 30f
 
         // Business Info
-        val businessName = businessInfo.commercialName.ifBlank { businessInfo.name.ifBlank { "Mi Negocio" } }
+        val businessName = businessInfo.displayName.ifBlank { "Mi Negocio" }
         canvas.drawText(businessName, margin, yPos + 12f, paintSubTitle)
         yPos += 18f
 
@@ -2462,7 +2466,7 @@ object PdfReportGenerator {
         var estimatedHeight = margin * 2 + 10f
 
         if (logoBitmap != null) estimatedHeight += logoBitmap.height + 6f
-        val businessName = businessInfo.commercialName.ifBlank { businessInfo.name }
+        val businessName = businessInfo.displayName
         if (ticketConfig.showBusinessName && businessName.isNotBlank()) {
             estimatedHeight += getWrappedTextHeight(businessName, paintTitleCenter, contentWidth, 14f)
         }
@@ -2828,7 +2832,7 @@ object PdfReportGenerator {
             leftY += bmp.height + 6f
         }
 
-        val businessName = businessInfo.commercialName.ifBlank { businessInfo.name.ifBlank { "MI NEGOCIO" } }
+        val businessName = businessInfo.displayName.ifBlank { "MI NEGOCIO" }
         canvas.drawText(businessName, leftMargin, leftY + 12f, paintHeader)
         leftY += 18f
 
@@ -3237,7 +3241,7 @@ object PdfReportGenerator {
         val maxWidth = (width - 6f).coerceAtLeast(20f)
         val availableHeight = (height - 6f).coerceAtLeast(20f)
 
-        val showStore = config.showStoreName && businessInfo.name.isNotBlank()
+        val showStore = config.showStoreName && businessInfo.displayName.isNotBlank()
         val showProd = config.showProductName && item.productName.isNotBlank()
         val showCat = config.showCategoryBrand && (item.category.isNotBlank() || item.brand.isNotBlank())
         val showBarcodeImg = config.showBarcodeImage
@@ -3308,7 +3312,7 @@ object PdfReportGenerator {
             }
         }
 
-        storeFontSize = getAutoScaledFontSizeForText(paintText, businessInfo.name, storeFontSize, maxWidth, false)
+        storeFontSize = getAutoScaledFontSizeForText(paintText, businessInfo.displayName, storeFontSize, maxWidth, false)
         productFontSize = getAutoScaledFontSizeForText(paintProduct, item.productName, productFontSize, maxWidth, true)
         val catBrand = listOf(item.category, item.brand).filter { it.isNotBlank() }.joinToString(" • ")
         catFontSize = getAutoScaledFontSizeForText(paintCategory, catBrand, catFontSize, maxWidth, false)
@@ -3383,7 +3387,7 @@ object PdfReportGenerator {
         if (showStore) {
             paintText.textSize = storeFontSize
             currentY += storeFontSize
-            canvas.drawText(businessInfo.name, centerX, currentY, paintText)
+            canvas.drawText(businessInfo.displayName, centerX, currentY, paintText)
             currentY += spacing
         }
 
@@ -3556,7 +3560,7 @@ object PdfReportGenerator {
         var yPos = margin
 
         // Business Header
-        canvas.drawText(businessInfo.name.ifBlank { "Mi Negocio" }, margin, yPos + 15f, paintMainTitle)
+        canvas.drawText(businessInfo.displayName.ifBlank { "Mi Negocio" }, margin, yPos + 15f, paintMainTitle)
         val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
         val dateStr = dateFormat.format(Date(productReturn.dateMillis))
 

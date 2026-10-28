@@ -37,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Clear
@@ -66,6 +67,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
@@ -94,6 +96,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -1254,34 +1257,73 @@ fun PurchaseDraftItemRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Edit Cantidad
-            OutlinedTextField(
-                value = quantityText,
-                onValueChange = { newText ->
-                    val filtered = newText.filter { it.isDigit() }
-                    quantityText = filtered
-                    val qty = filtered.toIntOrNull()
-                    if (qty != null && qty > 0) {
-                        onQuantityChange(qty)
-                    }
-                },
-                label = { Text("Cantidad") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .onFocusChanged { focusState ->
-                        isQuantityFocused = focusState.isFocused
-                        if (!focusState.isFocused) {
-                            val parsed = quantityText.toIntOrNull()
-                            if (parsed == null || parsed <= 0) {
-                                quantityText = "1"
-                                onQuantityChange(1)
-                            } else {
-                                quantityText = parsed.toString()
+            Row(
+                modifier = Modifier.weight(1.2f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        val current = quantityText.toIntOrNull() ?: item.quantity
+                        val newQty = (current - 1).coerceAtLeast(1)
+                        quantityText = newQty.toString()
+                        onQuantityChange(newQty)
+                    },
+                    enabled = (quantityText.toIntOrNull() ?: item.quantity) > 1,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Disminuir cantidad"
+                    )
+                }
+
+                OutlinedTextField(
+                    value = quantityText,
+                    onValueChange = { newText ->
+                        val filtered = newText.filter { it.isDigit() }
+                        quantityText = filtered
+                        val qty = filtered.toIntOrNull()
+                        if (qty != null && qty > 0) {
+                            onQuantityChange(qty)
+                        }
+                    },
+                    label = { Text("Cantidad") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { focusState ->
+                            isQuantityFocused = focusState.isFocused
+                            if (!focusState.isFocused) {
+                                val parsed = quantityText.toIntOrNull()
+                                if (parsed == null || parsed <= 0) {
+                                    quantityText = "1"
+                                    onQuantityChange(1)
+                                } else {
+                                    quantityText = parsed.toString()
+                                    onQuantityChange(parsed)
+                                }
                             }
                         }
-                    }
-            )
+                )
+
+                IconButton(
+                    onClick = {
+                        val current = quantityText.toIntOrNull() ?: item.quantity
+                        val newQty = current + 1
+                        quantityText = newQty.toString()
+                        onQuantityChange(newQty)
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Aumentar cantidad"
+                    )
+                }
+            }
 
             // Edit Costo Unitario using sanitizeDecimalTextFieldValue
             OutlinedTextField(
@@ -1295,7 +1337,7 @@ fun PurchaseDraftItemRow(
                 label = { Text("Costo Unitario") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
-                modifier = Modifier.weight(1.5f)
+                modifier = Modifier.weight(1f)
             )
         }
 

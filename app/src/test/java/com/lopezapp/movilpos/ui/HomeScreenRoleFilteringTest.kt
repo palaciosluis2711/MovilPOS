@@ -50,7 +50,7 @@ class HomeScreenRoleFilteringTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        authViewModel = AuthViewModel(repository)
+        authViewModel = AuthViewModel(repository, testDispatcher)
     }
 
     @After

@@ -157,7 +157,7 @@ fun AnalyticsContent(
                     EmptyDataCard(message = "No se registraron ventas de productos en este período.")
                 }
             } else {
-                itemsIndexed(uiState.topSellingProducts) { index, item ->
+                itemsIndexed(uiState.topSellingProducts, key = { _, item -> item.productName }) { index, item ->
                     TopProductCard(
                         rank = index + 1,
                         product = item,

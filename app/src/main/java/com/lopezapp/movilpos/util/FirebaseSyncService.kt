@@ -124,7 +124,7 @@ object FirebaseSyncService {
         withContext(Dispatchers.IO) {
             _isSyncing.value = true
             try {
-                val ctx = context ?: repository.getAppContext()
+                val ctx = context ?: try { repository.getAppContext() } catch (_: Exception) { null }
                 // Collect and serialize all collections
                 val productsList = repository.products.value.map { serializeProduct(it, ctx) }
                 val categoriesList = repository.categories.value.map { serializeCategory(it) }
@@ -296,7 +296,9 @@ object FirebaseSyncService {
             "bundleItems" to product.bundleItems.map { mapOf("productId" to it.productId, "quantity" to it.quantity) },
             "isService" to product.isService,
             "tags" to product.tags,
-            "differentiator" to product.differentiator
+            "differentiator" to product.differentiator,
+            "isPinnedInPos" to product.isPinnedInPos,
+            "salesCount" to product.salesCount
         )
     }
 
@@ -672,7 +674,9 @@ object FirebaseSyncService {
             } ?: emptyList(),
             isService = getBoolean(map, "isService"),
             tags = (map["tags"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
-            differentiator = map["differentiator"] as? String
+            differentiator = map["differentiator"] as? String,
+            isPinnedInPos = getBoolean(map, "isPinnedInPos"),
+            salesCount = getInt(map, "salesCount")
         )
     }
 

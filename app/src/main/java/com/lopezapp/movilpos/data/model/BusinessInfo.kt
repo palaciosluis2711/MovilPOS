@@ -10,4 +10,7 @@ data class BusinessInfo(
     val socialMedia: String = "",
     val commercialName: String = "",
     val logoUri: String? = null
-)
+) {
+    val displayName: String
+        get() = commercialName.ifBlank { name }
+}

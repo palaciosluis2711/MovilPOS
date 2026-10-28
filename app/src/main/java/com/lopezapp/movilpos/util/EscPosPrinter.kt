@@ -115,7 +115,7 @@ object EscPosPrinter {
             .append(BOLD_ON)
             .append(TEXT_SIZE_DOUBLE)
 
-        val name = businessInfo.name.ifBlank { "MovilPOS" }
+        val name = businessInfo.displayName.ifBlank { "MovilPOS" }
         builder.appendLine(name)
 
         builder.append(TEXT_SIZE_NORMAL)
@@ -162,10 +162,10 @@ object EscPosPrinter {
             .append(INIT)
             .append(ALIGN_CENTER)
 
-        if (ticketConfig.showBusinessName && businessInfo.name.isNotBlank()) {
+        if (ticketConfig.showBusinessName && businessInfo.displayName.isNotBlank()) {
             builder.append(BOLD_ON)
                 .append(TEXT_SIZE_DOUBLE)
-                .appendLine(businessInfo.name)
+                .appendLine(businessInfo.displayName)
                 .append(TEXT_SIZE_NORMAL)
                 .append(BOLD_OFF)
         }
@@ -296,10 +296,10 @@ object EscPosPrinter {
             .append(INIT)
             .append(ALIGN_CENTER)
 
-        if (ticketConfig.showBusinessName && businessInfo.name.isNotBlank()) {
+        if (ticketConfig.showBusinessName && businessInfo.displayName.isNotBlank()) {
             builder.append(BOLD_ON)
                 .append(TEXT_SIZE_DOUBLE)
-                .appendLine(businessInfo.name)
+                .appendLine(businessInfo.displayName)
                 .append(TEXT_SIZE_NORMAL)
                 .append(BOLD_OFF)
         }
@@ -383,10 +383,10 @@ object EscPosPrinter {
             .append(INIT)
             .append(ALIGN_CENTER)
 
-        if (ticketConfig.showBusinessName && businessInfo.name.isNotBlank()) {
+        if (ticketConfig.showBusinessName && businessInfo.displayName.isNotBlank()) {
             builder.append(BOLD_ON)
                 .append(TEXT_SIZE_DOUBLE)
-                .appendLine(businessInfo.name)
+                .appendLine(businessInfo.displayName)
                 .append(TEXT_SIZE_NORMAL)
                 .append(BOLD_OFF)
         }

@@ -6,6 +6,7 @@ import android.widget.Toast
 import com.lopezapp.movilpos.ui.components.BarcodeScannerDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -27,6 +29,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,6 +51,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
@@ -58,6 +62,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -86,9 +91,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -389,7 +396,7 @@ fun QuotationReadOnlyView(
                 pdfFile
             )
             val shareText = "Estimado/a ${quotation.customerName},\n\n" +
-                "Le saludamos cordialmente de parte de ${businessInfo.name.ifBlank { "nuestro equipo" }}. Nos complace compartirle la cotización correspondiente a su solicitud.\n\n" +
+                "Le saludamos cordialmente de parte de ${businessInfo.displayName.ifBlank { "nuestro equipo" }}. Nos complace compartirle la cotización correspondiente a su solicitud.\n\n" +
                 "Adjunto encontrará el documento PDF con todos los detalles de la oferta.\n\n" +
                 "Quedamos a su entera disposición para cualquier duda o consulta. ¡Gracias por su confianza!"
 
@@ -1125,7 +1132,9 @@ fun QuotationEditForm(
                         val allSelected = draftItems.isNotEmpty() && validSelectedCount == draftItems.size
 
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -1142,24 +1151,45 @@ fun QuotationEditForm(
                                     }
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                val selectionText = if (validSelectedCount == 1) {
-                                    "1 de ${draftItems.size} seleccionado"
-                                } else {
-                                    "$validSelectedCount de ${draftItems.size} seleccionados"
-                                }
+                                val selectionText = "$validSelectedCount/${draftItems.size} sel."
                                 Text(
                                     text = if (validSelectedCount == 0) "Seleccionar todos" else selectionText,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
 
                             if (validSelectedCount > 0) {
-                                TextButton(
-                                    onClick = { viewModel.clearQuotationItemSelection() },
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text("Desmarcar todos", style = MaterialTheme.typography.labelSmall)
+                                    FilledTonalButton(
+                                        onClick = { viewModel.removeSelectedDraftItems() },
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Eliminar seleccionados",
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Eliminar ($validSelectedCount)",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = { viewModel.clearQuotationItemSelection() },
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                    ) {
+                                        Text("Desmarcar", style = MaterialTheme.typography.labelSmall)
+                                    }
                                 }
                             }
                         }
@@ -1205,12 +1235,14 @@ fun QuotationEditForm(
                                 item = item,
                                 isSelected = selectedQuotationItemIds.contains(item.productId),
                                 availableRules = activePriceRules,
+                                availableProducts = allProducts,
                                 currencySymbol = currencySymbol,
                                 defaultDecimalPlaces = defaultDecimalPlaces,
                                 allowExtraDecimals = allowExtraDecimals,
                                 onToggleSelection = { viewModel.toggleSelectQuotationItem(item.productId) },
                                 onQuantityChange = { qty -> viewModel.updateDraftItemQuantity(item.productId, qty) },
                                 onPriceChange = { price -> viewModel.updateDraftItemUnitPrice(item.productId, price) },
+                                onSetCustomPrice = { customPrice -> viewModel.setDraftItemCustomPrice(item, customPrice) },
                                 onApplyRule = { rule -> viewModel.applyPriceRuleToDraftItem(item.productId, rule) },
                                 onRemoveRule = { viewModel.removePriceRuleFromDraftItem(item.productId) },
                                 onRemoveItem = { viewModel.removeDraftItem(item.productId) }
@@ -1267,9 +1299,6 @@ fun QuotationEditForm(
                         expanded = showCustomerDropdown,
                         onExpandedChange = { expanded ->
                             showCustomerDropdown = expanded
-                            if (!expanded) {
-                                viewModel.handleCustomerFallback()
-                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1303,7 +1332,6 @@ fun QuotationEditForm(
                             expanded = showCustomerDropdown,
                             onDismissRequest = {
                                 showCustomerDropdown = false
-                                viewModel.handleCustomerFallback()
                             }
                         ) {
                             if (filteredCustomers.isEmpty()) {
@@ -1624,19 +1652,22 @@ fun QuotationEditForm(
 fun QuotationItemRow(
     item: QuotationItem,
     isSelected: Boolean,
-    availableRules: List<PriceRule>,
+    availableRules: List<PriceRule> = emptyList(),
+    availableProducts: List<Product> = emptyList(),
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true,
     onToggleSelection: () -> Unit,
     onQuantityChange: (Int) -> Unit,
-    onPriceChange: (Double) -> Unit,
-    onApplyRule: (PriceRule) -> Unit,
-    onRemoveRule: () -> Unit,
-    onRemoveItem: () -> Unit,
+    onPriceChange: (Double) -> Unit = {},
+    onSetCustomPrice: (Double?) -> Unit = {},
+    onApplyRule: (PriceRule) -> Unit = {},
+    onRemoveRule: () -> Unit = {},
+    onRemoveItem: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var showRuleDropdown by remember { mutableStateOf(false) }
+    var showContextMenu by remember { mutableStateOf(false) }
+    var showPriceDialog by remember { mutableStateOf(false) }
 
     OutlinedCard(
         modifier = modifier.fillMaxWidth(),
@@ -1659,156 +1690,249 @@ fun QuotationItemRow(
                 modifier = Modifier.padding(end = 4.dp)
             )
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // Item Header: Product Name + Delete Button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            Box(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(item) {
+                            detectTapGestures(
+                                onTap = { onToggleSelection() },
+                                onLongPress = { showContextMenu = true }
+                            )
+                        },
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
-                        text = item.productName,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { onToggleSelection() }
-                    )
-
-                    IconButton(
-                        onClick = onRemoveItem,
-                        modifier = Modifier.size(28.dp)
+                    // Item Header: Product Name (Delete trash icon removed)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Eliminar item",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp)
+                        Text(
+                            text = item.productName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
                     }
-                }
 
-                // Discount Badge / Rule Picker Row
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
+                    // Discount Badge Row
                     if (item.isDiscounted) {
-                        Surface(
-                            onClick = onRemoveRule,
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            Surface(
+                                onClick = onRemoveRule,
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.LocalOffer,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Text(
-                                    text = item.appliedRuleName ?: "Dcto",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "Quitar descuento",
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                    } else if (availableRules.isNotEmpty()) {
-                        Box {
-                            TextButton(
-                                onClick = { showRuleDropdown = true },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Icon(Icons.Default.LocalOffer, contentDescription = null, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Aplicar regla", style = MaterialTheme.typography.labelSmall)
-                            }
-
-                            DropdownMenu(
-                                expanded = showRuleDropdown,
-                                onDismissRequest = { showRuleDropdown = false }
-                            ) {
-                                availableRules.forEach { rule ->
-                                    DropdownMenuItem(
-                                        text = { Text("${rule.name} (${rule.formulaRepresentation()})") },
-                                        onClick = {
-                                            onApplyRule(rule)
-                                            showRuleDropdown = false
-                                        }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocalOffer,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = item.appliedRuleName ?: "Dcto",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Quitar descuento",
+                                        modifier = Modifier.size(12.dp)
                                     )
                                 }
                             }
                         }
                     }
+
+                    // Quantity Selector & Price/Subtotal
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        var textValue by remember(item.quantity) { mutableStateOf(item.quantity.toString()) }
+
+                        // Quantity Selector
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    val current = textValue.toIntOrNull() ?: item.quantity
+                                    val newQty = current - 1
+                                    if (newQty <= 0) {
+                                        onQuantityChange(0)
+                                    } else {
+                                        textValue = newQty.toString()
+                                        onQuantityChange(newQty)
+                                    }
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Remove, contentDescription = "Restar", modifier = Modifier.size(16.dp))
+                            }
+
+                            BasicTextField(
+                                value = textValue,
+                                onValueChange = { newValue ->
+                                    val digits = newValue.filter { it.isDigit() }
+                                    textValue = digits
+                                    val newQty = digits.toIntOrNull()
+                                    if (newQty != null && newQty > 0) {
+                                        onQuantityChange(newQty)
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Center
+                                ),
+                                modifier = Modifier
+                                    .widthIn(min = 32.dp, max = 56.dp)
+                                    .padding(horizontal = 4.dp)
+                                    .onFocusChanged { focusState ->
+                                        if (!focusState.isFocused) {
+                                            val parsed = textValue.toIntOrNull()
+                                            if (textValue.isBlank() || parsed == null || parsed <= 0) {
+                                                textValue = "1"
+                                                onQuantityChange(1)
+                                            } else {
+                                                textValue = parsed.toString()
+                                                onQuantityChange(parsed)
+                                            }
+                                        }
+                                    },
+                                singleLine = true
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    val current = textValue.toIntOrNull() ?: item.quantity
+                                    val newQty = current + 1
+                                    textValue = newQty.toString()
+                                    onQuantityChange(newQty)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Sumar", modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        // Price and Subtotal
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "P. U.: ${formatCurrency(item.unitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (item.customUnitPrice != null) {
+                                Text(
+                                    text = "(Manual)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = "Subtotal: ${formatCurrency(item.quantity * item.unitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
 
-                // Quantity Selector & Price/Subtotal
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                DropdownMenu(
+                    expanded = showContextMenu,
+                    onDismissRequest = { showContextMenu = false }
                 ) {
-                    // Quantity Selector
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        IconButton(
-                            onClick = { onQuantityChange(item.quantity - 1) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.Default.Remove, contentDescription = "Restar", modifier = Modifier.size(16.dp))
+                    DropdownMenuItem(
+                        text = { Text("✏️ Establecer precio manualmente") },
+                        onClick = {
+                            showContextMenu = false
+                            showPriceDialog = true
                         }
-
-                        Text(
-                            text = item.quantity.toString(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp)
-                        )
-
-                        IconButton(
-                            onClick = { onQuantityChange(item.quantity + 1) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Sumar", modifier = Modifier.size(16.dp))
-                        }
-                    }
-
-                    // Price and Subtotal
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "P. U.: ${formatCurrency(item.unitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "Subtotal: ${formatCurrency(item.quantity * item.unitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    )
                 }
             }
         }
+    }
+
+    if (showPriceDialog) {
+        var customPriceText by remember(item.productId, item.customUnitPrice, item.unitPrice) {
+            mutableStateOf(item.customUnitPrice?.toString() ?: item.unitPrice.toString())
+        }
+
+        val originalProduct = availableProducts.find { it.id == item.productId }
+        val originalPriceFormatted = originalProduct?.let {
+            formatCurrency(it.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
+        } ?: formatCurrency(item.unitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
+
+        AlertDialog(
+            onDismissRequest = { showPriceDialog = false },
+            title = { Text("Establecer Precio Manual") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = item.productName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Precio original: $originalPriceFormatted",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = customPriceText,
+                        onValueChange = { customPriceText = it },
+                        label = { Text("Precio Unitario") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val sanitizedText = customPriceText.replace(',', '.')
+                        val newPrice = sanitizedText.toDoubleOrNull()
+                        if (sanitizedText.isBlank()) {
+                            onSetCustomPrice(null)
+                        } else if (newPrice != null && newPrice >= 0.0) {
+                            onSetCustomPrice(newPrice)
+                        }
+                        showPriceDialog = false
+                    }
+                ) {
+                    Text("Guardar Precio")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPriceDialog = false }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
 

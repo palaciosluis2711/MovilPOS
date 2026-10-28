@@ -2,9 +2,13 @@ package com.lopezapp.movilpos
 
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.ExpensesViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -20,16 +24,21 @@ class ExpensesViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: AppRepository
     private lateinit var viewModel: ExpensesViewModel
+    private lateinit var collectJob: Job
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = ExpensesViewModel(repository)
+        viewModel = ExpensesViewModel(repository, defaultDispatcher = UnconfinedTestDispatcher(testDispatcher.scheduler))
+        collectJob = CoroutineScope(testDispatcher).launch {
+            viewModel.expenses.collect {}
+        }
     }
 
     @After
     fun tearDown() {
+        collectJob.cancel()
         Dispatchers.resetMain()
     }
 

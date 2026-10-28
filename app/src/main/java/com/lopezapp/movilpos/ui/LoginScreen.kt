@@ -182,7 +182,7 @@ fun LoginScreenContent(
                             }
                         }
 
-                        val businessName = businessInfo.name.ifBlank { "Mi Negocio POS" }
+                        val businessName = businessInfo.displayName.ifBlank { "Mi Negocio POS" }
                         Text(
                             text = businessName,
                             style = MaterialTheme.typography.headlineMedium,

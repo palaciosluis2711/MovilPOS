@@ -23,11 +23,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,9 +60,27 @@ fun CompactSearchBar(
     val enabled = true
     val singleLine = true
 
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(text = query, selection = TextRange(query.length)))
+    }
+
+    LaunchedEffect(query) {
+        if (textFieldValue.text != query) {
+            textFieldValue = TextFieldValue(
+                text = query,
+                selection = TextRange(query.length)
+            )
+        }
+    }
+
     BasicTextField(
-        value = query,
-        onValueChange = onQueryChange,
+        value = textFieldValue,
+        onValueChange = { newValue ->
+            textFieldValue = newValue
+            if (newValue.text != query) {
+                onQueryChange(newValue.text)
+            }
+        },
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp),
@@ -71,7 +95,7 @@ fun CompactSearchBar(
         keyboardActions = keyboardActions,
         decorationBox = { innerTextField ->
             OutlinedTextFieldDefaults.DecorationBox(
-                value = query,
+                value = textFieldValue.text,
                 innerTextField = innerTextField,
                 enabled = enabled,
                 singleLine = singleLine,
@@ -100,9 +124,10 @@ fun CompactSearchBar(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        if (query.isNotEmpty()) {
+                        if (textFieldValue.text.isNotEmpty()) {
                             IconButton(
                                 onClick = {
+                                    textFieldValue = TextFieldValue("", selection = TextRange(0))
                                     if (onClear != null) onClear() else onQueryChange("")
                                 },
                                 modifier = Modifier.size(28.dp)

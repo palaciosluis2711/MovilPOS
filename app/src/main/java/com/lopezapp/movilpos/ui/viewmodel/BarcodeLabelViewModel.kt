@@ -12,8 +12,12 @@ import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.util.PdfReportGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -28,6 +32,35 @@ class BarcodeLabelViewModel(
     val businessInfo = repository.businessInfo
 
     val batchItems: StateFlow<List<BatchLabelItem>> = repository.batchItems
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+    }
+
+    val matchingProducts: StateFlow<List<Product>> = combine(
+        repository.products,
+        _searchQuery
+    ) { productsList, query ->
+        if (query.isBlank()) {
+            emptyList()
+        } else {
+            productsList.filter { product ->
+                product.name.contains(query, ignoreCase = true) ||
+                        (product.barcode?.contains(query, ignoreCase = true) == true) ||
+                        (product.differentiator?.contains(query, ignoreCase = true) == true) ||
+                        product.tags.any { tag -> tag.contains(query, ignoreCase = true) }
+            }
+        }
+    }
+    .flowOn(Dispatchers.Default)
+    .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     private val _isGeneratingPdf = MutableStateFlow(false)
     val isGeneratingPdf: StateFlow<Boolean> = _isGeneratingPdf.asStateFlow()

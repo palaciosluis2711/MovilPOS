@@ -861,6 +861,7 @@ fun HomeScreen(
     
     var showLogoutDialog by remember { mutableStateOf(false) }
     val isLoggingOut = authViewModel?.isLoggingOut?.collectAsState()?.value == true
+    val logoutLoadingMessage = authViewModel?.logoutLoadingMessage?.collectAsState()?.value ?: "Guardando y respaldando datos en la nube..."
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -896,7 +897,7 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     CircularProgressIndicator()
-                    Text("Cerrando sesión...")
+                    Text(logoutLoadingMessage)
                 }
             }
         }
@@ -907,8 +908,10 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Column(verticalArrangement = Arrangement.Center) {
+                        val currentBusinessInfo = businessInfo ?: settingsUiState?.businessInfo
+                        val displayTitle = currentBusinessInfo?.displayName?.ifBlank { "MovilPOS" } ?: "MovilPOS"
                         Text(
-                            text = "MovilPOS",
+                            text = displayTitle,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -934,7 +937,7 @@ fun HomeScreen(
                 actions = {
                     IconButton(
                         onClick = {
-                            onLogoutClick()
+                            showLogoutDialog = true
                         }
                     ) {
                         Icon(

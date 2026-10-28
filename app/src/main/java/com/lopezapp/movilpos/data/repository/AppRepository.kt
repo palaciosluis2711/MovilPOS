@@ -16,7 +16,6 @@ import com.lopezapp.movilpos.data.model.Customer
 import com.lopezapp.movilpos.data.model.DocumentType
 import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.InventoryOutflow
-import com.lopezapp.movilpos.data.model.OutflowReason
 import com.lopezapp.movilpos.data.model.ProductReturn
 import com.lopezapp.movilpos.data.model.toSpanishLabel
 import com.lopezapp.movilpos.data.model.LabelSize
@@ -121,8 +120,9 @@ class AppRepository(
 
     fun saveToDisk(context: Context? = appContext) {
         val targetContext = context?.applicationContext ?: appContext ?: return
-        repositoryScope.launch {
-            LocalDiskPersistence.saveToDisk(targetContext, getCurrentState())
+        repositoryScope.launch(Dispatchers.IO) {
+            val state = getCurrentState()
+            LocalDiskPersistence.saveToDisk(targetContext, state)
         }
     }
 
@@ -1316,13 +1316,13 @@ class AppRepository(
 
         _products.update { currentProducts ->
             currentProducts.map { product ->
-                if (!product.isService) {
-                    val totalQtySold = quantitySoldMap[product.id] ?: 0
-                    if (totalQtySold > 0) {
-                        product.copy(stock = (product.stock - totalQtySold).coerceAtLeast(0))
-                    } else {
-                        product
-                    }
+                val totalQtySold = quantitySoldMap[product.id] ?: 0
+                if (totalQtySold > 0) {
+                    val newStock = if (!product.isService) (product.stock - totalQtySold).coerceAtLeast(0) else product.stock
+                    product.copy(
+                        stock = newStock,
+                        salesCount = product.salesCount + totalQtySold
+                    )
                 } else {
                     product
                 }
@@ -1409,13 +1409,13 @@ class AppRepository(
 
             _products.update { currentProducts ->
                 currentProducts.map { product ->
-                    if (!product.isService) {
-                        val totalQtySold = quantitySoldMap[product.id] ?: 0
-                        if (totalQtySold > 0) {
-                            product.copy(stock = (product.stock - totalQtySold).coerceAtLeast(0))
-                        } else {
-                            product
-                        }
+                    val totalQtySold = quantitySoldMap[product.id] ?: 0
+                    if (totalQtySold > 0) {
+                        val newStock = if (!product.isService) (product.stock - totalQtySold).coerceAtLeast(0) else product.stock
+                        product.copy(
+                            stock = newStock,
+                            salesCount = product.salesCount + totalQtySold
+                        )
                     } else {
                         product
                     }
@@ -1690,26 +1690,6 @@ class AppRepository(
             }
         }
 
-        val category = if (outflow.reason == OutflowReason.CONSUMO_INTERNO) {
-            "Consumo Interno"
-        } else {
-            "Bajas y Mermas de Inventario"
-        }
-
-        val currentShift = _activeShift.value
-        val expense = Expense(
-            shiftId = currentShift?.id,
-            cashierId = outflow.registeredByUserId.ifBlank { currentShift?.cashierId ?: "" },
-            cashierName = outflow.registeredByUserName.ifBlank { currentShift?.cashierName ?: "" },
-            category = category,
-            description = "Salida [${outflow.reason.toSpanishLabel()}]: ${outflow.notes}",
-            amount = outflow.totalCost,
-            dateMillis = outflow.dateMillis
-        )
-
-        _expenses.update { currentList ->
-            currentList + expense
-        }
         saveToDisk()
     }
 

@@ -34,10 +34,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import java.io.File
 import kotlin.math.abs
@@ -65,7 +67,8 @@ data class POSState(
 
 class POSViewModel(
     private val repository: AppRepository,
-    private val dteApiClient: DteApiClient = DteApiClient.defaultInstance
+    private val dteApiClient: DteApiClient = DteApiClient.defaultInstance,
+    defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     val sales: StateFlow<List<Sale>> = repository.sales
@@ -210,6 +213,12 @@ class POSViewModel(
             }
         }
 
+        val sortedProducts = filteredProducts.sortedWith(
+            compareByDescending<Product> { it.isPinnedInPos }
+                .thenByDescending { it.salesCount }
+                .thenBy { it.displayName.lowercase() }
+        )
+
         val total = rawCartItems.sumOf { it.subtotal }.roundToTwoDecimals()
 
         val validItemIds = rawCartItems.map { it.id }.toSet()
@@ -222,7 +231,7 @@ class POSViewModel(
         val changeAmount = maxOf(0.0, (cashReceived - total).roundToTwoDecimals())
 
         POSState(
-            products = filteredProducts,
+            products = sortedProducts,
             cartItems = rawCartItems,
             priceRules = activeRules,
             selectedPriceRuleId = ruleId,
@@ -240,7 +249,9 @@ class POSViewModel(
             isCreditSale = isCredit,
             creditDueDateMillis = dueDate
         )
-    }.stateIn(
+    }
+    .flowOn(defaultDispatcher)
+    .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = POSState()
@@ -416,6 +427,22 @@ class POSViewModel(
 
     fun clearSelection() {
         _selectedCartItemIds.value = emptySet()
+    }
+
+    fun deleteSelectedCartItems() {
+        val selectedIds = _selectedCartItemIds.value
+        if (selectedIds.isEmpty()) return
+
+        _cartItems.update { currentCart ->
+            val selectedItems = currentCart.filter { it.id in selectedIds }
+            val selectedGroupIds = selectedItems.mapNotNull { it.linkedGroupId }.toSet()
+
+            currentCart.filter { item ->
+                item.id !in selectedIds && (item.linkedGroupId == null || item.linkedGroupId !in selectedGroupIds)
+            }
+        }
+        clearSelection()
+        checkAndDeactivatePriceRule()
     }
 
     private data class ActiveRuleResult(
@@ -610,6 +637,18 @@ class POSViewModel(
                     linkedGroupId = cartItem.linkedGroupId,
                     parentProductId = cartItem.parentProductId
                 )
+            }
+        }
+    }
+
+    fun setCartItemCustomPrice(cartItem: CartItem, customPrice: Double?) {
+        _cartItems.update { currentCart ->
+            currentCart.map { item ->
+                if (item.id == cartItem.id) {
+                    item.copy(customUnitPrice = customPrice)
+                } else {
+                    item
+                }
             }
         }
     }

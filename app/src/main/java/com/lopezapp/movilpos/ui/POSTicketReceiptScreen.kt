@@ -242,9 +242,9 @@ fun POSTicketReceiptScreen(
                             }
 
                             // Business Info Headers
-                            if (ticketConfig.showBusinessName && businessInfo.name.isNotBlank()) {
+                            if (ticketConfig.showBusinessName && businessInfo.displayName.isNotBlank()) {
                                 Text(
-                                    text = businessInfo.name,
+                                    text = businessInfo.displayName,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.Black,

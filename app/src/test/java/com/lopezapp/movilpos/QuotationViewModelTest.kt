@@ -5,9 +5,13 @@ import com.lopezapp.movilpos.data.model.ArithmeticOperator
 import com.lopezapp.movilpos.data.model.PriceRule
 import com.lopezapp.movilpos.data.repository.AppRepository
 import com.lopezapp.movilpos.ui.viewmodel.QuotationViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -27,16 +31,22 @@ class QuotationViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: AppRepository
     private lateinit var viewModel: QuotationViewModel
+    private lateinit var collectJob: Job
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = QuotationViewModel(repository)
+        viewModel = QuotationViewModel(repository, defaultDispatcher = UnconfinedTestDispatcher(testDispatcher.scheduler))
+        collectJob = CoroutineScope(testDispatcher).launch {
+            launch { viewModel.filteredQuotations.collect {} }
+            launch { viewModel.calculatedTaxAmount.collect {} }
+        }
     }
 
     @After
     fun tearDown() {
+        collectJob.cancel()
         Dispatchers.resetMain()
     }
 
@@ -266,6 +276,49 @@ class QuotationViewModelTest {
     }
 
     @Test
+    fun setDraftItemCustomPrice_updatesCustomPriceAndSubtotalAndCanBeCleared() = runTest {
+        val product = repository.products.value.first()
+        viewModel.addProductToDraft(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val draftItem = viewModel.draftItems.value.first()
+        viewModel.setDraftItemCustomPrice(draftItem, 99.99)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val updatedItem = viewModel.draftItems.value.first()
+        assertEquals(99.99, updatedItem.customUnitPrice!!, 0.001)
+        assertEquals(99.99, updatedItem.unitPrice, 0.001)
+        assertEquals(99.99, viewModel.totalAmount.value, 0.001)
+
+        // Clear custom price
+        viewModel.setDraftItemCustomPrice(draftItem, null)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val clearedItem = viewModel.draftItems.value.first()
+        assertNull(clearedItem.customUnitPrice)
+        assertEquals(product.price, clearedItem.unitPrice, 0.001)
+    }
+
+    @Test
+    fun removeSelectedDraftItems_removesOnlySelectedItemsAndClearsSelection() = runTest {
+        val products = repository.products.value
+        viewModel.addProductToDraft(products[0])
+        viewModel.addProductToDraft(products[1])
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.toggleSelectQuotationItem(products[0].id)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.removeSelectedDraftItems()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val remaining = viewModel.draftItems.value
+        assertEquals(1, remaining.size)
+        assertEquals(products[1].id, remaining[0].productId)
+        assertTrue(viewModel.selectedQuotationItemIds.value.isEmpty())
+    }
+
+    @Test
     fun togglePriceRule_appliesToSelectedItemsOnlyWhenSelected() = runTest {
         val products = repository.products.value
         viewModel.addProductToDraft(products[0])
@@ -432,5 +485,27 @@ class QuotationViewModelTest {
         assertTrue(viewModel.showSignatureBlock.value)
         assertTrue(viewModel.showStampBlock.value)
         assertTrue(viewModel.showContactBlock.value)
+    }
+
+    @Test
+    fun updateDraftItemQuantity_manualEditingAndFallbackRules() = runTest {
+        val product = repository.products.value.first()
+        viewModel.addProductToDraft(product)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Manual edit to 5
+        viewModel.updateDraftItemQuantity(product.id, 5)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(5, viewModel.draftItems.value.first().quantity)
+
+        // Reset/fallback to 1
+        viewModel.updateDraftItemQuantity(product.id, 1)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, viewModel.draftItems.value.first().quantity)
+
+        // Decrement to 0 removes item
+        viewModel.updateDraftItemQuantity(product.id, 0)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.draftItems.value.none { it.productId == product.id })
     }
 }

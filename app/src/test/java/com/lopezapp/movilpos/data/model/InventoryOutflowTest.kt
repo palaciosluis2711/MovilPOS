@@ -3,6 +3,7 @@ package com.lopezapp.movilpos.data.model
 import com.lopezapp.movilpos.data.repository.AppRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -227,7 +228,7 @@ class InventoryOutflowTest {
     }
 
     @Test
-    fun addInventoryOutflow_registersExpense_forConsumoInterno() {
+    fun addInventoryOutflow_doesNotRegisterExpense_forConsumoInterno() {
         val item = OutflowItem(productId = "p1", productName = "Café", quantity = 2, unitCost = 3.0)
         val outflow = InventoryOutflow(
             id = "out_exp_1",
@@ -243,18 +244,13 @@ class InventoryOutflowTest {
         repository.addInventoryOutflow(outflow)
 
         val expenses = repository.expenses.value
-        assertEquals(initialExpenseCount + 1, expenses.size)
-
-        val expense = expenses.last()
-        assertEquals("Consumo Interno", expense.category)
-        assertEquals(6.0, expense.amount, 0.001)
-        assertEquals("Salida [Consumo Propio / Uso Interno]: Consumo reunión de personal", expense.description)
-        assertEquals("u_cashier", expense.cashierId)
-        assertEquals("Pedro", expense.cashierName)
+        assertEquals(initialExpenseCount, expenses.size)
+        val expense = expenses.find { it.description.contains("Consumo reunión de personal") }
+        assertNull(expense)
     }
 
     @Test
-    fun addInventoryOutflow_registersExpense_forBajasYMermas() {
+    fun addInventoryOutflow_doesNotRegisterExpense_forBajasYMermas() {
         val item = OutflowItem(productId = "p2", productName = "Yogurt", quantity = 5, unitCost = 1.2)
         val outflow = InventoryOutflow(
             id = "out_exp_2",
@@ -265,15 +261,14 @@ class InventoryOutflowTest {
             items = listOf(item),
         )
 
+        val initialExpenseCount = repository.expenses.value.size
+
         repository.addInventoryOutflow(outflow)
 
-        val expense = repository.expenses.value.find { it.description.contains("Lote vencido") }
-        assertNotNull(expense)
-        assertEquals("Bajas y Mermas de Inventario", expense?.category)
-        assertEquals(6.0, expense?.amount ?: 0.0, 0.001)
-        assertEquals("Salida [Producto Vencido]: Lote vencido", expense?.description)
-        assertEquals("u_mgr", expense?.cashierId)
-        assertEquals("Maria", expense?.cashierName)
+        val expenses = repository.expenses.value
+        assertEquals(initialExpenseCount, expenses.size)
+        val expense = expenses.find { it.description.contains("Lote vencido") }
+        assertNull(expense)
     }
 
     // ------------------------------------------------------------------

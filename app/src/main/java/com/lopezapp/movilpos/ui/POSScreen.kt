@@ -27,11 +27,15 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -49,7 +53,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -69,10 +72,12 @@ import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -80,7 +85,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -444,11 +452,13 @@ fun POSScreen(
                         onAddClick = handleAddCartItem,
                         onRemoveClick = { viewModel.removeFromCart(it) },
                         onDeleteClick = { viewModel.deleteFromCart(it) },
+                        onDeleteSelected = { viewModel.deleteSelectedCartItems() },
                         onToggleSelection = { viewModel.toggleItemSelection(it) },
                         onSelectAll = { viewModel.selectAll() },
                         onClearSelection = { viewModel.clearSelection() },
                         onCheckout = handleCheckout,
                         onQuantityManuallyChanged = { item, newQty -> viewModel.updateCartItemQuantity(item, newQty) },
+                        onSetCustomPrice = { item, customPrice -> viewModel.setCartItemCustomPrice(item, customPrice) },
                         currencySymbol = currencySymbol,
                         defaultDecimalPlaces = defaultDecimalPlaces,
                         allowExtraDecimals = allowExtraDecimals,
@@ -480,11 +490,13 @@ fun POSScreen(
                         onAddClick = handleAddCartItem,
                         onRemoveClick = { viewModel.removeFromCart(it) },
                         onDeleteClick = { viewModel.deleteFromCart(it) },
+                        onDeleteSelected = { viewModel.deleteSelectedCartItems() },
                         onToggleSelection = { viewModel.toggleItemSelection(it) },
                         onSelectAll = { viewModel.selectAll() },
                         onClearSelection = { viewModel.clearSelection() },
                         onCheckout = handleCheckout,
                         onQuantityManuallyChanged = { item, newQty -> viewModel.updateCartItemQuantity(item, newQty) },
+                        onSetCustomPrice = { item, customPrice -> viewModel.setCartItemCustomPrice(item, customPrice) },
                         currencySymbol = currencySymbol,
                         defaultDecimalPlaces = defaultDecimalPlaces,
                         allowExtraDecimals = allowExtraDecimals,
@@ -870,13 +882,28 @@ fun ProductGridItem(
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.Start
         ) {
-            Text(
-                text = product.displayName,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = product.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = Int.MAX_VALUE,
+                    modifier = Modifier.weight(1f)
+                )
+                if (product.isPinnedInPos) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.PushPin,
+                        contentDescription = "Fijado en POS",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = formatCurrency(product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals),
@@ -886,7 +913,7 @@ fun ProductGridItem(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Stock: ${product.stock}",
+                text = if (product.isService) "Servicio" else "Stock: ${product.stock}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -907,6 +934,7 @@ fun getPriceColor(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PriceRuleCapsules(
     priceRules: List<PriceRule>,
@@ -919,62 +947,61 @@ fun PriceRuleCapsules(
 
     val isDark = isSystemInDarkTheme()
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(if (isCompact) 6.dp else 8.dp),
+        verticalArrangement = Arrangement.spacedBy(if (isCompact) 4.dp else 6.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
         Text(
-            text = "Reglas de Precio:",
+            text = "Reglas de precio:",
             style = if (isCompact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = if (isCompact) 2.dp else 6.dp)
+            modifier = Modifier.padding(end = 2.dp)
         )
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(if (isCompact) 6.dp else 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            contentPadding = PaddingValues(horizontal = 2.dp, vertical = if (isCompact) 0.dp else 2.dp)
-        ) {
-            itemsIndexed(priceRules, key = { _, rule -> rule.id }) { index, rule ->
-                val isSelected = rule.id == selectedPriceRuleId
-                val palette = PriceRuleColors.getPalette(index)
-                val bgColor = palette.getBackgroundColor(isDark)
-                val accentColor = palette.getAccentColor(isDark)
+        priceRules.forEachIndexed { index, rule ->
+            val isSelected = rule.id == selectedPriceRuleId
+            val palette = PriceRuleColors.getPalette(index)
+            val bgColor = palette.getBackgroundColor(isDark)
+            val accentColor = palette.getAccentColor(isDark)
 
-                Surface(
-                    onClick = {
-                        if (isSelected) {
-                            onRuleSelected(null)
-                        } else {
-                            onRuleSelected(rule.id)
-                        }
-                    },
-                    shape = CircleShape,
-                    color = bgColor,
-                    contentColor = accentColor,
-                    border = if (isSelected) BorderStroke(if (isCompact) 1.5.dp else 2.dp, accentColor) else null,
-                    shadowElevation = if (isSelected) 1.dp else 0.dp
+            Surface(
+                onClick = {
+                    if (isSelected) {
+                        onRuleSelected(null)
+                    } else {
+                        onRuleSelected(rule.id)
+                    }
+                },
+                shape = CircleShape,
+                color = bgColor,
+                contentColor = accentColor,
+                border = if (isSelected) BorderStroke(if (isCompact) 1.5.dp else 2.dp, accentColor) else null,
+                shadowElevation = if (isSelected) 1.dp else 0.dp
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(
+                        horizontal = if (isCompact) 8.dp else 12.dp,
+                        vertical = if (isCompact) 3.dp else 6.dp
+                    )
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(
-                            horizontal = if (isCompact) 8.dp else 12.dp,
-                            vertical = if (isCompact) 3.dp else 6.dp
-                        )
-                    ) {
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = accentColor,
-                                modifier = Modifier
-                                    .size(if (isCompact) 12.dp else 14.dp)
-                                    .padding(end = 2.dp)
-                            )
-                        }
-                        Text(
-                            text = rule.name,
-                            style = if (isCompact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = accentColor
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier
+                                .size(if (isCompact) 12.dp else 14.dp)
+                                .padding(end = 2.dp)
                         )
                     }
+                    Text(
+                        text = rule.name,
+                        style = if (isCompact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = accentColor
+                    )
                 }
             }
         }
@@ -992,11 +1019,13 @@ fun BottomCartSheet(
     onAddClick: (CartItem) -> Unit,
     onRemoveClick: (CartItem) -> Unit,
     onDeleteClick: (CartItem) -> Unit,
+    onDeleteSelected: () -> Unit = {},
     onToggleSelection: (String) -> Unit = {},
     onSelectAll: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     onCheckout: () -> Unit,
     onQuantityManuallyChanged: (CartItem, Int) -> Unit = { _, _ -> },
+    onSetCustomPrice: (CartItem, Double?) -> Unit = { _, _ -> },
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true,
@@ -1159,11 +1188,7 @@ fun BottomCartSheet(
                                     }
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                val selectionText = if (validSelectedCount == 1) {
-                                    "1 de ${cartItems.size} seleccionado"
-                                } else {
-                                    "$validSelectedCount de ${cartItems.size} seleccionados"
-                                }
+                                val selectionText = "$validSelectedCount/${cartItems.size} sel."
                                 Text(
                                     text = if (validSelectedCount == 0) "Seleccionar todos" else selectionText,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -1171,8 +1196,33 @@ fun BottomCartSheet(
                                 )
                             }
                             if (validSelectedCount > 0) {
-                                TextButton(onClick = onClearSelection) {
-                                    Text("Desmarcar todos")
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = onDeleteSelected,
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Eliminar seleccionados",
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Eliminar ($validSelectedCount)",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    TextButton(onClick = onClearSelection) {
+                                        Text("Desmarcar")
+                                    }
                                 }
                             }
                         }
@@ -1209,6 +1259,7 @@ fun BottomCartSheet(
                                     onRemoveClick = { onRemoveClick(item) },
                                     onDeleteClick = { onDeleteClick(item) },
                                     onQuantityManuallyChanged = { newQty -> onQuantityManuallyChanged(item, newQty) },
+                                    onSetCustomPrice = { newPrice -> onSetCustomPrice(item, newPrice) },
                                     currencySymbol = currencySymbol,
                                     defaultDecimalPlaces = defaultDecimalPlaces,
                                     allowExtraDecimals = allowExtraDecimals
@@ -1269,11 +1320,13 @@ fun CartSection(
     onAddClick: (CartItem) -> Unit,
     onRemoveClick: (CartItem) -> Unit,
     onDeleteClick: (CartItem) -> Unit = {},
+    onDeleteSelected: () -> Unit = {},
     onToggleSelection: (String) -> Unit = {},
     onSelectAll: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     onCheckout: () -> Unit,
     onQuantityManuallyChanged: (CartItem, Int) -> Unit = { _, _ -> },
+    onSetCustomPrice: (CartItem, Double?) -> Unit = { _, _ -> },
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true,
@@ -1334,11 +1387,7 @@ fun CartSection(
                         }
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    val selectionText = if (validSelectedCount == 1) {
-                        "1 de ${cartItems.size} seleccionado"
-                    } else {
-                        "$validSelectedCount de ${cartItems.size} seleccionados"
-                    }
+                    val selectionText = "$validSelectedCount/${cartItems.size} sel."
                     Text(
                         text = if (validSelectedCount == 0) "Seleccionar todos" else selectionText,
                         style = MaterialTheme.typography.bodyMedium,
@@ -1346,8 +1395,33 @@ fun CartSection(
                     )
                 }
                 if (validSelectedCount > 0) {
-                    TextButton(onClick = onClearSelection) {
-                        Text("Desmarcar todos")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = onDeleteSelected,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Eliminar seleccionados",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Eliminar ($validSelectedCount)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        TextButton(onClick = onClearSelection) {
+                            Text("Desmarcar")
+                        }
                     }
                 }
             }
@@ -1376,6 +1450,7 @@ fun CartSection(
                         onRemoveClick = { onRemoveClick(item) },
                         onDeleteClick = { onDeleteClick(item) },
                         onQuantityManuallyChanged = { newQty -> onQuantityManuallyChanged(item, newQty) },
+                        onSetCustomPrice = { newPrice -> onSetCustomPrice(item, newPrice) },
                         currencySymbol = currencySymbol,
                         defaultDecimalPlaces = defaultDecimalPlaces,
                         allowExtraDecimals = allowExtraDecimals
@@ -1418,6 +1493,7 @@ fun CartSection(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CartItemRow(
     item: CartItem,
@@ -1428,10 +1504,14 @@ fun CartItemRow(
     onRemoveClick: () -> Unit,
     onDeleteClick: () -> Unit = {},
     onQuantityManuallyChanged: (Int) -> Unit = {},
+    onSetCustomPrice: (Double?) -> Unit = {},
     currencySymbol: String = "$",
     defaultDecimalPlaces: Int = 2,
     allowExtraDecimals: Boolean = true
 ) {
+    var showContextMenu by remember { mutableStateOf(false) }
+    var showPriceDialog by remember { mutableStateOf(false) }
+
     val priceColor = getPriceColor(item, priceRules)
     val formattedSubtotal = formatCurrency(item.subtotal, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
     val formattedUnitPrice = formatCurrency(item.effectiveUnitPrice, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
@@ -1459,54 +1539,102 @@ fun CartItemRow(
                 modifier = Modifier.padding(end = 4.dp)
             )
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { onToggleSelection?.invoke() }
-            ) {
-                Text(
-                    text = item.product.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(item) {
+                            detectTapGestures(
+                                onTap = { onToggleSelection?.invoke() },
+                                onLongPress = { showContextMenu = true }
+                            )
+                        }
+                ) {
                     Text(
-                        text = "$formattedSubtotal ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = priceColor
+                        text = item.product.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        text = "($formattedUnitPrice c/u)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = priceColor
-                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "$formattedSubtotal ",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = priceColor
+                        )
+                        Text(
+                            text = "($formattedUnitPrice c/u)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = priceColor
+                        )
+                    }
+                    if (item.customUnitPrice != null) {
+                        Text(
+                            text = "(Manual)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (!item.product.isService && item.quantity > item.product.stock) {
+                        Text(
+                            text = "Stock: ${item.product.stock} (Insuficiente)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (item.isRuleDiscounted) {
+                        val ruleName = item.appliedRuleName
+                            ?: priceRules.find { it.id == item.appliedRuleId }?.name
+                            ?: "Regla"
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text(
+                                text = "Reglas de precio:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = priceColor
+                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = priceColor.copy(alpha = 0.15f),
+                                contentColor = priceColor
+                            ) {
+                                Text(
+                                    text = ruleName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = priceColor,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    } else if (item.isBundleDiscounted) {
+                        Text(
+                            text = "Descuento por Combo",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = priceColor
+                        )
+                    }
                 }
-                if (!item.product.isService && item.quantity > item.product.stock) {
-                    Text(
-                        text = "Stock: ${item.product.stock} (Insuficiente)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                if (item.isRuleDiscounted) {
-                    val ruleName = item.appliedRuleName
-                        ?: priceRules.find { it.id == item.appliedRuleId }?.name
-                        ?: "Regla"
-                    Text(
-                        text = "Aplicado: $ruleName",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = priceColor
-                    )
-                } else if (item.isBundleDiscounted) {
-                    Text(
-                        text = "Descuento por Combo",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = priceColor
+
+                DropdownMenu(
+                    expanded = showContextMenu,
+                    onDismissRequest = { showContextMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("✏️ Establecer precio manualmente") },
+                        onClick = {
+                            showContextMenu = false
+                            showPriceDialog = true
+                        }
                     )
                 }
             }
@@ -1560,18 +1688,64 @@ fun CartItemRow(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Aumentar", modifier = Modifier.size(16.dp))
                 }
-                IconButton(
-                    onClick = onDeleteClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Eliminar",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
             }
         }
+    }
+
+    if (showPriceDialog) {
+        var customPriceText by remember(item.id, item.customUnitPrice, item.effectiveUnitPrice) {
+            mutableStateOf(item.customUnitPrice?.toString() ?: item.effectiveUnitPrice.toString())
+        }
+        val originalPriceFormatted = formatCurrency(item.product.price, currencySymbol, defaultDecimalPlaces, allowExtraDecimals)
+
+        AlertDialog(
+            onDismissRequest = { showPriceDialog = false },
+            title = { Text("Establecer Precio Manual") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = item.product.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Precio original: $originalPriceFormatted",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = customPriceText,
+                        onValueChange = { customPriceText = it },
+                        label = { Text("Precio Unitario") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val sanitizedText = customPriceText.replace(',', '.')
+                        val newPrice = sanitizedText.toDoubleOrNull()
+                        if (sanitizedText.isBlank()) {
+                            onSetCustomPrice(null)
+                        } else if (newPrice != null && newPrice >= 0.0) {
+                            onSetCustomPrice(newPrice)
+                        }
+                        showPriceDialog = false
+                    }
+                ) {
+                    Text("Guardar Precio")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPriceDialog = false }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }

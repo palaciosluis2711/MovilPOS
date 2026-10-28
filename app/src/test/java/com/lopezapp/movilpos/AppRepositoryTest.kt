@@ -10,7 +10,6 @@ import com.lopezapp.movilpos.data.model.InvoiceType
 import com.lopezapp.movilpos.data.model.InventoryOutflow
 import com.lopezapp.movilpos.data.model.OutflowItem
 import com.lopezapp.movilpos.data.model.OutflowReason
-import com.lopezapp.movilpos.data.model.toSpanishLabel
 import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.model.ProductReturn
 import com.lopezapp.movilpos.data.model.ReturnItem
@@ -753,7 +752,7 @@ class AppRepositoryTest {
     }
 
     @Test
-    fun addInventoryOutflow_savesOutflow_deductsProductStock_andRegistersExpense() {
+    fun addInventoryOutflow_savesOutflow_deductsProductStock_andDoesNotRegisterExpense() {
         val product = Product(id = "p_test_1", name = "Galletas", price = 1.0, cost = 0.5, stock = 10)
         repository.addProduct(product)
 
@@ -784,17 +783,13 @@ class AppRepositoryTest {
         assertNotNull(updatedProduct)
         assertEquals(7, updatedProduct?.stock)
 
-        // 3. Operational expense registered
+        // 3. No cash drawer expense registered
         val expenses = repository.expenses.value
-        assertEquals(initialExpenseCount + 1, expenses.size)
-        val expense = expenses.last()
-        assertEquals("Bajas y Mermas de Inventario", expense.category)
-        assertEquals(1.5, expense.amount, 0.001)
-        assertEquals("Salida [Merma / Producto Dañado]: Caja aplastada", expense.description)
+        assertEquals(initialExpenseCount, expenses.size)
     }
 
     @Test
-    fun addInventoryOutflow_consumoInterno_usesConsumoInternoCategory() {
+    fun addInventoryOutflow_consumoInterno_doesNotRegisterExpense() {
         val outflow = InventoryOutflow(
             id = "out_2",
             reason = OutflowReason.CONSUMO_INTERNO,
@@ -802,12 +797,13 @@ class AppRepositoryTest {
             items = listOf(OutflowItem(productId = "p1", productName = "Coffee", quantity = 1, unitCost = 2.0))
         )
 
+        val initialExpenseCount = repository.expenses.value.size
+
         repository.addInventoryOutflow(outflow)
 
         val expense = repository.expenses.value.find { it.description.contains("Café para personal") }
-        assertNotNull(expense)
-        assertEquals("Consumo Interno", expense?.category)
-        assertEquals("Salida [Consumo Propio / Uso Interno]: Café para personal", expense?.description)
+        assertNull(expense)
+        assertEquals(initialExpenseCount, repository.expenses.value.size)
     }
 
     @Test

@@ -10,10 +10,14 @@ import com.lopezapp.movilpos.data.model.Product
 import com.lopezapp.movilpos.data.model.Tax
 import com.lopezapp.movilpos.data.model.UnitOfMeasure
 import com.lopezapp.movilpos.data.repository.AppRepository
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -22,6 +26,14 @@ enum class ProductTypeFilter {
     NORMAL,
     BUNDLE,
     SERVICE
+}
+
+enum class ProductSortOption {
+    NEWEST,       // 🕒 Más recientes
+    NAME_ASC,     // 🔤 A - Z
+    NAME_DESC,    // 🔠 Z - A
+    OLDEST,       // 📜 Más antiguos
+    BEST_SELLERS  // 🔥 Más vendidos
 }
 
 private data class FilterParams(
@@ -33,7 +45,8 @@ private data class FilterParams(
 )
 
 class InventoryViewModel(
-    private val repository: AppRepository
+    private val repository: AppRepository,
+    defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -51,6 +64,9 @@ class InventoryViewModel(
     private val _lowStockOnlyFilter = MutableStateFlow<Boolean>(false)
     val lowStockOnlyFilter: StateFlow<Boolean> = _lowStockOnlyFilter
 
+    private val _selectedSortOption = MutableStateFlow<ProductSortOption>(ProductSortOption.NEWEST)
+    val selectedSortOption: StateFlow<ProductSortOption> = _selectedSortOption.asStateFlow()
+
     val categories: StateFlow<List<Category>> = repository.categories
     val brands: StateFlow<List<Brand>> = repository.brands
     val unitsOfMeasure: StateFlow<List<UnitOfMeasure>> = repository.unitsOfMeasure
@@ -65,13 +81,14 @@ class InventoryViewModel(
         _lowStockOnlyFilter
     ) { query, categoryFilter, brandFilter, typeFilter, lowStockFilter ->
         FilterParams(query, categoryFilter, brandFilter, typeFilter, lowStockFilter)
-    }
+    }.flowOn(defaultDispatcher)
 
     val filteredProducts: StateFlow<List<Product>> = combine(
         repository.products,
-        _filterParams
-    ) { products, params ->
-        products.filter { product ->
+        _filterParams,
+        _selectedSortOption
+    ) { products, params, sortOption ->
+        val filtered = products.filter { product ->
             val matchesQuery = if (params.query.isBlank()) {
                 true
             } else {
@@ -108,7 +125,19 @@ class InventoryViewModel(
 
             matchesQuery && matchesCategory && matchesBrand && matchesType && matchesLowStock
         }
-    }.stateIn(
+
+        when (sortOption) {
+            ProductSortOption.NEWEST -> filtered
+            ProductSortOption.NAME_ASC -> filtered.sortedBy { it.displayName.lowercase() }
+            ProductSortOption.NAME_DESC -> filtered.sortedByDescending { it.displayName.lowercase() }
+            ProductSortOption.OLDEST -> filtered.reversed()
+            ProductSortOption.BEST_SELLERS -> filtered.sortedWith(
+                compareByDescending<Product> { it.salesCount }.thenBy { it.displayName.lowercase() }
+            )
+        }
+    }
+    .flowOn(defaultDispatcher)
+    .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -136,12 +165,17 @@ class InventoryViewModel(
         _lowStockOnlyFilter.value = lowStockOnly
     }
 
+    fun setSelectedSortOption(option: ProductSortOption) {
+        _selectedSortOption.value = option
+    }
+
     fun resetFilters() {
         _searchQuery.value = ""
         _selectedCategoryFilter.value = null
         _selectedBrandFilter.value = null
         _selectedTypeFilter.value = null
         _lowStockOnlyFilter.value = false
+        _selectedSortOption.value = ProductSortOption.NEWEST
     }
 
     fun addProduct(

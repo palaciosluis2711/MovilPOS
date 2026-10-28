@@ -29,7 +29,7 @@ class AuthViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         repository = AppRepository()
-        viewModel = AuthViewModel(repository)
+        viewModel = AuthViewModel(repository, testDispatcher)
     }
 
     @After
@@ -116,6 +116,7 @@ class AuthViewModelTest {
         }
         testScheduler.advanceUntilIdle()
 
+        assertEquals("Guardando y respaldando datos en la nube...", viewModel.logoutLoadingMessage.value)
         assertNull(viewModel.authSession.value)
         assertEquals("", viewModel.loginUsernameStr.value)
         assertEquals("", viewModel.loginPasswordStr.value)

@@ -10,17 +10,21 @@ import com.lopezapp.movilpos.data.model.PaymentMethod
 import com.lopezapp.movilpos.data.model.Sale
 import kotlinx.coroutines.delay
 import com.lopezapp.movilpos.data.repository.AppRepository
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
 class SalesViewModel(
-    private val repository: AppRepository
+    private val repository: AppRepository,
+    defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _isDteInvalidating = MutableStateFlow(false)
@@ -87,9 +91,11 @@ class SalesViewModel(
 
             matchesQuery && matchesCustomer && matchesInvoiceType && matchesPaymentMethod && matchesDate
         }.sortedByDescending { it.dateMillis }
-    }.stateIn(
+    }
+    .flowOn(defaultDispatcher)
+    .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
 

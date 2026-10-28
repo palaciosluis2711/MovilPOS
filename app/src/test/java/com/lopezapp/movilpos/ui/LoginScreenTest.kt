@@ -37,14 +37,16 @@ class LoginScreenTest {
     }
 
     @Test
-    fun businessInfo_defaultNameFallback_returnsMiNegocioPOS() {
-        val emptyBusinessInfo = BusinessInfo(name = "")
-        val displayedName = emptyBusinessInfo.name.ifBlank { "Mi Negocio POS" }
-        assertEquals("Mi Negocio POS", displayedName)
+    fun businessInfo_displayName_usesCommercialNameIfPresentOrFallbackToName() {
+        val infoWithCommercial = BusinessInfo(name = "Empresa S.A. de C.V.", commercialName = "Super Comercial Don Pedro")
+        assertEquals("Super Comercial Don Pedro", infoWithCommercial.displayName)
 
-        val customBusinessInfo = BusinessInfo(name = "Tienda Don Pedro")
-        val customDisplayedName = customBusinessInfo.name.ifBlank { "Mi Negocio POS" }
-        assertEquals("Tienda Don Pedro", customDisplayedName)
+        val infoWithNameOnly = BusinessInfo(name = "Empresa S.A. de C.V.", commercialName = "")
+        assertEquals("Empresa S.A. de C.V.", infoWithNameOnly.displayName)
+
+        val emptyBusinessInfo = BusinessInfo(name = "", commercialName = "")
+        val displayedName = emptyBusinessInfo.displayName.ifBlank { "Mi Negocio POS" }
+        assertEquals("Mi Negocio POS", displayedName)
     }
 
     @Test
